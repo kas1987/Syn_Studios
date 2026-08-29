@@ -77,7 +77,7 @@ class LibraryControlPlaneTests(unittest.TestCase):
             "authority": blueprint["authority"]["primary_class"],
             "slots": ["organization_name"],
             "slot_contract": {"token_format": "{{slot_name}}", "required": True, "instantiated_artifact_policy": "reject unresolved tokens", "value_source": "authorized world facts only"},
-            "render_contract": {"required": True, "evidence_manifest": "evidence/template-releases/REL-0001/render-manifest.json", "expected_page_count": 1, "expected_sheet_names": ["Sheet1"], "print_policy": "Render the bounded worksheet as one readable page."},
+            "render_contract": {"required": True, "evidence_manifest": "evidence/template-releases/REL-0001/render-manifest.json", "expected_page_count": 1, "expected_sheet_names": ["Sheet1"], "expected_pdf_path": "evidence/template-releases/REL-0001/render.pdf", "expected_page_image_pattern": "evidence/template-releases/REL-0001/page-{page}.png", "print_policy": "Render the bounded worksheet as one readable page."},
             "knowledge_and_authority_constraints": ["Source rows cannot manufacture conclusions."],
             "prohibited_content": ["prior submission facts"],
             "supported_consumers": ["anna-holodeck-bridge"],
@@ -295,6 +295,17 @@ class LibraryControlPlaneTests(unittest.TestCase):
             descriptor.pop("blueprint_id")
             errors = list(Draft202012Validator(schema).iter_errors(descriptor))
             self.assertTrue(any("blueprint_id" in error.message and "required property" in error.message for error in errors))
+
+    def test_render_output_identity_requires_ordered_repository_paths(self):
+        schema = json.loads((ROOT / "schemas/template-descriptor.schema.json").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            _, _, _, descriptor = self.make_release(root, blueprint_path)
+            descriptor["render_contract"]["expected_pdf_path"] = "C:/private/render.pdf"
+            descriptor["render_contract"]["expected_page_image_pattern"] = "evidence/pages/page.png"
+            errors = list(Draft202012Validator(schema).iter_errors(descriptor))
+            rendered = "\n".join(error.message for error in errors)
+            self.assertIn("does not match", rendered)
 
     def test_render_evidence_must_bind_descriptor_contract(self):
         with tempfile.TemporaryDirectory() as temporary:

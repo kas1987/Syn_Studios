@@ -27,11 +27,13 @@
         "evidence_manifest": {"type": ["string", "null"], "minLength": 1},
         "expected_page_count": {"type": ["integer", "null"], "minimum": 1},
         "expected_sheet_names": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "expected_pdf_path": {"type": ["string", "null"], "pattern": "^(?!/)(?![A-Za-z]:).+\\.pdf$"},
+        "expected_page_image_pattern": {"type": ["string", "null"], "pattern": "^(?!/)(?![A-Za-z]:).+\\{page\\}.*\\.png$"},
         "print_policy": {"type": "string", "minLength": 16}
       },
       "allOf": [
-        {"if": {"properties": {"required": {"const": true}}}, "then": {"properties": {"evidence_manifest": {"type": "string"}, "expected_page_count": {"type": "integer"}}}},
-        {"if": {"properties": {"required": {"const": false}}}, "then": {"properties": {"evidence_manifest": {"type": "null"}, "expected_page_count": {"type": "null"}}}}
+        {"if": {"properties": {"required": {"const": true}}}, "then": {"properties": {"evidence_manifest": {"type": "string"}, "expected_page_count": {"type": "integer"}, "expected_pdf_path": {"type": "string"}, "expected_page_image_pattern": {"type": "string"}}}},
+        {"if": {"properties": {"required": {"const": false}}}, "then": {"properties": {"evidence_manifest": {"type": "null"}, "expected_page_count": {"type": "null"}, "expected_pdf_path": {"type": "null"}, "expected_page_image_pattern": {"type": "null"}}}}
       ]
     },
     "populationTable": {
