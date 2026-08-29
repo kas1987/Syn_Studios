@@ -9,6 +9,7 @@ import csv
 import fnmatch
 import hashlib
 import json
+import posixpath
 import re
 import struct
 import sys
@@ -71,6 +72,11 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def canonical_json_sha256(value: object) -> str:
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def display_path(path: Path, root: Path) -> str:
     try:
         return path.relative_to(root).as_posix()
@@ -95,6 +101,19 @@ def schema_findings(data: dict[str, Any], schema: dict[str, Any], label: str) ->
     for error in sorted(Draft202012Validator(schema).iter_errors(data), key=lambda item: [str(part) for part in item.path]):
         location = ".".join(str(part) for part in error.path) or "<root>"
         findings.append(f"{label}:{location}: {error.message}")
+    return findings
+
+
+def validate_descriptor_data(data: dict[str, Any], schema: dict[str, Any], label: str) -> list[str]:
+    findings = schema_findings(data, schema, label)
+    tables = [item for item in as_list(as_dict(data.get("population_contract")).get("tables")) if isinstance(item, dict)]
+    table_names = [item.get("name") for item in tables if isinstance(item.get("name"), str)]
+    if len(table_names) != len(set(table_names)):
+        findings.append(f"{label}:population_contract.tables: table names must be unique")
+    for index, table in enumerate(tables):
+        minimum_rows, maximum_rows = table.get("minimum_rows"), table.get("maximum_rows")
+        if isinstance(minimum_rows, int) and isinstance(maximum_rows, int) and minimum_rows > maximum_rows:
+            findings.append(f"{label}:population_contract.tables.{index}: minimum_rows must not exceed maximum_rows")
     return findings
 
 
@@ -225,8 +244,12 @@ def validate_native_asset_shape(path: Path, artifact_type: object, label: str, f
                 if content_types.tag != f"{{{CONTENT_TYPES_NS}}}Types":
                     findings.append(f"{label}: has an invalid OOXML content-types root")
                 expected_part = "/xl/workbook.xml" if artifact_type == "xlsx" else "/word/document.xml"
+                expected_main_type = "spreadsheetml.sheet.main+xml" if artifact_type == "xlsx" else "wordprocessingml.document.main+xml"
                 overrides = content_types.findall(f"{{{CONTENT_TYPES_NS}}}Override")
-                if not any(item.get("PartName") == expected_part and item.get("ContentType") for item in overrides):
+                defaults = content_types.findall(f"{{{CONTENT_TYPES_NS}}}Default")
+                main_declared = any(item.get("PartName") == expected_part and str(item.get("ContentType", "")).endswith(expected_main_type) for item in overrides)
+                main_declared = main_declared or any(item.get("Extension") == "xml" and str(item.get("ContentType", "")).endswith(expected_main_type) for item in defaults)
+                if not main_declared:
                     findings.append(f"{label}: OOXML content types do not declare the main document part")
                 if artifact_type == "docx":
                     if document.tag != f"{{{WORDPROCESSING_NS}}}document" or document.find(f"{{{WORDPROCESSING_NS}}}body") is None:
@@ -252,7 +275,7 @@ def validate_native_asset_shape(path: Path, artifact_type: object, label: str, f
                         if not sheet.get("name") or relationship is None or not target or not relation_type or not relation_type.endswith("/worksheet"):
                             findings.append(f"{label}: workbook sheet is missing a valid worksheet relationship")
                             continue
-                        target_member = (Path("xl") / target).as_posix()
+                        target_member = target.lstrip("/") if target.startswith("/") else posixpath.normpath(posixpath.join("xl", target))
                         if target_member not in names:
                             findings.append(f"{label}: workbook worksheet relationship target is missing")
                             continue
@@ -593,8 +616,9 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
         descriptor_hash = descriptor_ref.get("sha256")
         descriptor = load_json(descriptor_path, root, findings) if descriptor_path is not None else None
         if descriptor is not None:
-            findings.extend(schema_findings(descriptor, schemas["template-descriptor"], display_path(descriptor_path, root)))
+            findings.extend(validate_descriptor_data(descriptor, schemas["template-descriptor"], display_path(descriptor_path, root)))
             release_descriptors[path.resolve()] = descriptor
+        render_contract_hash = canonical_json_sha256(descriptor.get("render_contract")) if descriptor is not None else None
 
         asset_pairs = bound_pairs(data.get("native_assets"))
         if len(asset_pairs) != len(set(asset_pairs)) or len({path_value for path_value, _ in asset_pairs}) != len(asset_pairs):
@@ -627,8 +651,8 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
             for field, expected in comparisons.items():
                 if descriptor.get(field) != expected:
                     findings.append(f"{label}:descriptor.{field}: does not match release")
-            if as_dict(descriptor.get("lineage")).get("blueprint_id") != blueprint_id:
-                findings.append(f"{label}:descriptor.lineage.blueprint_id: does not match release")
+            if descriptor.get("blueprint_id") != blueprint_id:
+                findings.append(f"{label}:descriptor.blueprint_id: does not match release")
             if descriptor.get("release_status") != data.get("status"):
                 findings.append(f"{label}:descriptor.release_status: does not match release")
             if set(bound_pairs(descriptor.get("native_assets"))) != set(asset_pairs):
@@ -639,10 +663,6 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
             supplied_ids = {item for item in as_list(as_dict(data.get("sanitization")).get("foundation_card_ids")) if isinstance(item, str)}
             if supplied_ids != lineage_ids:
                 findings.append(f"{label}:sanitization.foundation_card_ids: must exactly match blueprint lineage")
-            if descriptor is not None:
-                descriptor_ids = {item for item in as_list(as_dict(descriptor.get("lineage")).get("foundation_ids")) if isinstance(item, str)}
-                if descriptor_ids != lineage_ids:
-                    findings.append(f"{label}:descriptor.lineage.foundation_ids: must exactly match blueprint lineage")
 
         typed: dict[str, tuple[Path | None, dict[str, Any]]] = {}
         typed["sanitization"] = load_typed_evidence(root, as_dict(as_dict(data.get("sanitization")).get("evidence")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "sanitization", f"{label}:sanitization.evidence", findings, evidence_ids, bound_evidence_files)
@@ -668,6 +688,8 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
             expected_procedure = as_dict(blueprint_gates.get(category)).get("procedure")
             if record and as_dict(record.get("procedures")).get(category) != expected_procedure:
                 findings.append(f"{label}:evidence.{category}.procedures: must exactly match the blueprint proof gate")
+            if category == "render" and record and record.get("render_contract_sha256") != render_contract_hash:
+                findings.append(f"{label}:evidence.render.render_contract_sha256: must exactly bind the descriptor render contract")
 
     fixture_pairs: dict[str, list[tuple[str, str]]] = {}
     for path in sorted((root / "examples/blueprints/fixtures").glob("*.json")):
@@ -738,7 +760,7 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
                         findings.append(f"{prefix}.descriptor: must be directly under its template version directory")
                     catalog_version_files[version_root].add(descriptor_path)
                 if descriptor_data is not None:
-                    findings.extend(schema_findings(descriptor_data, schemas["template-descriptor"], display_path(descriptor_path, root)))
+                    findings.extend(validate_descriptor_data(descriptor_data, schemas["template-descriptor"], display_path(descriptor_path, root)))
 
                 catalog_asset_paths: set[str] = set()
                 for asset_index, asset_value in enumerate(as_list(entry.get("native_assets"))):
@@ -761,8 +783,7 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
                             findings.append(f"{prefix}.descriptor.native_assets.{asset_index}.sha256: hash does not match {asset_value}")
                         validate_native_asset_shape(asset_path, as_dict(descriptor_data).get("artifact_type"), f"{prefix}.descriptor.native_assets.{asset_index}", findings)
 
-                lineage = as_dict(as_dict(descriptor_data).get("lineage"))
-                blueprint_id = lineage.get("blueprint_id")
+                blueprint_id = as_dict(descriptor_data).get("blueprint_id")
                 bound_blueprint = blueprints.get(blueprint_id) if isinstance(blueprint_id, str) else None
                 comparisons = {
                     "template_id": as_dict(descriptor_data).get("template_id"), "version": as_dict(descriptor_data).get("version"),
@@ -779,9 +800,6 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
                 if bound_blueprint is None and isinstance(blueprint_id, str):
                     findings.append(f"{prefix}.blueprint_id: unknown blueprint")
                 elif bound_blueprint is not None:
-                    expected_ids = {item.get("card_id") for item in as_list(bound_blueprint[1].get("foundation_lineage")) if isinstance(item, dict)}
-                    if set(as_list(lineage.get("foundation_ids"))) != expected_ids:
-                        findings.append(f"{prefix}.descriptor.lineage.foundation_ids: must exactly match blueprint lineage")
                     if entry.get("artifact_type") != bound_blueprint[1].get("artifact_type"):
                         findings.append(f"{prefix}.artifact_type: does not match blueprint")
                     if entry.get("authority") != as_dict(bound_blueprint[1].get("authority")).get("primary_class"):

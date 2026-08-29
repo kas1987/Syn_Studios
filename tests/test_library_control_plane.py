@@ -10,7 +10,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-from scripts.validate_library import SCHEMA_NAMES, validate_native_asset_shape, validate_proof_artifact, validate_repository
+from scripts.validate_library import SCHEMA_NAMES, canonical_json_sha256, validate_native_asset_shape, validate_proof_artifact, validate_repository
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -69,7 +69,7 @@ class LibraryControlPlaneTests(unittest.TestCase):
             "name": "Internal close and reconciliation workbook",
             "release_status": "released",
             "artifact_type": "xlsx",
-            "lineage": {"blueprint_id": "BP-0001", "foundation_ids": ["FOUND-0001"], "lineage_source": "examples/blueprints/BP-0001.internal-close-workbook.json#foundation_lineage", "method": "Built from scratch using only the reviewed abstract blueprint pattern."},
+            "blueprint_id": "BP-0001",
             "native_assets": [{**asset_binding, "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}],
             "producer": {"role": "senior accountant", "department": "finance"},
             "purpose": "Reconcile authorized source activity to the ledger.",
@@ -77,6 +77,7 @@ class LibraryControlPlaneTests(unittest.TestCase):
             "authority": blueprint["authority"]["primary_class"],
             "slots": ["organization_name"],
             "slot_contract": {"token_format": "{{slot_name}}", "required": True, "instantiated_artifact_policy": "reject unresolved tokens", "value_source": "authorized world facts only"},
+            "render_contract": {"required": True, "evidence_manifest": "evidence/template-releases/REL-0001/render-manifest.json", "expected_page_count": 1, "expected_sheet_names": ["Sheet1"], "print_policy": "Render the bounded worksheet as one readable page."},
             "knowledge_and_authority_constraints": ["Source rows cannot manufacture conclusions."],
             "prohibited_content": ["prior submission facts"],
             "supported_consumers": ["anna-holodeck-bridge"],
@@ -120,6 +121,8 @@ class LibraryControlPlaneTests(unittest.TestCase):
                 record["categories"] = categories
             if procedures is not None:
                 record["procedures"] = procedures
+            if categories is not None and "render" in categories:
+                record["render_contract_sha256"] = canonical_json_sha256(descriptor["render_contract"])
             path = root / "evidence/template-releases/REL-0001" / f"{name}.json"
             write_json(path, record)
             return {"record_path": path.relative_to(root).as_posix(), "record_sha256": file_hash(path)}
@@ -279,6 +282,49 @@ class LibraryControlPlaneTests(unittest.TestCase):
             release_path, release, _, descriptor = self.make_release(root, blueprint_path)
             self.make_catalog(root, release_path, release, descriptor)
             self.assertEqual(validate_repository(root)[0], [])
+
+    def test_descriptor_uses_direct_blueprint_reference_without_lineage_copy(self):
+        schema = json.loads((ROOT / "schemas/template-descriptor.schema.json").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            _, _, _, descriptor = self.make_release(root, blueprint_path)
+            descriptor["lineage"] = {"blueprint_id": "BP-0001", "foundation_ids": ["FOUND-0001"]}
+            errors = list(Draft202012Validator(schema).iter_errors(descriptor))
+            self.assertTrue(any("Additional properties" in error.message and "lineage" in error.message for error in errors))
+            descriptor.pop("lineage")
+            descriptor.pop("blueprint_id")
+            errors = list(Draft202012Validator(schema).iter_errors(descriptor))
+            self.assertTrue(any("blueprint_id" in error.message and "required property" in error.message for error in errors))
+
+    def test_render_evidence_must_bind_descriptor_contract(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, _, descriptor = self.make_release(root, blueprint_path)
+            technical_reference = release["evidence"]["render"]
+            technical_path = root / technical_reference["record_path"]
+            technical = json.loads(technical_path.read_text(encoding="utf-8"))
+            technical["render_contract_sha256"] = "0" * 64
+            write_json(technical_path, technical)
+            technical_hash = file_hash(technical_path)
+            for reference in release["evidence"].values():
+                reference["record_sha256"] = technical_hash
+            write_json(release_path, release)
+            self.make_catalog(root, release_path, release, descriptor)
+            self.assert_finding(root, "must exactly bind the descriptor render contract")
+
+    def test_population_contract_rejects_inverted_capacity(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, descriptor_path, descriptor = self.make_release(root, blueprint_path)
+            descriptor["population_contract"] = {
+                "mode": "bounded_native_tables",
+                "capacity_change_policy": "Rebuild and produce fresh proof before release.",
+                "tables": [{"name": "Rows", "sheet": "Sheet1", "range": "A1:B2", "minimum_rows": 2, "maximum_rows": 1, "columns": {"ID": "nonempty_string"}}],
+            }
+            write_json(descriptor_path, descriptor)
+            release["descriptor"]["sha256"] = file_hash(descriptor_path)
+            write_json(release_path, release)
+            self.assert_finding(root, "minimum_rows must not exceed maximum_rows")
 
     def test_fake_readme_evidence_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
