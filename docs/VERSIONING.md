@@ -39,7 +39,21 @@ are prohibited in manifests and release evidence.
 
 ## Release evidence
 
-The machine-readable release record is authoritative for a published version.
+The machine-readable release record is authoritative for a released version.
 It binds exact native-file hashes, blueprint and foundation lineage, review
 verdicts, and proof artifacts. `CHANGELOG.md` is the human-readable index and
 does not replace that evidence.
+
+Release assembly must finish with the canonical validator and full repository
+suite passing from a fresh clean checkout of the integrated commit. Evidence
+created only in a mutable authoring worktree is insufficient because line-ending
+normalization and other checkout transformations can change proof bytes.
+
+## Repository release and external publication
+
+`released` means the exact version is selectable by repository consumers after
+the local release gate passes. It does not mean a GitHub branch, pull request,
+tag, package, downstream adapter, or installed skill has been published or
+configured. Those actions require their own current-state verification and
+explicit authority; their absence does not rewrite the immutable local release
+record.

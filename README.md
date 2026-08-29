@@ -13,17 +13,30 @@ The repository is not a warehouse of old submissions. Prior artifacts enter firs
 - `SYNTHETIC_DESIGN.md` — the equivalent of a frontend `DESIGN.md`: artifact grammar, complexity model, lifecycle states, integrity rules, and package composition.
 - `skill/SKILL.md` — the agent-facing workflow for designing, auditing, or extracting artifact patterns.
 - `library/foundations/` — reviewed cards pointing to strong prior foundations and known anti-patterns.
-- `library/templates/` — future sanitized, fact-free templates only.
+- `library/catalog.json` and `library/releases/` — exact-version discovery and hash-bound release records.
+- `library/templates/` — sanitized, fact-free native templates; released entries remain immutable.
 - `scripts/inventory_artifacts.py` — read-only structural inventory for DOCX, XLSX, PDF, EML, CSV, and ZIP packages.
-- `schemas/foundation-card.schema.json` — minimum evidence contract for foundation cards.
+- `scripts/validate_library.py` — canonical fail-closed validator for cards, blueprints, templates, evidence, releases, and catalog bindings.
+
+## Current library state
+
+The local catalog contains three independently reviewed `1.0.0` releases:
+
+- `REL-0001` / `TMPL-0001` — an internal close and reconciliation XLSX with typed native tables, formula checks, CSV import, and rebuildable population capacity;
+- `REL-0002` / `TMPL-0002` — a five-page internal controller decision memorandum; and
+- `REL-0003` / `TMPL-0003` — a six-message operational correction thread with CSV and text attachments.
+
+The workbook's scale and variation rules are owned by [skill/references/spreadsheet-data-diversity.md](skill/references/spreadsheet-data-diversity.md). The committed workbook is a compact reference capacity: larger XLSX or CSV populations must rebuild table, formula, check, print, and evidence boundaries and pass fresh validation.
+
+`released` is a repository lifecycle state, not evidence that a GitHub tag, package, pull request, branch-protection rule, ANNA adapter, or local skill installation has been published or applied. Those remain separate external gates.
 
 ## Phases
 
-1. **Foundation inventory:** inspect prior work and classify reusable structures without copying source bytes.
-2. **Archetype system:** define internal/external file profiles and substantive-footprint ranges.
-3. **Sanitized templates:** create fact-free templates with provenance and integrity tests.
-4. **Behavior gates:** test agent use of the design contract across representative requests and models.
-5. **Submission adoption:** apply versioned patterns to new work, beginning with Sub-005 and Sub-007.
+1. **Foundation inventory — complete:** inspect prior work and classify reusable structures without copying source bytes.
+2. **Archetype system — in progress:** the workbook, memo, and email vertical slices are implemented; broader archetype coverage remains.
+3. **Sanitized templates — first release complete:** three fact-free native templates have hash-bound provenance and integrity evidence.
+4. **Behavior gates — in progress:** release-specific Terra and Sol reviews are recorded; broader representative agent trajectories remain future work.
+5. **Submission adoption — not started here:** versioned patterns may be applied prospectively only under each submission's own controls.
 
 ## Validation
 
