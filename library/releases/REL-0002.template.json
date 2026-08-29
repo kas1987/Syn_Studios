@@ -35,7 +35,7 @@
   "reviews": {
     "terra": {
       "record_path": "evidence/template-releases/REL-0002/terra.json",
-      "record_sha256": "e264809d47e085159add04589933d0668f9af98a3f9cc8ae62a649c828cd42ca"
+      "record_sha256": "253dff64b451d7c3cd9b81d72c3da9f5f116dd2f3ebf2e6a62f2b74f140bdaf6"
     },
     "sol": {
       "record_path": "evidence/template-releases/REL-0002/sol.json",

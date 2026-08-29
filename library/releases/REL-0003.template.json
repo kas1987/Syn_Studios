@@ -35,11 +35,11 @@
   "reviews": {
     "terra": {
       "record_path": "evidence/template-releases/REL-0003/terra.json",
-      "record_sha256": "df7521c6d1bba2cda7f3801110440d53deb76b109077c04fbd0440f75283a3c0"
+      "record_sha256": "a5d1f49e9a86ae3f649028aa1f10efb27e6f24fc6b1039b3a2206fb445dcfd1b"
     },
     "sol": {
       "record_path": "evidence/template-releases/REL-0003/sol.json",
-      "record_sha256": "5c2d0a771881d91daad505a898db6168d155842a2fec96a191c7dce4ac71be7c"
+      "record_sha256": "6a7556fb73d743ac85207166abd024fcb35749cfb4f78ef51fb2b256e1286dc6"
     }
   },
   "conductor_approval": {

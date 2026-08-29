@@ -46,7 +46,7 @@
       ],
       "release_record": {
         "path": "library/releases/REL-0001.template.json",
-        "sha256": "ee95a8fc667c0d06f7fbb134fcc4a82aba0ef373d2aaae3393a8a7b433f0ae9e"
+        "sha256": "00bde29ad636f93dcb64a1639d2b6e1047e2709a778a6e5ff1d7d0b5877d33ed"
       }
     },
     {
@@ -82,7 +82,7 @@
       ],
       "release_record": {
         "path": "library/releases/REL-0002.template.json",
-        "sha256": "3f6027d46d7ca962fad8d854ab00dcf78b91ec4f50b1f7157b033c530bee3b34"
+        "sha256": "49c85ce6b15cc60233c4e3be7ef2570ac7a4ead831d28379d4e865925922fcb6"
       }
     },
     {
@@ -117,7 +117,7 @@
       ],
       "release_record": {
         "path": "library/releases/REL-0003.template.json",
-        "sha256": "25ecb15be935c0d06a273e75335801e77b388515482071fac2346a808f07c16a"
+        "sha256": "49bd27244f5880310bca58cc77729b6fd7654ced4882489576bb23f6bc89c6c0"
       }
     }
   ]

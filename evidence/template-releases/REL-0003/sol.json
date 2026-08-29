@@ -23,7 +23,7 @@
   "artifacts": [
     {
       "path": "evidence/template-releases/REL-0003/sol-proof.txt",
-      "sha256": "c4b24a5b728eb919af1762f8146caceed972aa6e191841775c846303153dfb11",
+      "sha256": "28dd1d39c1cdd647694369caf0e9c3f3fa0c8379cf9ff7bbaddc4e8adc1a7498",
       "media_type": "text/plain",
       "category": "core_integrity"
     }

@@ -23,7 +23,7 @@
   "artifacts": [
     {
       "path": "evidence/template-releases/REL-0003/terra-proof.txt",
-      "sha256": "c5afd20966c2e23d4703e00c8e3f13c5702c32183ae261cdcbeebb567d7f0977",
+      "sha256": "4c008f54b5d37876cc327518d7a69e14b078349b22c82cfc70e55906e2efebef",
       "media_type": "text/plain",
       "category": "authority_separation"
     }

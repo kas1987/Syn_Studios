@@ -22,6 +22,10 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertIn("references/spreadsheet-data-diversity.md", text)
         self.assertTrue((ROOT / "skill/references/spreadsheet-data-diversity.md").is_file())
 
+    def test_hash_bound_text_evidence_has_stable_line_endings(self):
+        attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+        self.assertIn("*.txt text eol=lf", attributes.splitlines())
+
     def test_foundation_schema_is_json(self):
         data = json.loads((ROOT / "schemas/foundation-card.schema.json").read_text(encoding="utf-8"))
         self.assertEqual(data["properties"]["card_id"]["pattern"], "^FOUND-[0-9]{4}$")
