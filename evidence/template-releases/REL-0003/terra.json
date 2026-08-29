@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0.0",
+  "record_id": "EVID-TERRA-REL-0003",
+  "record_type": "terra_review",
+  "release_id": "REL-0003",
+  "template_id": "TMPL-0003",
+  "version": "1.0.0",
+  "descriptor_sha256": "850e4665fc96a18aab826296243c6f86e0af3833f1dea60547a62049e2559dfe",
+  "native_asset_sha256s": [
+    "8acaf754686fa23b1bbc59d229094d6444b54224ea9a0dae53c50086b8c5bf99"
+  ],
+  "verdict": "USABILITY_PASS",
+  "actor_id": "terra-usability-reviewer-2026-08-29",
+  "actor": "Terra usability reviewer",
+  "observations": [
+    "Source footprint: the native message contains a six-message quoted operational chain plus a corrected CSV carrier and a plain-text correction note, giving the exchange ordinary workflow depth without unrelated filler.",
+    "Native usability: Python's standard-library MIME parser opened the multipart message, decoded the body, and opened both non-empty attachments with the declared text/csv and text/plain media types.",
+    "Slot usability and consumer fit: address, chronology, message identity, case, attachment, open-item, participant, and correction slots cover both headers and body content, and instantiated artifacts must reject every residual declared or double-brace token.",
+    "Knowledge and authority remain separated across voices: the analyst leaves scope unvalidated, the counterparty confirms receipt but requests clarification, the review owner coordinates a check-in, and the final sender assigns follow-up without approving the treatment.",
+    "Realism is carried by partial replies, quoted context, attachment correction, and role-specific uncertainty rather than fake signatures, scan effects, or invented approval residue.",
+    "Confidence limit: chronology, unique Message-ID values, attachment facts, and participant addresses are intentionally unresolved in the scaffold and must be validated after authorized instantiation."
+  ],
+  "artifacts": [
+    {
+      "path": "evidence/template-releases/REL-0003/terra-proof.txt",
+      "sha256": "4c008f54b5d37876cc327518d7a69e14b078349b22c82cfc70e55906e2efebef",
+      "media_type": "text/plain",
+      "category": "authority_separation"
+    }
+  ],
+  "summary": "USABILITY_PASS: TMPL-0003 is a machine-parseable, role-differentiated correction-thread scaffold with usable embedded carriers and explicit limits on participant knowledge and approval authority. Authorized instantiation must replace and reconcile all header, chronology, attachment, and case slots before use."
+}

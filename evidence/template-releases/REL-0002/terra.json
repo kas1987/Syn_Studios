@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "record_id": "EVID-TERRA-REL-0002",
+  "record_type": "terra_review",
+  "release_id": "REL-0002",
+  "template_id": "TMPL-0002",
+  "version": "1.0.0",
+  "descriptor_sha256": "2d44a466e4c4a5da4bf0203b89ce6af3fcffe8a2e7e61ac6324f12bc7882472b",
+  "native_asset_sha256s": [
+    "1a922e87a29682bdea8a04734084f9f9fe1631bf785139b95b2b0f74c238818f"
+  ],
+  "verdict": "USABILITY_PASS",
+  "actor_id": "terra-usability-reviewer-2026-08-29",
+  "actor": "Terra usability reviewer",
+  "observations": [
+    "Source footprint: the five-page scaffold provides decision framing, a source-and-authority matrix, three issue analyses, alternatives and sensitivity, safeguards, open items, approval locator, and appendix index appropriate to a controller working memorandum.",
+    "Render and readability: fresh LibreOffice conversion preserved the native hash and produced five portrait pages; visual inspection of every release-owned page found stable tables, headings, wrapping, headers, and footers with no clipping or overlap.",
+    "Slot usability and consumer fit: declared tokens cover the full evidence-to-conclusion path and make missing content conspicuous, while the descriptor requires consumers to reject any instantiated document that retains a declared or double-brace token.",
+    "Authority separation: the body calls itself supporting analysis, the status and every footer state DRAFT - NOT APPROVED, open questions remain distinct from conclusions, and the approval field can record only an existing locator or that approval is not yet obtained.",
+    "Human-realism fit: the clean reviewed-working-copy layout is restrained rather than theatrically distressed; authorized instances can add role-appropriate review residue, but populated pagination and citation evidence must be generated anew.",
+    "Confidence limit: usability was assessed on the fact-free scaffold and its exact render; substantive citation accuracy and page flow remain instance-specific gates after authorized slot population."
+  ],
+  "artifacts": [
+    {
+      "path": "evidence/template-releases/REL-0002/render/internal-controller-memo.pdf",
+      "sha256": "7ab74990636dc585a29f83c681181c8eacf6b1a24327a40404209b4ce861049c",
+      "media_type": "application/pdf",
+      "category": "render"
+    },
+    {
+      "path": "evidence/template-releases/REL-0002/terra-proof.txt",
+      "sha256": "8da97a033ed916e30f0ae6d216a1b9987559f42ae1a8143197a7e205353c01db",
+      "media_type": "text/plain",
+      "category": "authority_separation"
+    }
+  ],
+  "summary": "USABILITY_PASS: TMPL-0002 is a legible, appropriately structured internal decision-memo scaffold whose slot coverage and repeated non-approval signals make it suitable for controlled ANNA, Holodeck, and realism workflows. Each populated instance still needs fresh citation, leakage, authority, and pagination review."
+}
