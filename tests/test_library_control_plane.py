@@ -1,14 +1,16 @@
 import hashlib
 import json
+import re
 import shutil
 import tempfile
 import unittest
+import unicodedata
 import zipfile
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-from scripts.validate_library import SCHEMA_NAMES, validate_repository
+from scripts.validate_library import SCHEMA_NAMES, validate_native_asset_shape, validate_proof_artifact, validate_repository
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,8 +57,10 @@ class LibraryControlPlaneTests(unittest.TestCase):
         asset = root / "library/templates/TMPL-0001/1.0.0/workbook.xlsx"
         asset.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(asset, "w") as package:
-            package.writestr("[Content_Types].xml", "<Types/>")
-            package.writestr("xl/workbook.xml", "<workbook/>")
+            package.writestr("[Content_Types].xml", '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/></Types>')
+            package.writestr("xl/workbook.xml", '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>')
+            package.writestr("xl/_rels/workbook.xml.rels", '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>')
+            package.writestr("xl/worksheets/sheet1.xml", '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>')
         asset_binding = {"path": asset.relative_to(root).as_posix(), "sha256": file_hash(asset)}
         descriptor = {
             "schema_version": "1.0.0",
@@ -90,7 +94,11 @@ class LibraryControlPlaneTests(unittest.TestCase):
             for category in artifact_categories:
                 proof = root / "evidence/template-releases/REL-0001/proofs" / f"{name}-{category}.txt"
                 proof.parent.mkdir(parents=True, exist_ok=True)
-                proof.write_text(f"Observed output for {name} {category}.\n", encoding="utf-8")
+                proof.write_text(
+                    f"release_id=REL-0001\ntemplate_id=TMPL-0001\ncategory={category}\n"
+                    f"native_asset_sha256={asset_binding['sha256']}\nobservation=Validated {name} output.\n",
+                    encoding="utf-8",
+                )
                 artifacts.append({"path": proof.relative_to(root).as_posix(), "sha256": file_hash(proof), "media_type": "text/plain", "category": category})
             record = {
                 "schema_version": "1.0.0",
@@ -166,6 +174,35 @@ class LibraryControlPlaneTests(unittest.TestCase):
         path = root / "library/catalog.json"
         write_json(path, catalog)
         return path, catalog
+
+    def rebind_native_asset(self, root, release_path, release, descriptor_path, descriptor):
+        asset_path = root / release["native_assets"][0]["path"]
+        asset_hash = file_hash(asset_path)
+        release["native_assets"][0]["sha256"] = asset_hash
+        descriptor["native_assets"][0]["sha256"] = asset_hash
+        write_json(descriptor_path, descriptor)
+        descriptor_hash = file_hash(descriptor_path)
+        release["descriptor"]["sha256"] = descriptor_hash
+        evidence_references = [release["sanitization"]["evidence"], release["reviews"]["terra"], release["reviews"]["sol"], release["conductor_approval"], *release["evidence"].values()]
+        seen_paths = set()
+        for reference in evidence_references:
+            evidence_path = root / reference["record_path"]
+            if evidence_path in seen_paths:
+                continue
+            seen_paths.add(evidence_path)
+            record = json.loads(evidence_path.read_text(encoding="utf-8"))
+            record["descriptor_sha256"] = descriptor_hash
+            record["native_asset_sha256s"] = [asset_hash]
+            for artifact in record["artifacts"]:
+                proof_path = root / artifact["path"]
+                proof_text = proof_path.read_text(encoding="utf-8")
+                proof_text = re.sub(r"native_asset_sha256=[a-f0-9]{64}", f"native_asset_sha256={asset_hash}", proof_text)
+                proof_path.write_text(proof_text, encoding="utf-8")
+                artifact["sha256"] = file_hash(proof_path)
+            write_json(evidence_path, record)
+        for reference in evidence_references:
+            reference["record_sha256"] = file_hash(root / reference["record_path"])
+        write_json(release_path, release)
 
     def test_updated_repository_records_and_fixtures_pass(self):
         findings, count = validate_repository(ROOT)
@@ -357,6 +394,7 @@ class LibraryControlPlaneTests(unittest.TestCase):
             write_json(descriptor_path, descriptor)
             catalog_path, catalog = self.make_catalog(root, release_path, release, descriptor)
             release_path.unlink()
+            shutil.rmtree(root / "evidence/template-releases/REL-0001")
             entry = catalog["templates"][0]
             entry["release_status"] = "candidate"
             entry.pop("release_record")
@@ -431,6 +469,114 @@ class LibraryControlPlaneTests(unittest.TestCase):
             write_json(release_path, release)
             self.make_catalog(root, release_path, release, descriptor)
             self.assert_finding(root, "is not a valid xlsx OOXML package")
+
+    def test_hash_consistent_malformed_ooxml_members_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, descriptor_path, descriptor = self.make_release(root, blueprint_path)
+            asset_path = root / release["native_assets"][0]["path"]
+            with zipfile.ZipFile(asset_path, "w") as package:
+                package.writestr("[Content_Types].xml", "not xml")
+                package.writestr("xl/workbook.xml", "not xml")
+            self.rebind_native_asset(root, release_path, release, descriptor_path, descriptor)
+            self.make_catalog(root, release_path, release, descriptor)
+            self.assert_finding(root, "contains malformed xlsx OOXML")
+
+    def test_docx_impostor_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "impostor.docx"
+            with zipfile.ZipFile(path, "w") as package:
+                package.writestr("[Content_Types].xml", '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>')
+                package.writestr("word/document.xml", "<document><body/></document>")
+            findings = []
+            validate_native_asset_shape(path, "docx", "impostor", findings)
+            self.assertIn("invalid WordprocessingML", "\n".join(findings))
+
+    def test_eml_impostor_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "impostor.eml"
+            path.write_bytes(b"From: sender@example.test\r\nSubject: Incomplete\r\n\r\n")
+            findings = []
+            validate_native_asset_shape(path, "eml", "impostor", findings)
+            self.assertIn("EML must have valid", "\n".join(findings))
+
+    def test_binary_render_impostors_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            png = root / "render.png"
+            pdf = root / "render.pdf"
+            png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 120)
+            pdf.write_bytes(b"%PDF-1.7\n" + b"x" * 120 + b"\n%%EOF")
+            release = {"release_id": "REL-0001", "template_id": "TMPL-0001"}
+            findings = []
+            validate_proof_artifact(png, {"media_type": "image/png", "category": "render"}, release, set(), "png", findings)
+            validate_proof_artifact(pdf, {"media_type": "application/pdf", "category": "render"}, release, set(), "pdf", findings)
+            rendered = "\n".join(findings)
+            self.assertIn("PNG proof", rendered)
+            self.assertIn("PDF lacks meaningful", rendered)
+
+    def test_one_byte_generic_evidence_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, _, descriptor = self.make_release(root, blueprint_path)
+            technical_reference = release["evidence"]["render"]
+            technical_path = root / technical_reference["record_path"]
+            technical = json.loads(technical_path.read_text(encoding="utf-8"))
+            proof_path = root / technical["artifacts"][0]["path"]
+            proof_path.write_bytes(b"x")
+            technical["artifacts"][0]["sha256"] = file_hash(proof_path)
+            write_json(technical_path, technical)
+            technical_hash = file_hash(technical_path)
+            for reference in release["evidence"].values():
+                reference["record_sha256"] = technical_hash
+            write_json(release_path, release)
+            self.make_catalog(root, release_path, release, descriptor)
+            self.assert_finding(root, "proof output is too small to be meaningful")
+
+    def test_unbound_generic_text_evidence_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, _, descriptor = self.make_release(root, blueprint_path)
+            technical_reference = release["evidence"]["render"]
+            technical_path = root / technical_reference["record_path"]
+            technical = json.loads(technical_path.read_text(encoding="utf-8"))
+            proof_path = root / technical["artifacts"][0]["path"]
+            proof_path.write_text("Generic evidence output with no release, template, category, or asset binding. " * 3, encoding="utf-8")
+            technical["artifacts"][0]["sha256"] = file_hash(proof_path)
+            write_json(technical_path, technical)
+            technical_hash = file_hash(technical_path)
+            for reference in release["evidence"].values():
+                reference["record_sha256"] = technical_hash
+            write_json(release_path, release)
+            self.make_catalog(root, release_path, release, descriptor)
+            self.assert_finding(root, "text proof does not bind REL-0001")
+
+    def test_unicode_equivalent_reviewer_aliases_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, _, descriptor = self.make_release(root, blueprint_path)
+            aliases = {"terra": "r\u00e9viewer:same", "sol": "re\u0301viewer:same"}
+            self.assertEqual(unicodedata.normalize("NFKC", aliases["terra"]), unicodedata.normalize("NFKC", aliases["sol"]))
+            for lane, actor_id in aliases.items():
+                reference = release["reviews"][lane]
+                record_path = root / reference["record_path"]
+                record = json.loads(record_path.read_text(encoding="utf-8"))
+                record["actor_id"] = actor_id
+                write_json(record_path, record)
+                reference["record_sha256"] = file_hash(record_path)
+            write_json(release_path, release)
+            self.make_catalog(root, release_path, release, descriptor)
+            self.assert_finding(root, "identities must be independent")
+
+    def test_unexpected_release_and_evidence_json_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, _ = self.make_minimal_root(temporary)
+            write_json(root / "library/releases/release.json", {})
+            write_json(root / "evidence/template-releases/REL-9999/shadow.json", {})
+            findings, _ = validate_repository(root)
+            rendered = "\n".join(findings)
+            self.assertIn("unexpected release JSON filename or location", rendered)
+            self.assertIn("evidence JSON is not bound by a release record", rendered)
 
     def test_evidence_record_ids_are_unique_across_files(self):
         with tempfile.TemporaryDirectory() as temporary:

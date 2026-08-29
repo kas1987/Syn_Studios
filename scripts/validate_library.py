@@ -5,13 +5,22 @@ from __future__ import annotations
 
 import argparse
 import copy
+import csv
+import fnmatch
 import hashlib
 import json
 import re
+import struct
 import sys
+import unicodedata
 import zipfile
+import zlib
+from email import policy
+from email.parser import BytesParser
+from io import StringIO
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree
 
 try:
     from jsonschema import Draft202012Validator
@@ -31,6 +40,19 @@ SCHEMA_NAMES = (
 LAYER_ORDER = {name: index for index, name in enumerate(("core", "operational_depth", "adjacent_context", "working_residue", "handling_history"))}
 PROOF_CATEGORIES = {"core_integrity", "render", "metadata", "computational", "provenance", "leakage", "authority_separation", "anti_filler"}
 EVIDENCE_ROOT = Path("evidence/template-releases")
+CONTENT_TYPES_NS = "http://schemas.openxmlformats.org/package/2006/content-types"
+SPREADSHEET_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+WORDPROCESSING_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+MEDIA_SUFFIXES = {
+    "text/plain": {".txt"},
+    "text/csv": {".csv"},
+    "application/json": {".json"},
+    "application/x-ndjson": {".jsonl", ".ndjson"},
+    "image/png": {".png"},
+    "application/pdf": {".pdf"},
+}
 
 
 def as_dict(value: object) -> dict[str, Any]:
@@ -140,24 +162,198 @@ def bound_pairs(value: object) -> list[tuple[str, str]]:
     return pairs
 
 
+def validate_pdf_shape(payload: bytes, label: str, findings: list[str]) -> None:
+    if len(payload) < 128 or not payload.startswith(b"%PDF-") or b"%%EOF" not in payload[-1024:]:
+        findings.append(f"{label}: is not a structurally valid PDF")
+        return
+    media_box = re.search(rb"/MediaBox\s*\[\s*0(?:\.0+)?\s+0(?:\.0+)?\s+([0-9]+(?:\.[0-9]+)?)\s+([0-9]+(?:\.[0-9]+)?)\s*\]", payload)
+    if media_box is None or float(media_box.group(1)) < 16 or float(media_box.group(2)) < 16 or b"stream" not in payload or re.search(rb"/Type\s*/Page\b", payload) is None:
+        findings.append(f"{label}: PDF lacks meaningful page dimensions or content")
+
+
+def validate_png_shape(payload: bytes, label: str, findings: list[str]) -> None:
+    if not payload.startswith(b"\x89PNG\r\n\x1a\n"):
+        findings.append(f"{label}: declared PNG proof has an invalid signature")
+        return
+    offset = 8
+    chunks: list[tuple[bytes, bytes]] = []
+    while offset + 12 <= len(payload):
+        length = struct.unpack(">I", payload[offset:offset + 4])[0]
+        end = offset + 12 + length
+        if end > len(payload):
+            findings.append(f"{label}: declared PNG proof has a truncated chunk")
+            return
+        chunk_type = payload[offset + 4:offset + 8]
+        chunk_data = payload[offset + 8:offset + 8 + length]
+        expected_crc = struct.unpack(">I", payload[offset + 8 + length:end])[0]
+        if zlib.crc32(chunk_type + chunk_data) & 0xFFFFFFFF != expected_crc:
+            findings.append(f"{label}: declared PNG proof has an invalid chunk checksum")
+            return
+        chunks.append((chunk_type, chunk_data))
+        offset = end
+        if chunk_type == b"IEND":
+            break
+    if offset != len(payload) or not chunks or chunks[0][0] != b"IHDR" or len(chunks[0][1]) != 13 or chunks[-1] != (b"IEND", b"") or not any(kind == b"IDAT" and data for kind, data in chunks):
+        findings.append(f"{label}: declared PNG proof is missing required image chunks")
+        return
+    width, height = struct.unpack(">II", chunks[0][1][:8])
+    if width < 16 or height < 16:
+        findings.append(f"{label}: PNG proof dimensions are not meaningful")
+
+
 def validate_native_asset_shape(path: Path, artifact_type: object, label: str, findings: list[str]) -> None:
-    """Reject obvious extension-only impostors before release evidence is considered."""
+    """Reject extension-only impostors before release evidence is considered."""
+    expected_suffixes = {"xlsx": ".xlsx", "docx": ".docx", "pdf": ".pdf", "eml": ".eml", "csv": ".csv"}
+    if artifact_type == "mixed_package":
+        artifact_type = {suffix: kind for kind, suffix in expected_suffixes.items()}.get(path.suffix.casefold())
+        if artifact_type is None:
+            findings.append(f"{label}: mixed-package asset has an unsupported native suffix")
+            return
+    expected_suffix = expected_suffixes.get(artifact_type)
+    if expected_suffix is not None and path.suffix.casefold() != expected_suffix:
+        findings.append(f"{label}: {artifact_type} asset must use the {expected_suffix} suffix")
     if artifact_type in {"xlsx", "docx"}:
         required_member = "xl/workbook.xml" if artifact_type == "xlsx" else "word/document.xml"
         try:
             with zipfile.ZipFile(path) as package:
                 names = set(package.namelist())
+                if "[Content_Types].xml" not in names or required_member not in names:
+                    findings.append(f"{label}: is missing required {artifact_type} package members")
+                    return
+                content_types = ElementTree.fromstring(package.read("[Content_Types].xml"))
+                document = ElementTree.fromstring(package.read(required_member))
+                if content_types.tag != f"{{{CONTENT_TYPES_NS}}}Types":
+                    findings.append(f"{label}: has an invalid OOXML content-types root")
+                expected_part = "/xl/workbook.xml" if artifact_type == "xlsx" else "/word/document.xml"
+                overrides = content_types.findall(f"{{{CONTENT_TYPES_NS}}}Override")
+                if not any(item.get("PartName") == expected_part and item.get("ContentType") for item in overrides):
+                    findings.append(f"{label}: OOXML content types do not declare the main document part")
+                if artifact_type == "docx":
+                    if document.tag != f"{{{WORDPROCESSING_NS}}}document" or document.find(f"{{{WORDPROCESSING_NS}}}body") is None:
+                        findings.append(f"{label}: has an invalid WordprocessingML document root or body")
+                else:
+                    relationship_member = "xl/_rels/workbook.xml.rels"
+                    if document.tag != f"{{{SPREADSHEET_NS}}}workbook":
+                        findings.append(f"{label}: has an invalid SpreadsheetML workbook root")
+                    sheets = document.findall(f"{{{SPREADSHEET_NS}}}sheets/{{{SPREADSHEET_NS}}}sheet")
+                    if not sheets or relationship_member not in names:
+                        findings.append(f"{label}: workbook must bind at least one worksheet relationship")
+                        return
+                    relationships = ElementTree.fromstring(package.read(relationship_member))
+                    if relationships.tag != f"{{{PACKAGE_REL_NS}}}Relationships":
+                        findings.append(f"{label}: has an invalid workbook relationships root")
+                        return
+                    by_id = {item.get("Id"): item for item in relationships.findall(f"{{{PACKAGE_REL_NS}}}Relationship") if item.get("Id")}
+                    for sheet in sheets:
+                        relationship_id = sheet.get(f"{{{OFFICE_REL_NS}}}id")
+                        relationship = by_id.get(relationship_id)
+                        target = relationship.get("Target") if relationship is not None else None
+                        relation_type = relationship.get("Type") if relationship is not None else None
+                        if not sheet.get("name") or relationship is None or not target or not relation_type or not relation_type.endswith("/worksheet"):
+                            findings.append(f"{label}: workbook sheet is missing a valid worksheet relationship")
+                            continue
+                        target_member = (Path("xl") / target).as_posix()
+                        if target_member not in names:
+                            findings.append(f"{label}: workbook worksheet relationship target is missing")
+                            continue
+                        worksheet = ElementTree.fromstring(package.read(target_member))
+                        if worksheet.tag != f"{{{SPREADSHEET_NS}}}worksheet":
+                            findings.append(f"{label}: worksheet relationship target has an invalid root")
         except (OSError, zipfile.BadZipFile):
             findings.append(f"{label}: is not a valid {artifact_type} OOXML package")
-            return
-        if "[Content_Types].xml" not in names or required_member not in names:
-            findings.append(f"{label}: is missing required {artifact_type} package members")
+        except (ElementTree.ParseError, KeyError) as error:
+            findings.append(f"{label}: contains malformed {artifact_type} OOXML: {error}")
     elif artifact_type == "pdf":
         try:
-            if not path.read_bytes().startswith(b"%PDF-"):
-                findings.append(f"{label}: is not a valid PDF header")
+            validate_pdf_shape(path.read_bytes(), label, findings)
         except OSError as error:
             findings.append(f"{label}: cannot inspect native asset: {error}")
+    elif artifact_type == "csv":
+        try:
+            rows = list(csv.reader(StringIO(path.read_text(encoding="utf-8"))))
+        except (OSError, UnicodeError, csv.Error) as error:
+            findings.append(f"{label}: is not valid UTF-8 CSV: {error}")
+            return
+        if len(rows) < 2 or len(rows[0]) < 2 or any(len(row) != len(rows[0]) for row in rows):
+            findings.append(f"{label}: CSV must contain a consistent header and data row")
+    elif artifact_type == "eml":
+        try:
+            message = BytesParser(policy=policy.default).parsebytes(path.read_bytes())
+        except (OSError, ValueError) as error:
+            findings.append(f"{label}: is not a parseable EML message: {error}")
+            return
+        required_headers = ("From", "To", "Date", "Subject")
+        body = message.get_body(preferencelist=("plain", "html")) if message.is_multipart() else message
+        content = body.get_content() if body is not None else ""
+        if message.defects or any(not message.get(header) for header in required_headers) or not str(content).strip():
+            findings.append(f"{label}: EML must have valid From, To, Date, Subject, MIME structure, and body")
+
+
+def validate_proof_artifact(
+    path: Path,
+    artifact: dict[str, Any],
+    release: dict[str, Any],
+    asset_hashes: set[str],
+    label: str,
+    findings: list[str],
+) -> None:
+    media_type = artifact.get("media_type")
+    suffix = path.suffix.casefold()
+    allowed_suffixes = MEDIA_SUFFIXES.get(media_type)
+    if allowed_suffixes is None:
+        findings.append(f"{label}.media_type: unsupported proof media type {media_type}")
+        return
+    if suffix not in allowed_suffixes:
+        findings.append(f"{label}.media_type: does not match file suffix {suffix or '<none>'}")
+    try:
+        payload = path.read_bytes()
+    except OSError as error:
+        findings.append(f"{label}.path: cannot inspect proof output: {error}")
+        return
+    if len(payload) < 64:
+        findings.append(f"{label}.path: proof output is too small to be meaningful")
+        return
+
+    searchable = ""
+    if media_type in {"text/plain", "text/csv", "application/json", "application/x-ndjson"}:
+        try:
+            searchable = payload.decode("utf-8")
+        except UnicodeDecodeError as error:
+            findings.append(f"{label}.path: declared text proof is not UTF-8: {error}")
+            return
+        if media_type == "application/json":
+            try:
+                parsed = json.loads(searchable)
+            except json.JSONDecodeError as error:
+                findings.append(f"{label}.path: declared JSON proof is malformed: {error}")
+                return
+            if not isinstance(parsed, dict):
+                findings.append(f"{label}.path: JSON proof must be an object")
+        elif media_type == "application/x-ndjson":
+            try:
+                rows = [json.loads(line) for line in searchable.splitlines() if line.strip()]
+            except json.JSONDecodeError as error:
+                findings.append(f"{label}.path: declared NDJSON proof is malformed: {error}")
+                return
+            if not rows or any(not isinstance(row, dict) for row in rows):
+                findings.append(f"{label}.path: NDJSON proof must contain objects")
+        elif media_type == "text/csv":
+            rows = list(csv.reader(StringIO(searchable)))
+            if len(rows) < 2 or len(rows[0]) < 2:
+                findings.append(f"{label}.path: CSV proof must contain a header and data row")
+        if not searchable.strip():
+            findings.append(f"{label}.path: text proof must not be blank")
+            return
+        required_tokens = (release.get("release_id"), release.get("template_id"), artifact.get("category"))
+        for token in required_tokens:
+            if isinstance(token, str) and token not in searchable:
+                findings.append(f"{label}.path: text proof does not bind {token}")
+        if asset_hashes and not any(hash_value in searchable for hash_value in asset_hashes):
+            findings.append(f"{label}.path: text proof does not bind a native asset hash")
+    elif media_type == "image/png":
+        validate_png_shape(payload, f"{label}.path", findings)
+    elif media_type == "application/pdf":
+        validate_pdf_shape(payload, f"{label}.path", findings)
 
 
 def apply_fixture(base: dict[str, Any], fixture: dict[str, Any]) -> dict[str, Any]:
@@ -195,6 +391,7 @@ def load_typed_evidence(
     label: str,
     findings: list[str],
     evidence_ids: dict[str, Path],
+    bound_evidence_files: set[Path],
     category: str | None = None,
 ) -> tuple[Path | None, dict[str, Any]]:
     release_id = release.get("release_id")
@@ -202,6 +399,7 @@ def load_typed_evidence(
     path = check_bound_file(root, reference, "record_path", "record_sha256", label, findings, release_evidence_root)
     if path is None:
         return None, {}
+    bound_evidence_files.add(path)
     record = load_json(path, root, findings)
     if record is None:
         return path, {}
@@ -238,13 +436,10 @@ def load_typed_evidence(
             continue
         artifact_path = check_bound_file(root, artifact, "path", "sha256", f"{label}:artifacts.{index}", findings, release_evidence_root)
         if artifact_path is not None:
+            bound_evidence_files.add(artifact_path)
             if artifact_path == path:
                 findings.append(f"{label}:artifacts.{index}.path: evidence record cannot cite itself as proof output")
-            try:
-                if artifact_path.stat().st_size == 0:
-                    findings.append(f"{label}:artifacts.{index}.path: proof output must not be empty")
-            except OSError:
-                pass
+            validate_proof_artifact(artifact_path, artifact, release, asset_hashes, f"{label}:artifacts.{index}", findings)
         artifact_category = artifact.get("category")
         if isinstance(artifact_category, str):
             artifact_categories.add(artifact_category)
@@ -271,6 +466,7 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
     release_descriptors: dict[Path, dict[str, Any]] = {}
     release_version_files: dict[Path, set[Path]] = {}
     evidence_ids: dict[str, Path] = {}
+    bound_evidence_files: set[Path] = set()
     count = 0
 
     for path in sorted((root / "library/foundations").glob("FOUND-*.json")):
@@ -351,7 +547,15 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
         if len(identifiers) != 1:
             findings.append(f"examples/blueprints:{archetype}: requires exactly one production blueprint; found {len(identifiers)}")
 
-    for path in sorted((root / "library/releases").glob("REL-*.json")):
+    release_root = root / "library/releases"
+    release_paths: list[Path] = []
+    if release_root.is_dir():
+        for path in sorted((item for item in release_root.rglob("*") if item.is_file() and item.suffix.casefold() == ".json"), key=str):
+            if path.parent != release_root or not fnmatch.fnmatchcase(path.name, "REL-*.json"):
+                findings.append(f"{display_path(path, root)}:<root>: unexpected release JSON filename or location")
+                continue
+            release_paths.append(path)
+    for path in release_paths:
         data = load_json(path, root, findings)
         if data is None:
             continue
@@ -441,23 +645,23 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
                     findings.append(f"{label}:descriptor.lineage.foundation_ids: must exactly match blueprint lineage")
 
         typed: dict[str, tuple[Path | None, dict[str, Any]]] = {}
-        typed["sanitization"] = load_typed_evidence(root, as_dict(as_dict(data.get("sanitization")).get("evidence")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "sanitization", f"{label}:sanitization.evidence", findings, evidence_ids)
+        typed["sanitization"] = load_typed_evidence(root, as_dict(as_dict(data.get("sanitization")).get("evidence")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "sanitization", f"{label}:sanitization.evidence", findings, evidence_ids, bound_evidence_files)
         reviews = as_dict(data.get("reviews"))
-        typed["terra"] = load_typed_evidence(root, as_dict(reviews.get("terra")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "terra_review", f"{label}:reviews.terra", findings, evidence_ids)
-        typed["sol"] = load_typed_evidence(root, as_dict(reviews.get("sol")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "sol_review", f"{label}:reviews.sol", findings, evidence_ids)
-        typed["conductor"] = load_typed_evidence(root, as_dict(data.get("conductor_approval")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "conductor_approval", f"{label}:conductor_approval", findings, evidence_ids)
+        typed["terra"] = load_typed_evidence(root, as_dict(reviews.get("terra")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "terra_review", f"{label}:reviews.terra", findings, evidence_ids, bound_evidence_files)
+        typed["sol"] = load_typed_evidence(root, as_dict(reviews.get("sol")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "sol_review", f"{label}:reviews.sol", findings, evidence_ids, bound_evidence_files)
+        typed["conductor"] = load_typed_evidence(root, as_dict(data.get("conductor_approval")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "conductor_approval", f"{label}:conductor_approval", findings, evidence_ids, bound_evidence_files)
         review_paths = [typed[name][0] for name in ("terra", "sol", "conductor") if typed[name][0] is not None]
         if len(review_paths) != len(set(review_paths)):
             findings.append(f"{label}:reviews: Terra, Sol, and conductor record paths must be distinct")
         actor_ids = [typed[name][1].get("actor_id") for name in ("terra", "sol", "conductor") if isinstance(typed[name][1].get("actor_id"), str)]
-        normalized_actor_ids = [actor_id.strip().casefold() for actor_id in actor_ids]
+        normalized_actor_ids = [unicodedata.normalize("NFKC", actor_id).strip().casefold() for actor_id in actor_ids]
         if len(actor_ids) != 3 or len(normalized_actor_ids) != len(set(normalized_actor_ids)):
             findings.append(f"{label}:reviews: Terra, Sol, and conductor identities must be independent")
 
         blueprint_gates = {gate.get("category"): gate for gate in as_list(blueprint_entry[1].get("proof_gates")) if blueprint_entry and isinstance(gate, dict) and isinstance(gate.get("category"), str)} if blueprint_entry else {}
         for category in PROOF_CATEGORIES:
             reference = as_dict(as_dict(data.get("evidence")).get(category))
-            _, record = load_typed_evidence(root, reference, schemas["release-evidence"], data, descriptor_hash, asset_hashes, "technical_validation", f"{label}:evidence.{category}", findings, evidence_ids, category)
+            _, record = load_typed_evidence(root, reference, schemas["release-evidence"], data, descriptor_hash, asset_hashes, "technical_validation", f"{label}:evidence.{category}", findings, evidence_ids, bound_evidence_files, category)
             expected_verdict = "VALIDATION_PASS" if as_dict(blueprint_gates.get(category)).get("applicable") is True else "VALIDATION_NOT_APPLICABLE"
             if record and record.get("verdict") != expected_verdict:
                 findings.append(f"{label}:evidence.{category}.verdict: must align with blueprint applicability")
@@ -604,6 +808,12 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
         uses = release_catalog_counts.get(release_path.resolve(), 0)
         if uses != 1:
             findings.append(f"{display_path(release_path, root)}: release must appear exactly once in library/catalog.json; found {uses}")
+
+    evidence_root = root / EVIDENCE_ROOT
+    if evidence_root.is_dir():
+        for path in sorted((item.resolve() for item in evidence_root.rglob("*") if item.is_file() and item.suffix.casefold() == ".json"), key=str):
+            if path not in bound_evidence_files:
+                findings.append(f"{display_path(path, root)}:<root>: evidence JSON is not bound by a release record")
 
     templates_root = root / "library/templates"
     expected_template_files: set[Path] = set()
