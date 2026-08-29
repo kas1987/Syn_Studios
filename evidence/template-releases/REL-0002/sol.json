@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0.0",
+  "record_id": "EVID-REL-0002-SOL",
+  "record_type": "sol_review",
+  "release_id": "REL-0002",
+  "template_id": "TMPL-0002",
+  "version": "1.0.0",
+  "descriptor_sha256": "2d44a466e4c4a5da4bf0203b89ce6af3fcffe8a2e7e61ac6324f12bc7882472b",
+  "native_asset_sha256s": [
+    "1a922e87a29682bdea8a04734084f9f9fe1631bf785139b95b2b0f74c238818f"
+  ],
+  "verdict": "INTEGRITY_PASS",
+  "actor_id": "sol-integrity-reviewer-2026-08-29",
+  "actor": "Sol integrity reviewer",
+  "observations": [
+    "The descriptor binds the exact DOCX hash, supporting authority, declared slots, prohibited content, and a release-owned five-page render contract without duplicating blueprint lineage.",
+    "The OOXML package opens cleanly with explicit page geometry, styles, table grids, header and footer content, four page breaks, minimal core and extended properties, and no external-link or fabricated-signature evidence.",
+    "All five release-owned page images were visually inspected and show readable tables and text without clipping, overlap, decorative residue, or pagination drift; the PDF and ordered image hashes match the manifest.",
+    "DRAFT — NOT APPROVED remains visible, governing citations are scoped as required inputs, open questions remain non-authoritative, and the memo expressly cannot manufacture approval, execution, or an external party position.",
+    "Decompressed document text and metadata contain no prior-submission facts, real identities, repository or generator residue, grading language, hidden answers, stale authorship, signatures, or approval claims.",
+    "The five-page footprint is source-owned by decision summary, governing evidence, issue analysis, alternatives and sensitivity, actions, open items, and appendices rather than arbitrary filler."
+  ],
+  "artifacts": [
+    {
+      "path": "evidence/template-releases/REL-0002/render/internal-controller-memo.pdf",
+      "sha256": "7ab74990636dc585a29f83c681181c8eacf6b1a24327a40404209b4ce861049c",
+      "media_type": "application/pdf",
+      "category": "render"
+    }
+  ],
+  "summary": "INTEGRITY_PASS for the exact TMPL-0002 descriptor and DOCX bytes: native structure, five-page release render, metadata hygiene, authority separation, leakage resistance, and business-owned substantive footprint were independently verified."
+}

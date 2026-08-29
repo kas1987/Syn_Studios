@@ -1,0 +1,5 @@
+REL-0003
+TMPL-0003
+core_integrity
+native_sha256=8acaf754686fa23b1bbc59d229094d6444b54224ea9a0dae53c50086b8c5bf99
+The RFC 822 message parses without defects as multipart/mixed, contains one six-message plain-text chain and two nonempty openable attachments (text/csv and text/plain), preserves role and authority boundaries, and contains no prior-submission, repository, generator, grading, real-identity, approval, or signature residue.
