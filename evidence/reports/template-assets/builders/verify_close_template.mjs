@@ -25,7 +25,7 @@ const errors = await workbook.inspect({
 });
 const checks = await workbook.inspect({
   kind: "table",
-  range: "Checks!A1:D14",
+  range: "Checks!A1:D16",
   include: "values,formulas",
   tableMaxRows: 20,
   tableMaxCols: 8,

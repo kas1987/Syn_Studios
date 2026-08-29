@@ -3,11 +3,11 @@
   "templates": {
     "TMPL-0001": {
       "asset_path": "library/templates/TMPL-0001/1.0.0/internal-close-reconciliation.xlsx",
-      "asset_sha256": "26f97baff5b2ff007d18f3b47a11736f9362a91462ce256a7126a82f477a4fa5",
+      "asset_sha256": "90fa62db132fb965aba7fbdf248f1e831450e38a33fc3d52f9670858fa47e08d",
       "page_count": 8,
       "sheet_names": ["Close_Control", "Source_Data", "Account_Map", "Reconciliation", "Proposed_Entries", "Prior_Period", "Exceptions", "Checks"],
       "rendered_outputs": [
-        {"path": "evidence/reports/template-assets/renders/xlsx-print/internal-close-reconciliation.pdf", "sha256": "1fce52ee7464266cad618056a5b2a312933bf876d1d1b3f6cb6c6bd9efca1227"},
+        {"path": "evidence/reports/template-assets/renders/xlsx-print/internal-close-reconciliation.pdf", "sha256": "0a887ad9defae8b2886801931eddba061f28fb9a40afd38192dc06710c8c324f"},
         {"path": "evidence/reports/template-assets/renders/xlsx-print/internal-close-reconciliation-page-1.png", "sha256": "2129146d6cfb6ed1f60234e3d0be472a7486fdbca8b99f13ea642ce511f2c9ff"},
         {"path": "evidence/reports/template-assets/renders/xlsx-print/internal-close-reconciliation-page-2.png", "sha256": "805caa3005821cfde8629dc82ec1696b261691d84da44486c6c7cc502891f291"},
         {"path": "evidence/reports/template-assets/renders/xlsx-print/internal-close-reconciliation-page-3.png", "sha256": "71762ab8b230bfb520466e15fa1854fc71cbe2bae23942a83c5eb18a9b75f25f"},
@@ -15,7 +15,7 @@
         {"path": "evidence/reports/template-assets/renders/xlsx-print/internal-close-reconciliation-page-5.png", "sha256": "b23ecbd39367acc1301af91f1ce0ec0338325ecd88a974bcbcae2e988e7447bd"},
         {"path": "evidence/reports/template-assets/renders/xlsx-print/internal-close-reconciliation-page-6.png", "sha256": "aa83cf35f24020007a6ac31f3b5d7f865f2f1760a0637ce2543d93bf2b7857b0"},
         {"path": "evidence/reports/template-assets/renders/xlsx-print/internal-close-reconciliation-page-7.png", "sha256": "c7832fbed836ccdf78653aac521a19f93849d48b342dc560a19d5df31d5a18cb"},
-        {"path": "evidence/reports/template-assets/renders/xlsx-print/internal-close-reconciliation-page-8.png", "sha256": "3f2e02304aca3ca69b6560c34ef4d69fc6f8cfcf3047395b477623583e59628e"}
+        {"path": "evidence/reports/template-assets/renders/xlsx-print/internal-close-reconciliation-page-8.png", "sha256": "936d005d564b04eee4dc3799fb65657c6d01110bde6a0843b60232cb5315d0e7"}
       ]
     },
     "TMPL-0002": {

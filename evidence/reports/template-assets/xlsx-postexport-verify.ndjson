@@ -1,10 +1,10 @@
 # OVERVIEW
-{"kind":"sheet","id":"ws/5do5am","name":"Close_Control","index":0,"range":"A1:C16","address":"A1:C16"}
-{"kind":"sheet","id":"ws/gg84tg","name":"Source_Data","index":1,"range":"A1:H4","address":"A1:H4"}
-{"kind":"sheet","id":"ws/7j2z8b","name":"Account_Map","index":2,"range":"A1:E4","address":"A1:E4"}
-{"kind":"sheet","id":"ws/i3hlgr","name":"Reconciliation","index":3,"range":"A1:H4","address":"A1:H4"}
-{"kind":"sheet","id":"ws/vw0hbb","name":"Proposed_Entries","index":4,"range":"A1:H4","address":"A1:H4"}
-{"kind":"sheet","id":"ws/g9ow2z","name":"Prior_Period","index":5,"range":"A1:E24","address":"A1:E24","formulas":20}
+{"kind":"sheet","id":"ws/cob5oi","name":"Close_Control","index":0,"range":"A1:C16","address":"A1:C16"}
+{"kind":"sheet","id":"ws/ncd30p","name":"Source_Data","index":1,"range":"A1:H4","address":"A1:H4"}
+{"kind":"sheet","id":"ws/6ojwlo","name":"Account_Map","index":2,"range":"A1:E4","address":"A1:E4"}
+{"kind":"sheet","id":"ws/up1484","name":"Reconciliation","index":3,"range":"A1:H4","address":"A1:H4"}
+{"kind":"sheet","id":"ws/1rk1nw","name":"Proposed_Entries","index":4,"range":"A1:H4","address":"A1:H4"}
+{"kind":"sheet","id":"ws/d43bo7","name":"Prior_Period","index":5,"range":"A1:E24","address":"A1:E24","formulas":20}
 {"kind":"formula","sheet":"Prior_Period","address":"D5","formula":"=B5-C5"}
 {"kind":"formula","sheet":"Prior_Period","address":"D6","formula":"=B6-C6"}
 {"kind":"formula","sheet":"Prior_Period","address":"D7","formula":"=B7-C7"}
@@ -25,24 +25,28 @@
 {"kind":"formula","sheet":"Prior_Period","address":"D22","formula":"=B22-C22"}
 {"kind":"formula","sheet":"Prior_Period","address":"D23","formula":"=B23-C23"}
 {"kind":"formula","sheet":"Prior_Period","address":"D24","formula":"=B24-C24"}
-{"kind":"sheet","id":"ws/vp3fsn","name":"Exceptions","index":6,"range":"A1:H4","address":"A1:H4"}
-{"kind":"sheet","id":"ws/87xynu","name":"Checks","index":7,"range":"A1:D14","address":"A1:D14","formulas":15}
-{"kind":"formula","sheet":"Checks","address":"B5","formula":"=IF(C5=0,\"NOT READY\",\"PASS\")"}
-{"kind":"formula","sheet":"Checks","address":"C5","formula":"=COUNTA('Source_Data'!$A$5:$A$29)"}
-{"kind":"formula","sheet":"Checks","address":"B6","formula":"=IF(C5=0,\"NOT READY\",IF(ABS(C6)<0.005,\"PASS\",\"FAIL\"))"}
-{"kind":"formula","sheet":"Checks","address":"C6","formula":"=SUM('Source_Data'!$F$5:$F$29)-SUM('Source_Data'!$G$5:$G$29)"}
-{"kind":"formula","sheet":"Checks","address":"B7","formula":"=IF(C7=0,\"NOT READY\",\"PASS\")"}
-{"kind":"formula","sheet":"Checks","address":"C7","formula":"=COUNTA('Account_Map'!$A$5:$A$29)"}
-{"kind":"formula","sheet":"Checks","address":"B8","formula":"=IF(COUNTA('Reconciliation'!$A$5:$A$24)=0,\"NOT READY\",IF(C8=0,\"PASS\",\"FAIL\"))"}
-{"kind":"formula","sheet":"Checks","address":"C8","formula":"=COUNTA('Reconciliation'!$A$5:$A$24)-COUNTIF('Reconciliation'!$G$5:$G$24,\"PASS\")"}
-{"kind":"formula","sheet":"Checks","address":"B9","formula":"=IF(COUNTA('Proposed_Entries'!$A$5:$A$19)=0,\"NOT APPLICABLE\",IF(ABS(C9)<0.005,\"PASS\",\"FAIL\"))"}
-{"kind":"formula","sheet":"Checks","address":"C9","formula":"=SUM('Proposed_Entries'!$D$5:$D$19)-SUM('Proposed_Entries'!$E$5:$E$19)"}
-{"kind":"formula","sheet":"Checks","address":"B10","formula":"=IF(COUNTA('Reconciliation'!$A$5:$A$24)=0,\"NOT READY\",IF(C10=0,\"PASS\",\"FAIL\"))"}
-{"kind":"formula","sheet":"Checks","address":"C10","formula":"=COUNTIF('Exceptions'!$G$5:$G$19,\"Open\")"}
-{"kind":"formula","sheet":"Checks","address":"B11","formula":"=IF(C11=0,\"PASS\",\"NOT READY\")"}
-{"kind":"formula","sheet":"Checks","address":"C11","formula":"=IF(OR(COUNTBLANK('Close_Control'!B5:B8)>0,LEFT('Close_Control'!B5,1)=\"{\",LEFT('Close_Control'!B6,1)=\"{\",LEFT('Close_Control'!B7,1)=\"{\",LEFT('Close_Control'!B8,1)=\"{\"),1,0)"}
-{"kind":"formula","sheet":"Checks","address":"B14","formula":"=IF(AND(COUNTIF(B5:B11,\"NOT READY\")=0,COUNTIF(B5:B11,\"FAIL\")=0),\"PASS\",\"NOT READY\")"}
+{"kind":"sheet","id":"ws/c6pbpy","name":"Exceptions","index":6,"range":"A1:H4","address":"A1:H4"}
+{"kind":"sheet","id":"ws/eql2kz","name":"Checks","index":7,"range":"A1:D16","address":"A1:D16","formulas":19}
+{"kind":"formula","sheet":"Checks","address":"B5","formula":"=IF(SUMPRODUCT(--(((Source_Data!$A$5:$A$29<>\"\")+(Source_Data!$B$5:$B$29<>\"\")+(Source_Data!$C$5:$C$29<>\"\")+(Source_Data!$D$5:$D$29<>\"\")+(Source_Data!$E$5:$E$29<>\"\")+(Source_Data!$F$5:$F$29<>\"\")+(Source_Data!$G$5:$G$29<>\"\")+(Source_Data!$H$5:$H$29<>\"\"))>0))=0,\"NOT READY\",IF(C5=0,\"PASS\",\"FAIL\"))"}
+{"kind":"formula","sheet":"Checks","address":"C5","formula":"=SUMPRODUCT(--(((Source_Data!$A$5:$A$29<>\"\")+(Source_Data!$B$5:$B$29<>\"\")+(Source_Data!$C$5:$C$29<>\"\")+(Source_Data!$D$5:$D$29<>\"\")+(Source_Data!$E$5:$E$29<>\"\")+(Source_Data!$F$5:$F$29<>\"\")+(Source_Data!$G$5:$G$29<>\"\")+(Source_Data!$H$5:$H$29<>\"\"))>0))-SUMPRODUCT(--(Source_Data!$A$5:$A$29<>\"\"),--(Source_Data!$B$5:$B$29<>\"\"),--(Source_Data!$C$5:$C$29<>\"\"),--ISNUMBER(Source_Data!$D$5:$D$29),--(Source_Data!$E$5:$E$29<>\"\"),--ISNUMBER(Source_Data!$F$5:$F$29),--ISNUMBER(Source_Data!$G$5:$G$29),--(Source_Data!$H$5:$H$29<>\"\"))"}
+{"kind":"formula","sheet":"Checks","address":"B6","formula":"=IF(B5<>\"PASS\",\"NOT READY\",IF(C6>0,\"PASS\",\"FAIL\"))"}
+{"kind":"formula","sheet":"Checks","address":"C6","formula":"=SUMPRODUCT(IFERROR(ABS(Source_Data!$F$5:$F$29),0))+SUMPRODUCT(IFERROR(ABS(Source_Data!$G$5:$G$29),0))"}
+{"kind":"formula","sheet":"Checks","address":"B7","formula":"=IF(B5<>\"PASS\",\"NOT READY\",IF(ABS(C7)<0.005,\"PASS\",\"FAIL\"))"}
+{"kind":"formula","sheet":"Checks","address":"C7","formula":"=SUM(Source_Data!$F$5:$F$29)-SUM(Source_Data!$G$5:$G$29)"}
+{"kind":"formula","sheet":"Checks","address":"B8","formula":"=IF(SUMPRODUCT(--(((Account_Map!$A$5:$A$29<>\"\")+(Account_Map!$B$5:$B$29<>\"\")+(Account_Map!$C$5:$C$29<>\"\")+(Account_Map!$D$5:$D$29<>\"\")+(Account_Map!$E$5:$E$29<>\"\"))>0))=0,\"NOT READY\",IF(C8=0,\"PASS\",\"FAIL\"))"}
+{"kind":"formula","sheet":"Checks","address":"C8","formula":"=SUMPRODUCT(--(((Account_Map!$A$5:$A$29<>\"\")+(Account_Map!$B$5:$B$29<>\"\")+(Account_Map!$C$5:$C$29<>\"\")+(Account_Map!$D$5:$D$29<>\"\")+(Account_Map!$E$5:$E$29<>\"\"))>0))-SUMPRODUCT(--(Account_Map!$A$5:$A$29<>\"\"),--(Account_Map!$B$5:$B$29<>\"\"),--(Account_Map!$C$5:$C$29<>\"\"),--(Account_Map!$D$5:$D$29<>\"\"),--(((Account_Map!$E$5:$E$29=\"Yes\")+(Account_Map!$E$5:$E$29=\"No\"))>0))"}
+{"kind":"formula","sheet":"Checks","address":"B9","formula":"=IF(SUMPRODUCT(--(((Reconciliation!$A$5:$A$24<>\"\")+(Reconciliation!$B$5:$B$24<>\"\")+(Reconciliation!$D$5:$D$24<>\"\")+(Reconciliation!$F$5:$F$24<>\"\")+(Reconciliation!$H$5:$H$24<>\"\"))>0))=0,\"NOT READY\",IF(C9=0,\"PASS\",\"FAIL\"))"}
+{"kind":"formula","sheet":"Checks","address":"C9","formula":"=SUMPRODUCT(--(((Reconciliation!$A$5:$A$24<>\"\")+(Reconciliation!$B$5:$B$24<>\"\")+(Reconciliation!$D$5:$D$24<>\"\")+(Reconciliation!$F$5:$F$24<>\"\")+(Reconciliation!$H$5:$H$24<>\"\"))>0))-SUMPRODUCT(--(Reconciliation!$A$5:$A$24<>\"\"),--(Reconciliation!$B$5:$B$24<>\"\"),--ISNUMBER(Reconciliation!$D$5:$D$24),--ISNUMBER(Reconciliation!$F$5:$F$24),--(Reconciliation!$G$5:$G$24=\"PASS\"))"}
+{"kind":"formula","sheet":"Checks","address":"B10","formula":"=IF(COUNTA(Proposed_Entries!$A$5:$A$19)=0,\"NOT APPLICABLE\",IF(ABS(C10)<0.005,\"PASS\",\"FAIL\"))"}
+{"kind":"formula","sheet":"Checks","address":"C10","formula":"=SUM(Proposed_Entries!$D$5:$D$19)-SUM(Proposed_Entries!$E$5:$E$19)"}
+{"kind":"formula","sheet":"Checks","address":"B11","formula":"=IF(B9<>\"PASS\",\"NOT READY\",IF(C11=0,\"PASS\",\"FAIL\"))"}
+{"kind":"formula","sheet":"Checks","address":"C11","formula":"=COUNTIF(Exceptions!$G$5:$G$19,\"Open\")"}
+{"kind":"formula","sheet":"Checks","address":"B12","formula":"=IF(C12=0,\"PASS\",\"NOT READY\")"}
+{"kind":"formula","sheet":"Checks","address":"C12","formula":"=IF(OR(COUNTBLANK(Close_Control!B5:B8)>0,LEFT(Close_Control!B5,1)=\"{\",LEFT(Close_Control!B6,1)=\"{\",LEFT(Close_Control!B7,1)=\"{\",LEFT(Close_Control!B8,1)=\"{\"),1,0)"}
+{"kind":"formula","sheet":"Checks","address":"B13","formula":"=IF(C13=0,\"PASS\",\"FAIL\")"}
+{"kind":"formula","sheet":"Checks","address":"C13","formula":"=COUNTA(INDIRECT(\"'Source_Data'!A30:H1048576\"))+COUNTA(INDIRECT(\"'Account_Map'!A30:E1048576\"))+COUNTA(INDIRECT(\"'Reconciliation'!A25:H1048576\"))+COUNTA(INDIRECT(\"'Proposed_Entries'!A20:H1048576\"))+COUNTA(INDIRECT(\"'Prior_Period'!A25:E1048576\"))+COUNTA(INDIRECT(\"'Exceptions'!A20:H1048576\"))"}
+{"kind":"formula","sheet":"Checks","address":"B16","formula":"=IF(COUNTIF(B5:B13,\"FAIL\")>0,\"FAIL\",IF(COUNTIF(B5:B13,\"NOT READY\")>0,\"NOT READY\",\"PASS\"))"}
 # FORMULA_ERRORS
 {"kind":"notice","message":"Cell search matched 0 entries."}
 # CHECKS
-{"kind":"table","sheet":"Checks","address":"A1:D14","rows":14,"cols":4,"values":[["Control Checks",null,null,null],["PASS indicates internal workbook checks only; it is not evidence of approval or release.",null,null,null],[null,null,null,null],["Check","Result","Delta / Count","Where to fix"],["Source population loaded","NOT READY",0,"Source_Data"],["Source debits equal source credits","NOT READY",0,"Source_Data"],["Account mapping loaded","NOT READY",0,"Account_Map"],["Reconciliation rows complete and passing","NOT READY",0,"Reconciliation"],["Proposed entries balanced when present","NOT APPLICABLE",0,"Proposed_Entries"],["No open exceptions","NOT READY",0,"Exceptions"],["Required close fields populated","NOT READY",1,"Close_Control"],[null,null,null,null],["MODEL STATUS","Formula",null,null],["Status","NOT READY",null,null]]}
+{"kind":"table","sheet":"Checks","address":"A1:D16","rows":16,"cols":4,"values":[["Control Checks",null,null,null],["PASS indicates internal workbook checks only; it is not evidence of approval or release.",null,null,null],[null,null,null,null],["Check","Result","Delta / Count","Where to fix"],["Source rows complete","NOT READY",0,"Source_Data"],["Source activity is nonzero","NOT READY",0,"Source_Data"],["Source debits equal source credits","NOT READY",0,"Source_Data"],["Account mapping rows complete","NOT READY",0,"Account_Map"],["Reconciliation inputs complete and passing","NOT READY",0,"Reconciliation"],["Proposed entries balanced when present","NOT APPLICABLE",0,"Proposed_Entries"],["No open exceptions","NOT READY",0,"Exceptions"],["Required close fields populated","NOT READY",1,"Close_Control"],["No out-of-capacity data","PASS",0,"All bounded tables"],[null,null,null,null],["MODEL STATUS","Formula",null,null],["Status","NOT READY",null,null]]}

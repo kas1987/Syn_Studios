@@ -16,7 +16,7 @@
       "descriptor": "library/templates/TMPL-0001/1.0.0/template.json",
       "native_assets": ["library/templates/TMPL-0001/1.0.0/internal-close-reconciliation.xlsx"],
       "supported_consumers": ["anna", "holodeck-file-generation", "human-artifact-realism"],
-      "capabilities": ["native_xlsx", "transaction_population", "account_mapping", "formula_reconciliation", "proposed_entries", "prior_period_context", "exception_log", "control_checks", "renderable"]
+      "capabilities": ["native_xlsx", "transaction_population", "variable_row_counts", "csv_import_compatible", "rebuildable_capacity", "account_mapping", "formula_reconciliation", "proposed_entries", "prior_period_context", "exception_log", "control_checks", "renderable"]
     },
     {
       "kind": "artifact_template",

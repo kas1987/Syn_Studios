@@ -10,6 +10,8 @@ from xml.etree import ElementTree as ET
 INPUT = Path(sys.argv[1])
 MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+PACKAGE_REL = "http://schemas.openxmlformats.org/package/2006/relationships"
+CONTENT_TYPES = "http://schemas.openxmlformats.org/package/2006/content-types"
 NS = {"m": MAIN, "r": REL}
 ET.register_namespace("", MAIN)
 ET.register_namespace("r", REL)
@@ -22,8 +24,17 @@ PRINT_AREAS = {
     "Proposed_Entries": ("$A$1:$H$19", "landscape"),
     "Prior_Period": ("$A$1:$E$24", "portrait"),
     "Exceptions": ("$A$1:$H$19", "landscape"),
-    "Checks": ("$A$1:$D$14", "portrait"),
+    "Checks": ("$A$1:$D$16", "portrait"),
 }
+
+CAPACITY_GUARD = (
+    'COUNTA(INDIRECT("\'Source_Data\'!A30:H1048576"))'
+    '+COUNTA(INDIRECT("\'Account_Map\'!A30:E1048576"))'
+    '+COUNTA(INDIRECT("\'Reconciliation\'!A25:H1048576"))'
+    '+COUNTA(INDIRECT("\'Proposed_Entries\'!A20:H1048576"))'
+    '+COUNTA(INDIRECT("\'Prior_Period\'!A25:E1048576"))'
+    '+COUNTA(INDIRECT("\'Exceptions\'!A20:H1048576"))'
+)
 
 
 def qn(local: str) -> str:
@@ -33,6 +44,36 @@ def qn(local: str) -> str:
 with zipfile.ZipFile(INPUT, "r") as source:
     members = {info.filename: (info, source.read(info.filename)) for info in source.infolist()}
 
+# LibreOffice recalculation truthfully updates cached formula values but adds
+# application-identifying package properties. They are not part of the model-
+# visible template and are removed rather than backdated or falsified.
+for member_name in [name for name in members if name.startswith("docProps/")]:
+    del members[member_name]
+
+package_relationships = ET.fromstring(members["_rels/.rels"][1])
+for relationship in list(package_relationships):
+    relationship_type = relationship.attrib.get("Type", "")
+    if relationship_type.endswith(("/metadata/core-properties", "/extended-properties", "/thumbnail")):
+        package_relationships.remove(relationship)
+ET.register_namespace("", PACKAGE_REL)
+members["_rels/.rels"] = (
+    members["_rels/.rels"][0],
+    ET.tostring(package_relationships, encoding="utf-8", xml_declaration=True),
+)
+
+content_types = ET.fromstring(members["[Content_Types].xml"][1])
+for entry in list(content_types):
+    if entry.attrib.get("PartName", "").startswith("/docProps/"):
+        content_types.remove(entry)
+ET.register_namespace("", CONTENT_TYPES)
+members["[Content_Types].xml"] = (
+    members["[Content_Types].xml"][0],
+    ET.tostring(content_types, encoding="utf-8", xml_declaration=True),
+)
+
+# Return subsequent SpreadsheetML serialization to its canonical default
+# namespace after rewriting the two package-level OPC documents above.
+ET.register_namespace("", MAIN)
 workbook = ET.fromstring(members["xl/workbook.xml"][1])
 relationships = ET.fromstring(members["xl/_rels/workbook.xml.rels"][1])
 relationship_targets = {
@@ -58,6 +99,16 @@ for index, sheet in enumerate(workbook.find("m:sheets", NS)):
     target = relationship_targets[relationship_id].lstrip("/")
     worksheet_path = target if target.startswith("xl/") else f"xl/{target}"
     worksheet = ET.fromstring(members[worksheet_path][1])
+
+    if name == "Checks":
+        capacity_cell = worksheet.find(".//m:c[@r='C13']", NS)
+        if capacity_cell is None:
+            raise ValueError("missing Checks!C13 capacity guard cell")
+        formula = capacity_cell.find("m:f", NS)
+        if formula is None:
+            formula = ET.Element(qn("f"))
+            capacity_cell.insert(0, formula)
+        formula.text = CAPACITY_GUARD
 
     if name != "Close_Control":
         sheet_view = worksheet.find("m:sheetViews/m:sheetView", NS)

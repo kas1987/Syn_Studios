@@ -1,6 +1,9 @@
 import hashlib
 import json
+import os
 import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 import zipfile
@@ -72,11 +75,18 @@ def tokens_in_asset(path):
     return {match.decode("ascii") for match in TOKEN.findall(model_visible_payload(path))}
 
 
-def render_binding_valid(descriptor):
+def pdf_page_count(path):
+    payload = path.read_bytes()
+    if not payload.startswith(b"%PDF-") or b"%%EOF" not in payload[-1024:]:
+        return None
+    return len(re.findall(rb"/Type\s*/Page\b", payload))
+
+
+def render_binding_valid(descriptor, manifest_override=None):
     contract = descriptor["render_contract"]
     if not contract["required"]:
         return contract["evidence_manifest"] is None and contract["expected_page_count"] is None
-    manifest = load_json(contract["evidence_manifest"])
+    manifest = manifest_override if manifest_override is not None else load_json(contract["evidence_manifest"])
     record = manifest["templates"].get(descriptor["template_id"])
     if not isinstance(record, dict) or len(descriptor["native_assets"]) != 1:
         return False
@@ -90,7 +100,80 @@ def render_binding_valid(descriptor):
     outputs = record.get("rendered_outputs")
     if not isinstance(outputs, list) or len(outputs) != record["page_count"] + 1:
         return False
+    expected_paths = [contract["expected_pdf_path"]] + [
+        contract["expected_page_image_pattern"].format(page=page)
+        for page in range(1, record["page_count"] + 1)
+    ]
+    observed_paths = [item.get("path") for item in outputs]
+    observed_hashes = [item.get("sha256") for item in outputs]
+    if observed_paths != expected_paths:
+        return False
+    if len(set(observed_paths)) != len(observed_paths) or len(set(observed_hashes)) != len(observed_hashes):
+        return False
+    if PurePosixPath(observed_paths[0]).suffix.lower() != ".pdf":
+        return False
+    if any(PurePosixPath(path).suffix.lower() != ".png" for path in observed_paths[1:]):
+        return False
+    pdf_path = ROOT / observed_paths[0]
+    if pdf_page_count(pdf_path) != record["page_count"]:
+        return False
     return all((ROOT / item["path"]).is_file() and sha256(ROOT / item["path"]) == item["sha256"] for item in outputs)
+
+
+def recalculate_workbook(mutator):
+    try:
+        import openpyxl
+    except ImportError as error:
+        raise unittest.SkipTest("openpyxl is unavailable for native workbook sabotage") from error
+    executable = os.environ.get("SYN_STUDIOS_LIBREOFFICE") or shutil.which("soffice") or shutil.which("libreoffice")
+    if not executable:
+        standard = Path(r"C:\Program Files\LibreOffice\program\soffice.com")
+        executable = str(standard) if standard.is_file() else None
+    if not executable:
+        raise unittest.SkipTest("LibreOffice is unavailable for native workbook recalculation")
+    source = ROOT / "library/templates/TMPL-0001/1.0.0/internal-close-reconciliation.xlsx"
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        input_dir, output_dir = root / "input", root / "output"
+        input_dir.mkdir()
+        output_dir.mkdir()
+        working = input_dir / "sabotage.xlsx"
+        shutil.copy2(source, working)
+        workbook = openpyxl.load_workbook(working)
+        mutator(workbook)
+        workbook.save(working)
+        result = subprocess.run(
+            [executable, "--headless", f"-env:UserInstallation={(root / 'profile').as_uri()}", "--convert-to", "xlsx", "--outdir", str(output_dir), str(working)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode:
+            raise AssertionError(f"LibreOffice recalculation failed: {result.stdout}\n{result.stderr}")
+        calculated = openpyxl.load_workbook(output_dir / working.name, data_only=True)
+        checks = calculated["Checks"]
+        return {cell: checks[cell].value for cell in ("B5", "B6", "B7", "B8", "B9", "B10", "B11", "B12", "B13", "B16", "C13")}
+
+
+def populate_identity(workbook):
+    from datetime import date
+
+    control = workbook["Close_Control"]
+    control["B5"], control["B6"] = "Example Organization", date(2026, 8, 31)
+    control["B7"], control["B8"] = "Senior Accountant", "Controller"
+
+
+def populate_minimal_valid_workbook(workbook):
+    from datetime import date
+
+    populate_identity(workbook)
+    for column, value in enumerate(("ROW-1", "ENT-1", "1000", date(2026, 8, 31), "Balanced source row", 100, 100, "POSTED"), 1):
+        workbook["Source_Data"].cell(5, column).value = value
+    for column, value in enumerate(("1000", "Cash", "Assets", "Senior Accountant", "Yes"), 1):
+        workbook["Account_Map"].cell(5, column).value = value
+    for column, value in {1: "1000", 2: "Cash", 4: 0, 6: 0, 8: "No variance"}.items():
+        workbook["Reconciliation"].cell(5, column).value = value
 
 
 def table_bindings(path):
@@ -194,6 +277,13 @@ class TemplateAssetTests(unittest.TestCase):
         descriptor["native_assets"][0]["sha256"] = "0" * 64
         self.assertFalse(render_binding_valid(descriptor))
 
+    def test_render_evidence_rejects_duplicate_page_substitution(self):
+        descriptor = load_json("library/templates/TMPL-0002/1.0.0/template.json")
+        manifest = load_json(descriptor["render_contract"]["evidence_manifest"])
+        record = manifest["templates"][descriptor["template_id"]]
+        record["rendered_outputs"][2] = dict(record["rendered_outputs"][1])
+        self.assertFalse(render_binding_valid(descriptor, manifest))
+
     def test_every_embedded_build_token_is_declared(self):
         for entry in self.catalog["templates"]:
             descriptor = load_json(entry["descriptor"])
@@ -245,6 +335,21 @@ class TemplateAssetTests(unittest.TestCase):
             self.assertGreaterEqual(item["maximum_rows"], item["minimum_rows"])
             self.assertTrue(item["columns"])
 
+    def test_xlsx_population_contract_supports_variable_native_and_csv_scale(self):
+        descriptor = load_json("library/templates/TMPL-0001/1.0.0/template.json")
+        contract = descriptor["population_contract"]
+        carriers = {carrier["kind"]: carrier for carrier in contract["source_carriers"]}
+        self.assertEqual(set(carriers), {"native_table", "csv_import"})
+        self.assertTrue(carriers["native_table"]["variable_row_counts"])
+        self.assertEqual(carriers["csv_import"]["target_table"], "SourceDataTable")
+        self.assertEqual(set(carriers["csv_import"]["required_target_columns"]), set(contract["tables"][0]["columns"]))
+        expansion = contract["expansion_contract"]
+        self.assertTrue(expansion["reference_capacity_only"])
+        self.assertIn("formula", expansion["formula_propagation"])
+        self.assertIn("print", expansion["print_propagation"])
+        self.assertEqual(set(expansion["proof_required"]), {"typed row validation", "formula recalculation", "out-of-capacity scan", "all-sheet render", "fresh native and render hashes"})
+        self.assertTrue({"variable_row_counts", "csv_import_compatible", "rebuildable_capacity"}.issubset(descriptor["capabilities"]))
+
     def test_xlsx_population_expansion_without_rebuild_is_rejected(self):
         descriptor = load_json("library/templates/TMPL-0001/1.0.0/template.json")
         original = ROOT / descriptor["native_assets"][0]["path"]
@@ -253,8 +358,11 @@ class TemplateAssetTests(unittest.TestCase):
             with zipfile.ZipFile(original) as source, zipfile.ZipFile(expanded, "w") as target:
                 for info in source.infolist():
                     payload = source.read(info.filename)
-                    if info.filename == "xl/tables/table1.xml":
-                        payload = payload.replace(b'A4:H29', b'A4:H30')
+                    if info.filename.startswith("xl/tables/") and info.filename.endswith(".xml"):
+                        table = ET.fromstring(payload)
+                        if table.attrib.get("name") == "SourceDataTable":
+                            table.attrib["ref"] = "A4:H30"
+                            payload = ET.tostring(table, encoding="utf-8", xml_declaration=True)
                     target.writestr(info, payload)
             self.assertFalse(population_binding_valid(descriptor, expanded))
 
@@ -263,19 +371,54 @@ class TemplateAssetTests(unittest.TestCase):
         with zipfile.ZipFile(path) as archive:
             worksheets = b" ".join(archive.read(name) for name in archive.namelist() if name.startswith("xl/worksheets/") and name.endswith(".xml"))
             checks = ET.fromstring(archive.read("xl/worksheets/sheet8.xml"))
-        formulas = b" ".join(re.findall(rb"<[^>]*f[^>]*>(.*?)</[^>]*f>", worksheets))
+        ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+        formula_text = []
+        with zipfile.ZipFile(path) as archive:
+            for name in archive.namelist():
+                if name.startswith("xl/worksheets/") and name.endswith(".xml"):
+                    formula_text.extend(element.text or "" for element in ET.fromstring(archive.read(name)).findall(".//m:f", ns))
+        formulas = " ".join(formula_text).encode("utf-8")
         self.assertNotIn(b"{{", formulas)
         self.assertIn(b'IF(A5="",""', formulas)
         self.assertIn(b'"NOT READY"', formulas)
-        self.assertIn(b'COUNTIF(B5:B11,"NOT READY")=0', formulas)
+        self.assertIn(b'COUNTIF(B5:B13,"FAIL")>0', formulas)
         self.assertNotIn(b'=0,"PASS",IF(ABS(C9)', formulas)
-        ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
         cached = []
-        for ref in ["B5", "B6", "B7", "B8", "B9", "B10", "B11", "B14"]:
+        for ref in ["B5", "B6", "B7", "B8", "B9", "B10", "B11", "B12", "B13", "B16"]:
             value = checks.find(f".//m:c[@r='{ref}']/m:v", ns)
             cached.append(value.text if value is not None else "")
-        self.assertNotIn("PASS", cached)
+        self.assertNotIn("PASS", cached[:8])
+        self.assertEqual(cached[-2], "PASS")
         self.assertEqual(cached[-1], "NOT READY")
+
+    def test_xlsx_shallow_stub_recalculates_to_fail(self):
+        def shallow_stub(workbook):
+            populate_identity(workbook)
+            workbook["Source_Data"]["A5"] = "ROW-1"
+            workbook["Account_Map"]["A5"] = "1000"
+            reconciliation = workbook["Reconciliation"]
+            reconciliation["A5"], reconciliation["D5"], reconciliation["F5"] = "1000", 0, 0
+
+        checks = recalculate_workbook(shallow_stub)
+        self.assertEqual(checks["B5"], "FAIL")
+        self.assertEqual(checks["B8"], "FAIL")
+        self.assertEqual(checks["B9"], "FAIL")
+        self.assertEqual(checks["B16"], "FAIL")
+
+    def test_xlsx_populated_minimal_recalculates_to_pass(self):
+        checks = recalculate_workbook(populate_minimal_valid_workbook)
+        self.assertEqual(checks["B10"], "NOT APPLICABLE")
+        self.assertEqual(checks["B16"], "PASS")
+
+    def test_xlsx_out_of_capacity_cell_recalculates_to_fail(self):
+        def out_of_capacity(workbook):
+            populate_minimal_valid_workbook(workbook)
+            workbook["Source_Data"]["F30"] = 999
+
+        checks = recalculate_workbook(out_of_capacity)
+        self.assertEqual(checks["C13"], 1)
+        self.assertEqual(checks["B13"], "FAIL")
+        self.assertEqual(checks["B16"], "FAIL")
 
     def test_docx_has_five_renderable_sections_and_no_approval_claim(self):
         path = ROOT / "library/templates/TMPL-0002/1.0.0/internal-controller-memo.docx"
