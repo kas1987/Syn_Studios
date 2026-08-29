@@ -5,13 +5,13 @@ Syn Studios exposes one small consumer interface: `discover -> select -> instant
 The read-only resolver is executable and returns JSON:
 
 ```powershell
-python integrations/query_catalog.py discover --artifact-type xlsx --consumer holodeck-file-generation
-python integrations/query_catalog.py select --template-id TMPL-0001 --version 1.0.0
-python integrations/query_catalog.py instantiate --template-id TMPL-0001 --version 1.0.0 --package-root .\package --output-location working_world --provenance-reference manifest.md#workbook --manifest-approved --write-authorized --source-authorized
-python integrations/query_catalog.py validate --template-id TMPL-0001 --version 1.0.0
+python integrations/query_catalog.py discover --consumer-id holodeck-file-generation --artifact-type xlsx
+python integrations/query_catalog.py select --consumer-id holodeck-file-generation --template-id TMPL-0001 --version 1.0.0
+python integrations/query_catalog.py instantiate --consumer-id holodeck-file-generation --template-id TMPL-0001 --version 1.0.0 --package-root .\package --output-location working_world --provenance-reference manifest.md#workbook --manifest-approved --write-authorized --source-authorized
+python integrations/query_catalog.py validate --consumer-id holodeck-file-generation --template-id TMPL-0001 --version 1.0.0
 ```
 
-Discovery excludes unreleased entries. Selection requires the exact recorded version; aliases such as `latest`, `current`, `stable`, and `*` are rejected. Producer role and medium are checked against the descriptor and blueprint, while knowledge and authority constraints must be compatible with the package provenance request. Instantiation defaults to a no-write plan. `--materialize` stages validated template bytes and atomically commits them to a new, contained package output after all authorization flags pass; it never edits library bytes, accepts an existing target, or leaves a partial copy on failure. Validation follows the catalog-bound release record and checks the exact descriptor, every native asset, blueprint, typed same-hash reviews, conductor approval, and technical evidence. A successful command exits `0`, invalid input exits `2`, and a valid exact selection with no compatible match exits `3`.
+Every operation first requires the canonical repository validator to pass. Consumer identifiers are exact, case-sensitive IDs from the consumer profile. Discovery excludes unreleased entries. Selection requires the exact recorded version; aliases such as `latest`, `current`, `stable`, and `*` are rejected. Producer role and medium are checked against the descriptor and blueprint, while knowledge and authority constraints must be compatible with the package provenance request. Instantiation rechecks those constraints, requires a nonempty provenance reference, and defaults to a no-write plan. `--materialize` stages validated template bytes and atomically commits them only if a new, contained package output still does not exist; it never edits library bytes, overwrites a race winner, or leaves its staging copy after a handled failure. Validation delegates release schemas, evidence semantics, and lineage integrity to the canonical library validator, then returns the exact bound release and native-asset hashes. A successful command exits `0`, invalid input exits `2`, and a valid exact selection with no compatible match exits `3`.
 
 ## Authority split
 

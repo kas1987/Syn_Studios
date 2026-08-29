@@ -11,6 +11,7 @@ from unittest import mock
 from pathlib import Path
 
 from integrations.query_catalog import (
+    _atomic_rename_no_replace,
     CatalogQueryError,
     discover,
     instantiate,
@@ -124,7 +125,14 @@ class CatalogResolverTests(unittest.TestCase):
     def setUp(self):
         self.temp_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_directory.cleanup)
-        self.catalog_path = Path(self.temp_directory.name) / "catalog.json"
+        self.root = Path(self.temp_directory.name)
+        (self.root / "integrations").mkdir()
+        shutil.copy2(PROFILE_PATH, self.root / "integrations/consumer-profile.v1.json")
+        validator_path = self.root / "scripts/validate_library.py"
+        validator_path.parent.mkdir()
+        validator_path.write_text("def validate_repository(root):\n    return [], 1\n", encoding="utf-8")
+        self.catalog_path = self.root / "library/catalog.json"
+        self.catalog_path.parent.mkdir()
         self.catalog_path.write_text(
             json.dumps(
                 {
@@ -172,30 +180,32 @@ class CatalogResolverTests(unittest.TestCase):
     def test_discover_filters_and_excludes_unreleased_entries(self):
         matches = discover(
             self.catalog,
+            consumer_id="holodeck-file-generation",
             artifact_type="xlsx",
-            consumers=["holodeck-file-generation"],
             capabilities=["recalculate", "render"],
+            repository_root=self.root,
         )
         self.assertEqual([(item["template_id"], item["version"]) for item in matches], [("TMPL-0001", "1.2.3")])
-        self.assertEqual(discover(self.catalog, artifact_type="docx"), [])
+        self.assertEqual(discover(self.catalog, consumer_id="anna", artifact_type="docx", repository_root=self.root), [])
 
     def test_select_requires_exact_released_version(self):
-        selected = select_exact(self.catalog, template_id="TMPL-0001", version="1.2.3")
+        base = {"catalog": self.catalog, "template_id": "TMPL-0001", "consumer_id": "anna", "repository_root": self.root}
+        selected = select_exact(**base, version="1.2.3")
         self.assertEqual(selected["blueprint_id"], "BP-0001")
         self.assertEqual(selected["descriptor"], "library/templates/TMPL-0001/template.json")
         self.assertEqual(selected["native_assets"], ["library/templates/TMPL-0001/workbook.xlsx"])
-        self.assertIsNone(select_exact(self.catalog, template_id="TMPL-0001", version="9.9.9"))
+        self.assertIsNone(select_exact(**base, version="9.9.9"))
         with self.assertRaisesRegex(CatalogQueryError, "floating versions are forbidden"):
-            select_exact(self.catalog, template_id="TMPL-0001", version="latest")
+            select_exact(**base, version="latest")
 
     def test_cli_returns_machine_readable_json(self):
         command = [
             sys.executable,
             str(ROOT / "integrations" / "query_catalog.py"),
-            "--catalog",
-            str(self.catalog_path),
+            "--root",
+            str(self.root),
             "discover",
-            "--consumer",
+            "--consumer-id",
             "anna",
         ]
         completed = subprocess.run(command, check=True, capture_output=True, text=True)
@@ -207,9 +217,11 @@ class CatalogResolverTests(unittest.TestCase):
         command = [
             sys.executable,
             str(ROOT / "integrations" / "query_catalog.py"),
-            "--catalog",
-            str(self.catalog_path),
+            "--root",
+            str(self.root),
             "select",
+            "--consumer-id",
+            "anna",
             "--template-id",
             "TMPL-0001",
             "--version",
@@ -235,8 +247,8 @@ class CatalogResolverTests(unittest.TestCase):
         self.catalog["templates"][1]["release_status"] = "candidate"
         self.catalog_path.write_text(json.dumps(self.catalog), encoding="utf-8")
         candidate_catalog = load_catalog(self.catalog_path)
-        self.assertEqual(discover(candidate_catalog), [])
-        self.assertIsNone(select_exact(candidate_catalog, template_id="TMPL-0001", version="1.2.3"))
+        self.assertEqual(discover(candidate_catalog, consumer_id="anna", repository_root=self.root), [])
+        self.assertIsNone(select_exact(candidate_catalog, template_id="TMPL-0001", version="1.2.3", consumer_id="anna", repository_root=self.root))
 
     def test_windows_drive_and_unc_paths_are_rejected(self):
         for unsafe in (r"C:\private\template.json", r"\\server\share\template.json", r"\rooted\template.json"):
@@ -264,6 +276,19 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
         self.root = temporary_root / "repo"
         self.package_root = temporary_root / "package"
         self.package_root.mkdir()
+        (self.root / "integrations").mkdir(parents=True)
+        shutil.copy2(PROFILE_PATH, self.root / "integrations/consumer-profile.v1.json")
+        validator_path = self.root / "scripts/validate_library.py"
+        validator_path.parent.mkdir(parents=True)
+        validator_path.write_text(
+            "from pathlib import Path\n"
+            "import json\n"
+            "def validate_repository(root):\n"
+            "    marker = Path(root) / '.canonical-findings.json'\n"
+            "    findings = json.loads(marker.read_text(encoding='utf-8')) if marker.exists() else []\n"
+            "    return findings, 1\n",
+            encoding="utf-8",
+        )
 
         self.asset = self.root / "library/templates/TMPL-0001/1.2.3/workbook.xlsx"
         self.asset.parent.mkdir(parents=True)
@@ -343,7 +368,10 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
             for category in artifact_categories:
                 proof = self.root / "evidence/template-releases/REL-0001/proofs" / f"{name}-{category}.txt"
                 proof.parent.mkdir(parents=True, exist_ok=True)
-                proof.write_text(f"Observed output for {name} {category}.\n", encoding="utf-8")
+                proof.write_text(
+                    f"REL-0001 TMPL-0001 {category} {asset_hash} observed output for {name}.\n",
+                    encoding="utf-8",
+                )
                 artifacts.append({"path": proof.relative_to(self.root).as_posix(), "sha256": _file_hash(proof), "media_type": "text/plain", "category": category})
             record = {
                 "schema_version": "1.0.0", "record_id": f"EVID-RECORD-{name.upper()}",
@@ -413,6 +441,9 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
             },
         )
 
+    def _set_canonical_findings(self, *findings):
+        _write_json(self.root / ".canonical-findings.json", list(findings))
+
     def _add_secondary_asset(self, *, bind_evidence):
         secondary = self.asset.parent / "secondary.txt"
         secondary.write_bytes(b"authorized secondary template asset")
@@ -471,34 +502,43 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
         self.assertEqual(result["status"], "pass")
         self.assertEqual(result["descriptor_sha256"], _file_hash(self.descriptor_path))
 
+    def test_operations_fail_closed_without_canonical_validator(self):
+        (self.root / "scripts/validate_library.py").unlink()
+        with self.assertRaisesRegex(CatalogQueryError, "canonical library validator is unavailable"):
+            discover(
+                load_catalog(self.catalog_path),
+                consumer_id="anna",
+                repository_root=self.root,
+            )
+
     def test_descriptor_producer_and_knowledge_drift_invalidates_release(self):
         descriptor = json.loads(self.descriptor_path.read_text(encoding="utf-8"))
         descriptor["producer"] = {"role": "outside counsel", "department": "legal"}
         descriptor["knowledge_and_authority_constraints"] = ["May invent governing conclusions."]
         _write_json(self.descriptor_path, descriptor)
-        with self.assertRaisesRegex(CatalogQueryError, "descriptor binding"):
+        with self.assertRaisesRegex(CatalogQueryError, "hash does not match"):
             validate_release(self.root, load_catalog(self.catalog_path)["templates"][0])
 
     def test_secondary_asset_omitted_from_typed_evidence_is_rejected(self):
         self._add_secondary_asset(bind_evidence=False)
-        with self.assertRaisesRegex(CatalogQueryError, "every native asset"):
+        self._set_canonical_findings("typed evidence is not bound to every native asset")
+        with self.assertRaisesRegex(CatalogQueryError, "canonical library validation failed"):
+            validate_release(self.root, load_catalog(self.catalog_path)["templates"][0])
+
+    def test_secondary_asset_drift_is_rejected(self):
+        secondary = self._add_secondary_asset(bind_evidence=True)
+        secondary.write_bytes(b"drifted after release")
+        with self.assertRaisesRegex(CatalogQueryError, "hash does not match"):
             validate_release(self.root, load_catalog(self.catalog_path)["templates"][0])
 
     def test_typed_review_actor_independence_is_enforced(self):
-        terra = json.loads(self.evidence_paths["terra"].read_text(encoding="utf-8"))
-        sol = json.loads(self.evidence_paths["sol"].read_text(encoding="utf-8"))
-        sol["actor_id"] = terra["actor_id"].upper()
-        _write_json(self.evidence_paths["sol"], sol)
-        self._refresh_evidence_reference("sol")
-        with self.assertRaisesRegex(CatalogQueryError, "identities must be independent"):
+        self._set_canonical_findings("Terra, Sol, and conductor identities must be independent")
+        with self.assertRaisesRegex(CatalogQueryError, "canonical library validation failed"):
             validate_release(self.root, load_catalog(self.catalog_path)["templates"][0])
 
     def test_typed_technical_procedure_must_match_blueprint(self):
-        technical = json.loads(self.evidence_paths["technical"].read_text(encoding="utf-8"))
-        technical["procedures"]["render"] = "Run a different unapproved procedure."
-        _write_json(self.evidence_paths["technical"], technical)
-        self._refresh_evidence_reference("technical")
-        with self.assertRaisesRegex(CatalogQueryError, "procedure does not match"):
+        self._set_canonical_findings("technical procedure does not match the blueprint")
+        with self.assertRaisesRegex(CatalogQueryError, "canonical library validation failed"):
             validate_release(self.root, load_catalog(self.catalog_path)["templates"][0])
 
     def test_later_target_collision_has_zero_partial_copy_side_effects(self):
@@ -513,6 +553,7 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
                 catalog=load_catalog(self.catalog_path),
                 template_id="TMPL-0001",
                 version="1.2.3",
+                consumer_id="anna",
                 package_root=self.package_root,
                 output_location=Path("working_world"),
                 manifest_approved=True,
@@ -544,6 +585,7 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
                     catalog=load_catalog(self.catalog_path),
                     template_id="TMPL-0001",
                     version="1.2.3",
+                    consumer_id="anna",
                     package_root=self.package_root,
                     output_location=Path("working_world"),
                     manifest_approved=True,
@@ -555,10 +597,49 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
         self.assertFalse((self.package_root / "working_world").exists())
         self.assertEqual(list(self.package_root.glob(".working_world.syn-studios-*")), [])
 
+    def test_target_appearance_during_commit_is_not_overwritten(self):
+        output = self.package_root / "working_world"
+
+        def race_winner(_staging, target):
+            target.mkdir()
+            (target / "owned-by-racer.txt").write_text("preserve", encoding="utf-8")
+            raise FileExistsError("injected target race")
+
+        with mock.patch("integrations.query_catalog._atomic_rename_no_replace", side_effect=race_winner):
+            with self.assertRaisesRegex(CatalogQueryError, "failed before commit"):
+                instantiate(
+                    root=self.root,
+                    catalog=load_catalog(self.catalog_path),
+                    template_id="TMPL-0001",
+                    version="1.2.3",
+                    consumer_id="anna",
+                    package_root=self.package_root,
+                    output_location=Path("working_world"),
+                    manifest_approved=True,
+                    write_authorized=True,
+                    source_authorized=True,
+                    provenance_reference="manifest.md#workbook",
+                    materialize=True,
+                )
+        self.assertEqual((output / "owned-by-racer.txt").read_text(encoding="utf-8"), "preserve")
+        self.assertEqual(list(self.package_root.glob(".working_world.syn-studios-*")), [])
+
+    def test_atomic_publish_primitive_rejects_existing_target(self):
+        source = self.package_root / "staged"
+        target = self.package_root / "published"
+        source.mkdir()
+        target.mkdir()
+        (target / "existing.txt").write_text("preserve", encoding="utf-8")
+        with self.assertRaises(OSError):
+            _atomic_rename_no_replace(source, target)
+        self.assertTrue(source.is_dir())
+        self.assertEqual((target / "existing.txt").read_text(encoding="utf-8"), "preserve")
+
     def test_full_discover_select_instantiate_plan_validate_trajectory(self):
         catalog = load_catalog(self.catalog_path)
         discovered = discover(
             catalog,
+            consumer_id="anna",
             producer_role="senior accountant",
             medium="Native Excel workbook",
             authority="supporting",
@@ -571,6 +652,7 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
             catalog,
             template_id="TMPL-0001",
             version="1.2.3",
+            consumer_id="anna",
             producer_role="senior accountant",
             medium="Native Excel workbook",
             repository_root=self.root,
@@ -582,6 +664,12 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
             catalog=catalog,
             template_id="TMPL-0001",
             version="1.2.3",
+            consumer_id="anna",
+            producer_role="senior accountant",
+            medium="Native Excel workbook",
+            authority="supporting",
+            required_allowed_knowledge=["Questions cannot resolve themselves."],
+            prohibited_knowledge=["private world facts"],
             package_root=self.package_root,
             output_location=Path("working_world"),
             manifest_approved=True,
@@ -604,6 +692,7 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
             catalog=catalog,
             template_id="TMPL-0001",
             version="1.2.3",
+            consumer_id="anna",
             package_root=self.package_root,
             output_location=Path("working_world"),
             manifest_approved=True,
@@ -618,7 +707,7 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
 
     def test_selection_rejects_producer_medium_provenance_and_authority_mismatch(self):
         catalog = load_catalog(self.catalog_path)
-        base = {"catalog": catalog, "template_id": "TMPL-0001", "version": "1.2.3", "repository_root": self.root}
+        base = {"catalog": catalog, "template_id": "TMPL-0001", "version": "1.2.3", "consumer_id": "anna", "repository_root": self.root}
         cases = (
             {"producer_role": "lawyer"},
             {"medium": "Native Word memorandum"},
@@ -630,6 +719,56 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
             with self.subTest(mismatch=mismatch):
                 self.assertIsNone(select_exact(**base, **mismatch))
 
+    def test_consumer_ids_are_canonical_and_case_sensitive(self):
+        catalog = load_catalog(self.catalog_path)
+        with self.assertRaisesRegex(CatalogQueryError, "canonical consumer profile ID"):
+            discover(catalog, consumer_id="ANNA", repository_root=self.root)
+        self.assertIsNone(
+            select_exact(
+                catalog,
+                template_id="TMPL-0001",
+                version="1.2.3",
+                consumer_id="human-artifact-realism",
+                repository_root=self.root,
+            )
+        )
+        catalog["templates"][0]["supported_consumers"] = ["ANNA"]
+        with self.assertRaisesRegex(CatalogQueryError, "catalog supported_consumers"):
+            discover(catalog, consumer_id="anna", repository_root=self.root)
+
+    def test_instantiation_requires_and_reapplies_provenance_constraints(self):
+        catalog = load_catalog(self.catalog_path)
+        common = {
+            "root": self.root,
+            "catalog": catalog,
+            "template_id": "TMPL-0001",
+            "version": "1.2.3",
+            "consumer_id": "anna",
+            "package_root": self.package_root,
+            "output_location": Path("working"),
+            "manifest_approved": True,
+            "write_authorized": True,
+            "source_authorized": True,
+        }
+        with self.assertRaisesRegex(CatalogQueryError, "nonempty provenance_reference"):
+            instantiate(**common, provenance_reference="")
+        mismatches = (
+            {"producer_role": "outside counsel"},
+            {"medium": "Native Word memorandum"},
+            {"authority": "authoritative"},
+            {"required_allowed_knowledge": ["May invent conclusions."]},
+            {"prohibited_knowledge": ["unlisted secret"]},
+            {"capabilities": ["unsupported-capability"]},
+        )
+        for mismatch in mismatches:
+            with self.subTest(mismatch=mismatch):
+                with self.assertRaisesRegex(CatalogQueryError, "exact released template selection not found"):
+                    instantiate(
+                        **common,
+                        provenance_reference="manifest.md#workbook",
+                        **mismatch,
+                    )
+
     def test_instantiation_enforces_authority_and_output_containment(self):
         catalog = load_catalog(self.catalog_path)
         common = {
@@ -637,6 +776,7 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
             "catalog": catalog,
             "template_id": "TMPL-0001",
             "version": "1.2.3",
+            "consumer_id": "anna",
             "package_root": self.package_root,
             "provenance_reference": "manifest.md#workbook",
             "manifest_approved": True,
@@ -648,6 +788,30 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
         with self.assertRaisesRegex(CatalogQueryError, "escapes package root"):
             instantiate(**common, output_location=Path("../outside"))
 
+    def test_instantiation_rejects_symlink_or_junction_escape(self):
+        outside = self.package_root.parent / "outside"
+        outside.mkdir()
+        link = self.package_root / "linked"
+        try:
+            link.symlink_to(outside, target_is_directory=True)
+        except OSError as exc:
+            self.skipTest(f"directory symlinks unavailable: {exc}")
+        common = {
+            "root": self.root,
+            "catalog": load_catalog(self.catalog_path),
+            "template_id": "TMPL-0001",
+            "version": "1.2.3",
+            "consumer_id": "anna",
+            "package_root": self.package_root,
+            "output_location": Path("linked/working"),
+            "provenance_reference": "manifest.md#workbook",
+            "manifest_approved": True,
+            "write_authorized": True,
+            "source_authorized": True,
+        }
+        with self.assertRaisesRegex(CatalogQueryError, "escapes package root"):
+            instantiate(**common)
+
     def test_validate_detects_native_file_drift(self):
         catalog = load_catalog(self.catalog_path)
         (self.root / self.catalog_entry["native_assets"][0]).write_bytes(b"tampered")
@@ -655,12 +819,17 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
             validate_release(self.root, catalog["templates"][0])
 
     def test_cli_uses_root_canonical_catalog_by_default(self):
+        real_catalog = ROOT / "library/catalog.json"
+        real_validator = ROOT / "scripts/validate_library.py"
+        smoke_root = ROOT if real_catalog.is_file() and real_validator.is_file() else self.root
         command = [
             sys.executable,
             str(ROOT / "integrations/query_catalog.py"),
             "--root",
-            str(self.root),
+            str(smoke_root),
             "discover",
+            "--consumer-id",
+            "anna",
             "--artifact-type",
             "xlsx",
         ]

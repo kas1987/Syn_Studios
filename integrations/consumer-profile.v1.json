@@ -66,6 +66,7 @@
         "library/catalog.json"
       ],
       "filters": [
+        "consumer_id",
         "artifact_type",
         "blueprint_id",
         "producer_role",
@@ -81,12 +82,15 @@
     },
     "select": {
       "accepts": [
+        "consumer_id",
         "catalog_entries",
         "provenance_constraints",
         "world_requirements",
         "required_capabilities"
       ],
       "requires": [
+        "canonical_consumer_id",
+        "canonical_repository_validation",
         "release_status_is_released",
         "blueprint_compatible",
         "capabilities_satisfy_request",
@@ -101,6 +105,7 @@
     },
     "instantiate": {
       "accepts": [
+        "consumer_id",
         "selected_template_release",
         "approved_package_manifest",
         "package_owned_world_facts",
@@ -108,6 +113,10 @@
         "output_location"
       ],
       "requires": [
+        "canonical_consumer_id",
+        "canonical_repository_validation",
+        "nonempty_provenance_reference",
+        "selection_constraints_rechecked",
         "consumer_write_authorization",
         "manifest_approval",
         "source_authorization",
@@ -123,6 +132,7 @@
     },
     "validate": {
       "accepts": [
+        "consumer_id",
         "candidate_artifact",
         "template_binding",
         "provenance_card",
@@ -138,7 +148,7 @@
         "cross_file_when_applicable"
       ],
       "returns": "evidence_records_and_verdict",
-      "implementation": "catalog_descriptor_native_blueprint_and_release_evidence_consistency_adapter",
+      "implementation": "canonical_repository_validation_plus_exact_release_binding",
       "verdicts": [
         "pass",
         "fix_first",
