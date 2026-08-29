@@ -1,0 +1,14 @@
+Account Code,Account Name,Statement Group,Reconciliation Owner Role,Active?
+4000,Finished Goods Revenue,Revenue,Revenue accountant,Yes
+4010,Service Revenue,Revenue,Revenue accountant,Yes
+4025,Freight Recovery,Revenue,Revenue accountant,Yes
+4100,Returns Allowance,Revenue,Revenue accountant,Yes
+4205,Other Operating Revenue,Revenue,Revenue accountant,Yes
+5000,Raw Materials,Cost of sales,Inventory accountant,Yes
+5015,Direct Labor,Cost of sales,Cost accountant,Yes
+5100,Freight Expense,Cost of sales,Inventory accountant,Yes
+5200,Production Supplies,Cost of sales,Cost accountant,Yes
+5305,Inventory Adjustments,Cost of sales,Inventory accountant,Yes
+6000,Factory Overhead,Operating expense,Cost accountant,Yes
+6100,Quality Review Expense,Operating expense,Controller,Yes
+7999,Dormant legacy clearing,Other,Dormant account owner,No

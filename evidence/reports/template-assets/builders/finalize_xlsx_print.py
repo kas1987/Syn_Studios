@@ -38,6 +38,13 @@ TABLE_SHEETS = {
     "ExceptionsTable": "Exceptions",
 }
 
+# Table-backed population and workpaper sheets must keep their columns on one
+# page while allowing rows to paginate vertically.  Forcing these sheets to a
+# single page makes a legitimate expanded population unreadable.  The compact
+# control and checks sheets remain bounded one-page views.
+VERTICALLY_PAGINATED_SHEETS = set(TABLE_SHEETS.values())
+REPEATED_HEADER_ROWS = "$1:$4"
+
 
 def qn(local: str) -> str:
     return f"{{{MAIN}}}{local}"
@@ -129,7 +136,7 @@ if defined_names is None:
     workbook.insert(list(workbook).index(calc_pr) if calc_pr is not None else len(workbook), defined_names)
 else:
     for child in list(defined_names):
-        if child.attrib.get("name") == "_xlnm.Print_Area":
+        if child.attrib.get("name") in {"_xlnm.Print_Area", "_xlnm.Print_Titles"}:
             defined_names.remove(child)
 
 for index, sheet in enumerate(workbook.find("m:sheets", NS)):
@@ -183,7 +190,8 @@ for index, sheet in enumerate(workbook.find("m:sheets", NS)):
 
     print_options = ET.Element(qn("printOptions"), {"horizontalCentered": "1"})
     margins = ET.Element(qn("pageMargins"), {"left": "0.25", "right": "0.25", "top": "0.5", "bottom": "0.5", "header": "0.2", "footer": "0.2"})
-    page_setup = ET.Element(qn("pageSetup"), {"paperSize": "1", "orientation": PRINT_AREAS[name][1], "fitToWidth": "1", "fitToHeight": "1"})
+    fit_to_height = "0" if name in VERTICALLY_PAGINATED_SHEETS else "1"
+    page_setup = ET.Element(qn("pageSetup"), {"paperSize": "1", "orientation": PRINT_AREAS[name][1], "fitToWidth": "1", "fitToHeight": fit_to_height})
     insertion = next((position for position, child in enumerate(worksheet) if child.tag in {qn("headerFooter"), qn("tableParts"), qn("extLst")}), len(worksheet))
     for element in (print_options, margins, page_setup):
         worksheet.insert(insertion, element)
@@ -193,6 +201,9 @@ for index, sheet in enumerate(workbook.find("m:sheets", NS)):
     area, _ = PRINT_AREAS[name]
     defined_name = ET.SubElement(defined_names, qn("definedName"), {"name": "_xlnm.Print_Area", "localSheetId": str(index)})
     defined_name.text = f"'{name}'!{area}"
+    if name in VERTICALLY_PAGINATED_SHEETS:
+        print_titles = ET.SubElement(defined_names, qn("definedName"), {"name": "_xlnm.Print_Titles", "localSheetId": str(index)})
+        print_titles.text = f"'{name}'!{REPEATED_HEADER_ROWS}"
 
 members["xl/workbook.xml"] = (members["xl/workbook.xml"][0], ET.tostring(workbook, encoding="utf-8", xml_declaration=True))
 
