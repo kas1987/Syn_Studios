@@ -5,17 +5,12 @@
   "name": "Operational correction email chain",
   "release_status": "candidate",
   "artifact_type": "eml",
-  "lineage": {
-    "blueprint_id": "BP-0003",
-    "foundation_ids": ["FOUND-0008"],
-    "lineage_source": "examples/blueprints/BP-0003.operational-email-chain.json#foundation_lineage",
-    "method": "Built as a new standards-compliant MIME message using only the blueprint-authorized lifecycle, distribution, attachment, and retention control concepts; no source bytes, form layout, approvals, addresses, names, dates, identifiers, amounts, or facts were copied."
-  },
+  "blueprint_id": "BP-0003",
   "native_assets": [
     {
       "path": "library/templates/TMPL-0003/1.0.0/operational-correction-thread.eml",
       "media_type": "message/rfc822",
-      "sha256": "bff820ee2221da30a61b952fa41350a111e4da208359012b0e70e81b5346a63d"
+      "sha256": "8acaf754686fa23b1bbc59d229094d6444b54224ea9a0dae53c50086b8c5bf99"
     }
   ],
   "producer": {"role": "operations manager with analyst and counterparty participants", "department": "operations"},
@@ -23,7 +18,7 @@
   "lifecycle": "sent and received thread retained in an internal project file",
   "authority": "contextual",
   "slots": [
-    "operations_manager_email", "analyst_email", "counterparty_email", "review_owner_email", "final_message_date_rfc2822", "final_message_id", "case_reference", "corrected_attachment_name", "superseded_attachment_name", "open_item_description", "open_item_owner_role", "open_item_due_date", "sender_display_name", "sender_role", "operations_manager_first_name", "review_owner_display_name", "message_5_timestamp", "meeting_window", "message_4_timestamp", "distribution_note", "counterparty_display_name", "message_3_timestamp", "received_item_description", "questioned_field_name", "analyst_display_name", "message_2_timestamp", "operations_manager_display_name", "unvalidated_scope", "message_1_timestamp", "request_scope", "correction_note_name", "correction_summary", "row_reference", "status_code", "question_owner_role"
+    "operations_manager_email", "analyst_email", "counterparty_email", "review_owner_email", "final_message_date_rfc2822", "final_message_id", "case_reference", "corrected_attachment_name", "superseded_attachment_name", "open_item_description", "open_item_owner_role", "open_item_due_date", "sender_display_name", "sender_role", "review_owner_display_name", "message_5_timestamp", "meeting_window", "message_4_timestamp", "distribution_note", "counterparty_display_name", "message_3_timestamp", "received_item_description", "questioned_field_name", "analyst_display_name", "message_2_timestamp", "operations_manager_display_name", "unvalidated_scope", "message_1_timestamp", "request_scope", "correction_note_name", "correction_summary", "row_reference", "status_code", "question_owner_role"
   ],
   "slot_contract": {
     "token_format": "{{slot_name}}",
@@ -31,6 +26,13 @@
     "instantiated_artifact_policy": "reject_if_any_declared_or_double_brace_token_remains",
     "value_source": "authorized world facts or explicit role assignment only",
     "header_fields_to_replace": ["Date", "Message-ID", "From", "To", "Cc", "Subject"]
+  },
+  "render_contract": {
+    "required": false,
+    "evidence_manifest": null,
+    "expected_page_count": null,
+    "expected_sheet_names": [],
+    "print_policy": "native MIME parsing and attachment inspection replace pagination evidence"
   },
   "knowledge_and_authority_constraints": [
     "Each participant may state only facts available to that role at that point in the thread.",

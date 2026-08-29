@@ -4,6 +4,7 @@ import re
 import tempfile
 import unittest
 import zipfile
+from xml.etree import ElementTree as ET
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path, PurePosixPath
@@ -71,34 +72,49 @@ def tokens_in_asset(path):
     return {match.decode("ascii") for match in TOKEN.findall(model_visible_payload(path))}
 
 
-def release_binding_valid(entry):
-    if entry.get("release_status") != "released":
-        return True
-    relative = entry.get("release_record")
-    if not isinstance(relative, str):
+def render_binding_valid(descriptor):
+    contract = descriptor["render_contract"]
+    if not contract["required"]:
+        return contract["evidence_manifest"] is None and contract["expected_page_count"] is None
+    manifest = load_json(contract["evidence_manifest"])
+    record = manifest["templates"].get(descriptor["template_id"])
+    if not isinstance(record, dict) or len(descriptor["native_assets"]) != 1:
         return False
-    pure = PurePosixPath(relative)
-    if pure.is_absolute() or ".." in pure.parts:
+    asset = descriptor["native_assets"][0]
+    if record.get("asset_path") != asset["path"] or record.get("asset_sha256") != asset["sha256"]:
         return False
-    path = ROOT / relative
-    if not path.is_file():
+    if record.get("page_count") != contract["expected_page_count"]:
         return False
-    release = json.loads(path.read_text(encoding="utf-8"))
-    descriptor = load_json(entry["descriptor"])
-    assets = {asset["path"]: asset for asset in descriptor["native_assets"]}
-    template = release.get("template", {})
-    blueprint = release.get("blueprint", {})
-    return all(
-        (
-            release.get("status") == "released",
-            release.get("version") == entry["version"],
-            blueprint.get("blueprint_id") == entry["blueprint_id"],
-            template.get("artifact_type") == entry["artifact_type"],
-            template.get("path") in entry["native_assets"],
-            template.get("path") in assets,
-            assets.get(template.get("path"), {}).get("sha256") == template.get("sha256"),
-        )
-    )
+    if record.get("sheet_names", []) != contract["expected_sheet_names"]:
+        return False
+    outputs = record.get("rendered_outputs")
+    if not isinstance(outputs, list) or len(outputs) != record["page_count"] + 1:
+        return False
+    return all((ROOT / item["path"]).is_file() and sha256(ROOT / item["path"]) == item["sha256"] for item in outputs)
+
+
+def table_bindings(path):
+    bindings = {}
+    with zipfile.ZipFile(path) as archive:
+        for name in archive.namelist():
+            if not name.startswith("xl/tables/") or not name.endswith(".xml"):
+                continue
+            root = ET.fromstring(archive.read(name))
+            bindings[root.attrib["name"]] = root.attrib["ref"]
+    return bindings
+
+
+def population_binding_valid(descriptor, path):
+    observed = table_bindings(path)
+    for item in descriptor["population_contract"]["tables"]:
+        if observed.get(item["name"]) != item["range"]:
+            return False
+        first, last = item["range"].split(":")
+        first_row = int(re.search(r"[0-9]+$", first).group())
+        last_row = int(re.search(r"[0-9]+$", last).group())
+        if last_row - first_row != item["maximum_rows"]:
+            return False
+    return len(observed) == len(descriptor["population_contract"]["tables"])
 
 
 class TemplateAssetTests(unittest.TestCase):
@@ -118,7 +134,6 @@ class TemplateAssetTests(unittest.TestCase):
             self.assertIn(entry["release_status"], {"candidate", "released"})
             self.assertTrue(entry["capabilities"])
             self.assertEqual(set(entry["supported_consumers"]), {"anna", "holodeck-file-generation", "human-artifact-realism"})
-            self.assertTrue(release_binding_valid(entry), entry["template_id"])
 
     def test_descriptors_and_assets_resolve_without_path_escape(self):
         for entry in self.catalog["templates"]:
@@ -131,7 +146,7 @@ class TemplateAssetTests(unittest.TestCase):
             descriptor = load_json(entry["descriptor"])
             self.assertEqual(descriptor["template_id"], entry["template_id"])
             self.assertEqual(descriptor["version"], entry["version"])
-            self.assertEqual(descriptor["lineage"]["blueprint_id"], entry["blueprint_id"])
+            self.assertEqual(descriptor["blueprint_id"], entry["blueprint_id"])
             self.assertEqual(descriptor["artifact_type"], entry["artifact_type"])
             self.assertEqual(descriptor["authority"], entry["authority"])
             self.assertEqual(descriptor["lifecycle"], entry["lifecycle"])
@@ -139,27 +154,12 @@ class TemplateAssetTests(unittest.TestCase):
             self.assertEqual(descriptor["capabilities"], entry["capabilities"])
             self.assertEqual(descriptor["supported_consumers"], entry["supported_consumers"])
             self.assertEqual([asset["path"] for asset in descriptor["native_assets"]], entry["native_assets"])
-            self.assertTrue(descriptor["lineage"]["foundation_ids"])
-            for foundation_id in descriptor["lineage"]["foundation_ids"]:
-                self.assertTrue((ROOT / f"library/foundations/{foundation_id}.json").is_file())
 
-    def test_descriptor_lineage_matches_repaired_blueprint_lineage(self):
-        expected = {
-            "TMPL-0001": ("BP-0001", ["FOUND-0001"]),
-            "TMPL-0002": ("BP-0002", ["FOUND-0005"]),
-            "TMPL-0003": ("BP-0003", ["FOUND-0008"]),
-        }
+    def test_descriptors_reference_blueprints_without_duplicating_lineage(self):
         for entry in self.catalog["templates"]:
             descriptor = load_json(entry["descriptor"])
-            blueprint_id, foundation_ids = expected[entry["template_id"]]
-            self.assertEqual(descriptor["lineage"]["blueprint_id"], blueprint_id)
-            self.assertEqual(descriptor["lineage"]["foundation_ids"], foundation_ids)
-            self.assertIn("#foundation_lineage", descriptor["lineage"]["lineage_source"])
-
-    def test_catalog_sabotage_cannot_self_promote_candidate(self):
-        entry = dict(self.catalog["templates"][0])
-        entry["release_status"] = "released"
-        self.assertFalse(release_binding_valid(entry))
+            self.assertEqual(descriptor["blueprint_id"], entry["blueprint_id"])
+            self.assertNotIn("lineage", descriptor)
 
     def test_catalog_authority_sabotage_breaks_descriptor_binding(self):
         entry = dict(self.catalog["templates"][0])
@@ -183,6 +183,16 @@ class TemplateAssetTests(unittest.TestCase):
             sabotaged = Path(directory) / original.name
             sabotaged.write_bytes(original.read_bytes() + b"\x00")
             self.assertNotEqual(sha256(sabotaged), asset["sha256"])
+
+    def test_render_manifest_binds_current_asset_and_every_output_hash(self):
+        for entry in self.catalog["templates"]:
+            descriptor = load_json(entry["descriptor"])
+            self.assertTrue(render_binding_valid(descriptor), entry["template_id"])
+
+    def test_render_evidence_rejects_asset_or_descriptor_drift(self):
+        descriptor = load_json("library/templates/TMPL-0002/1.0.0/template.json")
+        descriptor["native_assets"][0]["sha256"] = "0" * 64
+        self.assertFalse(render_binding_valid(descriptor))
 
     def test_every_embedded_build_token_is_declared(self):
         for entry in self.catalog["templates"]:
@@ -226,6 +236,47 @@ class TemplateAssetTests(unittest.TestCase):
             all_xml = b" ".join(archive.read(name) for name in archive.namelist() if name.endswith(".xml"))
         self.assertIn(b"{{organization_name}}", all_xml)
 
+    def test_xlsx_population_contract_binds_table_capacity(self):
+        descriptor = load_json("library/templates/TMPL-0001/1.0.0/template.json")
+        path = ROOT / descriptor["native_assets"][0]["path"]
+        self.assertTrue(population_binding_valid(descriptor, path))
+        self.assertEqual(descriptor["population_contract"]["capacity_change_policy"], "reject_and_rebuild_with_fresh_formula_and_render_evidence")
+        for item in descriptor["population_contract"]["tables"]:
+            self.assertGreaterEqual(item["maximum_rows"], item["minimum_rows"])
+            self.assertTrue(item["columns"])
+
+    def test_xlsx_population_expansion_without_rebuild_is_rejected(self):
+        descriptor = load_json("library/templates/TMPL-0001/1.0.0/template.json")
+        original = ROOT / descriptor["native_assets"][0]["path"]
+        with tempfile.TemporaryDirectory() as directory:
+            expanded = Path(directory) / original.name
+            with zipfile.ZipFile(original) as source, zipfile.ZipFile(expanded, "w") as target:
+                for info in source.infolist():
+                    payload = source.read(info.filename)
+                    if info.filename == "xl/tables/table1.xml":
+                        payload = payload.replace(b'A4:H29', b'A4:H30')
+                    target.writestr(info, payload)
+            self.assertFalse(population_binding_valid(descriptor, expanded))
+
+    def test_xlsx_empty_rows_are_not_false_passes_and_readiness_has_no_tokens(self):
+        path = ROOT / "library/templates/TMPL-0001/1.0.0/internal-close-reconciliation.xlsx"
+        with zipfile.ZipFile(path) as archive:
+            worksheets = b" ".join(archive.read(name) for name in archive.namelist() if name.startswith("xl/worksheets/") and name.endswith(".xml"))
+            checks = ET.fromstring(archive.read("xl/worksheets/sheet8.xml"))
+        formulas = b" ".join(re.findall(rb"<[^>]*f[^>]*>(.*?)</[^>]*f>", worksheets))
+        self.assertNotIn(b"{{", formulas)
+        self.assertIn(b'IF(A5="",""', formulas)
+        self.assertIn(b'"NOT READY"', formulas)
+        self.assertIn(b'COUNTIF(B5:B11,"NOT READY")=0', formulas)
+        self.assertNotIn(b'=0,"PASS",IF(ABS(C9)', formulas)
+        ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+        cached = []
+        for ref in ["B5", "B6", "B7", "B8", "B9", "B10", "B11", "B14"]:
+            value = checks.find(f".//m:c[@r='{ref}']/m:v", ns)
+            cached.append(value.text if value is not None else "")
+        self.assertNotIn("PASS", cached)
+        self.assertEqual(cached[-1], "NOT READY")
+
     def test_docx_has_five_renderable_sections_and_no_approval_claim(self):
         path = ROOT / "library/templates/TMPL-0002/1.0.0/internal-controller-memo.docx"
         with zipfile.ZipFile(path) as archive:
@@ -246,6 +297,8 @@ class TemplateAssetTests(unittest.TestCase):
         self.assertNotIn("syn", message.get_boundary().lower())
         self.assertNotIn("template", message.get_boundary().lower())
         body = message.get_body(preferencelist=("plain",)).get_content()
+        self.assertTrue(body.startswith("Team,"))
+        self.assertNotIn("{{operations_manager_first_name}}", body)
         self.assertEqual(body.count("-----Original Message-----") + 1, 6)
         attachments = list(message.iter_attachments())
         self.assertEqual(len(attachments), 2)

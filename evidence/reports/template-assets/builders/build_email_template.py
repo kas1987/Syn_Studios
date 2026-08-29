@@ -15,7 +15,7 @@ message["Date"] = "{{final_message_date_rfc2822}}"
 message["Message-ID"] = "<{{final_message_id}}>"
 message["Subject"] = "{{case_reference}} | corrected support and remaining item"
 
-message.set_content("""{{operations_manager_first_name}},
+message.set_content("""Team,
 
 The corrected support is attached. Please use {{corrected_attachment_name}} and disregard {{superseded_attachment_name}}.
 

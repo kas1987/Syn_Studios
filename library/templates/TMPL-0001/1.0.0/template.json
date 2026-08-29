@@ -5,17 +5,12 @@
   "name": "Internal close and reconciliation workbook",
   "release_status": "candidate",
   "artifact_type": "xlsx",
-  "lineage": {
-    "blueprint_id": "BP-0001",
-    "foundation_ids": ["FOUND-0001"],
-    "lineage_source": "examples/blueprints/BP-0001.internal-close-workbook.json#foundation_lineage",
-    "method": "Built from scratch from the blueprint-authorized abstract pattern; no source bytes, facts, formulas, names, values, identifiers, or styling were copied."
-  },
+  "blueprint_id": "BP-0001",
   "native_assets": [
     {
       "path": "library/templates/TMPL-0001/1.0.0/internal-close-reconciliation.xlsx",
       "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "sha256": "fdd95ccdf5cd3c8b694a2caa4778768e1fd1d3303ee23d141f7e64a192b42b71"
+      "sha256": "26f97baff5b2ff007d18f3b47a11736f9362a91462ce256a7126a82f477a4fa5"
     }
   ],
   "producer": {"role": "senior accountant", "review_role": "controller", "department": "finance"},
@@ -29,6 +24,25 @@
     "instantiated_artifact_policy": "reject_if_any_declared_or_double_brace_token_remains",
     "value_source": "authorized world facts or explicit role assignment only"
   },
+  "population_contract": {
+    "mode": "bounded_native_tables",
+    "capacity_change_policy": "reject_and_rebuild_with_fresh_formula_and_render_evidence",
+    "tables": [
+      {"name": "SourceDataTable", "sheet": "Source_Data", "range": "A4:H29", "minimum_rows": 1, "maximum_rows": 25, "columns": {"Source Row ID": "nonempty_string", "Entity Code": "nonempty_string", "Account Code": "nonempty_string", "Transaction Date": "date", "Description": "string", "Debit": "decimal", "Credit": "decimal", "Status Code": "string"}},
+      {"name": "AccountMapTable", "sheet": "Account_Map", "range": "A4:E29", "minimum_rows": 1, "maximum_rows": 25, "columns": {"Account Code": "nonempty_string", "Account Name": "nonempty_string", "Statement Group": "string", "Reconciliation Owner Role": "role", "Active?": "enum:Yes|No"}},
+      {"name": "ReconciliationTable", "sheet": "Reconciliation", "range": "A4:H24", "minimum_rows": 1, "maximum_rows": 20, "columns": {"Account Code": "nonempty_string", "Account Name": "string", "Source Net": "formula", "Ledger Balance": "decimal", "Difference": "formula", "Threshold": "nonnegative_decimal", "Status": "formula", "Explanation / Action": "string"}},
+      {"name": "ProposedEntriesTable", "sheet": "Proposed_Entries", "range": "A4:H19", "minimum_rows": 0, "maximum_rows": 15, "columns": {"Entry ID": "nonempty_string", "Account Code": "nonempty_string", "Description": "string", "Debit": "decimal", "Credit": "decimal", "Source Reference": "string", "Preparation Status": "enum:Draft|Ready for review|Hold", "Review Note": "string"}},
+      {"name": "PriorPeriodTable", "sheet": "Prior_Period", "range": "A4:E24", "minimum_rows": 0, "maximum_rows": 20, "columns": {"Account Code": "nonempty_string", "Current Balance": "decimal", "Prior Balance": "decimal", "Change": "formula", "Context Note": "string"}},
+      {"name": "ExceptionsTable", "sheet": "Exceptions", "range": "A4:H19", "minimum_rows": 0, "maximum_rows": 15, "columns": {"Exception ID": "nonempty_string", "Detected In": "string", "Question / Condition": "string", "Authority Class": "enum:supporting|contextual|question-only|superseded", "Owner Role": "role", "Due Date": "date", "Status": "enum:Open|Resolved|Retained", "Resolution Reference": "string"}}
+    ]
+  },
+  "render_contract": {
+    "required": true,
+    "evidence_manifest": "evidence/reports/template-assets/render-manifest.json",
+    "expected_page_count": 8,
+    "expected_sheet_names": ["Close_Control", "Source_Data", "Account_Map", "Reconciliation", "Proposed_Entries", "Prior_Period", "Exceptions", "Checks"],
+    "print_policy": "one_readable_candidate_page_per_bounded_sheet; capacity changes require rebuild and fresh evidence"
+  },
   "knowledge_and_authority_constraints": [
     "Source_Data contains source-owned rows, not conclusions.",
     "Questions and exceptions cannot supply their own resolutions.",
@@ -40,7 +54,7 @@
   "capabilities": ["native_xlsx", "transaction_population", "account_mapping", "formula_reconciliation", "proposed_entries", "prior_period_context", "exception_log", "control_checks", "renderable"],
   "generation_notes": [
     "Populate source and mapping layers before reconciliation.",
-    "Expand reserved rows only when the producer and workflow warrant the population.",
+    "Reject populations above a declared table maximum; a larger capacity requires a rebuilt workbook, extended formulas and tables, and fresh render evidence.",
     "Preserve formulas, validations, number formats, freeze panes, and distinct layer styling.",
     "The untouched candidate intentionally shows MODEL STATUS FAIL until required identity slots are replaced."
   ],

@@ -22,7 +22,7 @@ PRINT_AREAS = {
     "Proposed_Entries": ("$A$1:$H$19", "landscape"),
     "Prior_Period": ("$A$1:$E$24", "portrait"),
     "Exceptions": ("$A$1:$H$19", "landscape"),
-    "Checks": ("$A$1:$D$12", "portrait"),
+    "Checks": ("$A$1:$D$14", "portrait"),
 }
 
 

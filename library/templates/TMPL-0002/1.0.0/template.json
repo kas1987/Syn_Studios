@@ -5,17 +5,12 @@
   "name": "Internal controller decision memorandum",
   "release_status": "candidate",
   "artifact_type": "docx",
-  "lineage": {
-    "blueprint_id": "BP-0002",
-    "foundation_ids": ["FOUND-0005"],
-    "lineage_source": "examples/blueprints/BP-0002.internal-controller-memo.json#foundation_lineage",
-    "method": "Built from scratch using the abstract hierarchy pattern only; no source bytes, facts, names, dates, conclusions, handwriting, or styling were copied."
-  },
+  "blueprint_id": "BP-0002",
   "native_assets": [
     {
       "path": "library/templates/TMPL-0002/1.0.0/internal-controller-memo.docx",
       "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "sha256": "8372dc733ba8a49e0a686b13157e80b3fc59ef8b35dc3e64f35bfaf1efc221d5"
+      "sha256": "1a922e87a29682bdea8a04734084f9f9fe1631bf785139b95b2b0f74c238818f"
     }
   ],
   "producer": {"role": "controller or technical accounting manager", "department": "finance"},
@@ -33,6 +28,13 @@
     "required": true,
     "instantiated_artifact_policy": "reject_if_any_declared_or_double_brace_token_remains",
     "value_source": "authorized evidence, world facts, or explicit role assignment only"
+  },
+  "render_contract": {
+    "required": true,
+    "evidence_manifest": "evidence/reports/template-assets/render-manifest.json",
+    "expected_page_count": 5,
+    "expected_sheet_names": [],
+    "print_policy": "candidate scaffold must render as exactly five readable pages; populated instances require their own pagination evidence"
   },
   "knowledge_and_authority_constraints": [
     "Citations must point to model-visible evidence that actually establishes the stated scope.",

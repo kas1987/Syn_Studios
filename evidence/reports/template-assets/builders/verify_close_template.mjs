@@ -1,5 +1,11 @@
 import fs from "node:fs/promises";
-import { FileBlob, SpreadsheetFile } from "@oai/artifact-tool";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+const managedModules = process.env.SYN_STUDIOS_NODE_MODULES;
+if (!managedModules) throw new Error("activate docs/DOCUMENT_STACK.md before verifying");
+const artifactTool = await import(pathToFileURL(path.join(managedModules, "@oai", "artifact-tool", "dist", "artifact_tool.mjs")).href);
+const { FileBlob, SpreadsheetFile } = artifactTool;
 
 const [inputPath, outputPath] = process.argv.slice(2);
 if (!inputPath || !outputPath) throw new Error("usage: verify_close_template.mjs <input.xlsx> <output.ndjson>");
@@ -19,7 +25,7 @@ const errors = await workbook.inspect({
 });
 const checks = await workbook.inspect({
   kind: "table",
-  range: "Checks!A1:D12",
+  range: "Checks!A1:D14",
   include: "values,formulas",
   tableMaxRows: 20,
   tableMaxCols: 8,
@@ -30,3 +36,4 @@ await fs.writeFile(
   ["# OVERVIEW", overview.ndjson, "# FORMULA_ERRORS", errors.ndjson, "# CHECKS", checks.ndjson, ""].join("\n"),
   "utf8",
 );
+await fs.rm(`${inputPath}.inspect.ndjson`, { force: true });
