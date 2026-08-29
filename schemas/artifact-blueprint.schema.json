@@ -4,7 +4,7 @@
   "title": "Syn Studios artifact blueprint",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "blueprint_id", "name", "artifact_type", "foundation_lineage", "producer", "purpose", "medium", "lifecycle", "authority", "source_boundary", "footprint", "handling_history", "complexity_layers", "prohibited", "proof_gates"],
+  "required": ["schema_version", "blueprint_id", "archetype", "name", "artifact_type", "foundation_lineage", "producer", "purpose", "medium", "lifecycle", "authority", "source_boundary", "footprint", "handling_history", "complexity_layers", "prohibited", "proof_gates"],
   "$defs": {
     "nonemptyStringArray": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 3}},
     "proofGate": {
@@ -22,6 +22,7 @@
   "properties": {
     "schema_version": {"const": "2.0.0"},
     "blueprint_id": {"type": "string", "pattern": "^BP-[0-9]{4}$"},
+    "archetype": {"enum": ["close_workbook", "internal_decision_memo", "email_chain", "executed_agreement", "mixed_package", "policy_procedure", "system_export", "operational_note", "external_notice_approval"]},
     "name": {"type": "string", "minLength": 3},
     "artifact_type": {"enum": ["docx", "xlsx", "pdf", "eml", "csv", "mixed_package"]},
     "foundation_lineage": {

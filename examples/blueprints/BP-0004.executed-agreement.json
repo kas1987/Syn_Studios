@@ -1,6 +1,7 @@
 {
   "schema_version": "2.0.0",
   "blueprint_id": "BP-0004",
+  "archetype": "executed_agreement",
   "name": "Executed commercial or incentive agreement",
   "artifact_type": "pdf",
   "foundation_lineage": [{

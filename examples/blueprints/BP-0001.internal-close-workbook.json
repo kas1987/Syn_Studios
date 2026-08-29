@@ -1,6 +1,7 @@
 {
   "schema_version": "2.0.0",
   "blueprint_id": "BP-0001",
+  "archetype": "close_workbook",
   "name": "Internal monthly close and reconciliation workbook",
   "artifact_type": "xlsx",
   "foundation_lineage": [{
