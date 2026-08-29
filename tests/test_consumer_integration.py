@@ -891,7 +891,14 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
             "xlsx",
         ]
         completed = subprocess.run(command, check=True, capture_output=True, text=True)
-        self.assertEqual(json.loads(completed.stdout)["count"], 1)
+        catalog = load_catalog(smoke_root / "library/catalog.json")
+        expected_count = sum(
+            entry.get("release_status") == "released"
+            and entry.get("artifact_type") == "xlsx"
+            and "anna" in entry.get("supported_consumers", [])
+            for entry in catalog["templates"]
+        )
+        self.assertEqual(json.loads(completed.stdout)["count"], expected_count)
 
 
 if __name__ == "__main__":

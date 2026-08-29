@@ -130,7 +130,29 @@ def validate_descriptor_data(data: dict[str, Any], schema: dict[str, Any], label
                 findings.append(f"{label}:population_contract.source_carriers.{index}.required_target_columns: must exactly match target table columns")
     if len(carrier_kinds) != len(set(carrier_kinds)):
         findings.append(f"{label}:population_contract.source_carriers: carrier kinds must be unique")
+    expansion = as_dict(as_dict(data.get("population_contract")).get("expansion_contract"))
+    minimum, reference, expanded = (
+        expansion.get("minimum_population_rows"),
+        expansion.get("reference_population_rows"),
+        expansion.get("expanded_proof_rows"),
+    )
+    if all(isinstance(value, int) and not isinstance(value, bool) for value in (minimum, reference, expanded)):
+        if not minimum <= reference < expanded:
+            findings.append(f"{label}:population_contract.expansion_contract: must satisfy minimum <= reference < expanded proof rows")
     return findings
+
+
+def validate_expansion_resources(root: Path, descriptor: dict[str, Any], label: str, findings: list[str]) -> None:
+    expansion = as_dict(as_dict(descriptor.get("population_contract")).get("expansion_contract"))
+    resource_roots = {
+        "builder": Path("evidence/reports/template-assets/builders"),
+        "rebuild_pipeline": Path("evidence/reports/template-assets/builders"),
+        "evidence_verifier": Path("evidence/reports/template-assets/builders"),
+        "deterministic_test_carrier": Path("tests/fixtures"),
+    }
+    for field, owned_root in resource_roots.items():
+        if field in expansion:
+            resolve_bound_path(root, expansion.get(field), f"{label}:population_contract.expansion_contract.{field}", findings, owned_root)
 
 
 def column_number(value: str) -> int | None:
@@ -1001,6 +1023,7 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
                     catalog_version_files[version_root].add(descriptor_path)
                 if descriptor_data is not None:
                     findings.extend(validate_descriptor_data(descriptor_data, schemas["template-descriptor"], display_path(descriptor_path, root)))
+                    validate_expansion_resources(root, descriptor_data, display_path(descriptor_path, root), findings)
 
                 catalog_asset_paths: set[str] = set()
                 for asset_index, asset_value in enumerate(as_list(entry.get("native_assets"))):

@@ -70,9 +70,17 @@
     },
     "expansionContract": {
       "type": "object", "additionalProperties": false,
-      "required": ["reference_capacity_only", "strategy", "formula_propagation", "print_propagation", "proof_required"],
+      "required": ["reference_capacity_only", "minimum_population_rows", "reference_population_rows", "expanded_proof_rows", "strategy", "builder", "builder_csv_option", "rebuild_pipeline", "evidence_verifier", "deterministic_test_carrier", "formula_propagation", "print_propagation", "proof_required"],
       "properties": {
         "reference_capacity_only": {"const": true}, "strategy": {"type": "string", "minLength": 12},
+        "minimum_population_rows": {"type": "integer", "minimum": 1},
+        "reference_population_rows": {"type": "integer", "minimum": 1},
+        "expanded_proof_rows": {"type": "integer", "minimum": 2},
+        "builder": {"type": "string", "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.(?:mjs|py)$"},
+        "builder_csv_option": {"type": "string", "pattern": "^--[a-z0-9-]+$"},
+        "rebuild_pipeline": {"type": "string", "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.py$"},
+        "evidence_verifier": {"type": "string", "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.py$"},
+        "deterministic_test_carrier": {"type": "string", "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.csv$"},
         "formula_propagation": {"type": "string", "minLength": 16}, "print_propagation": {"type": "string", "minLength": 16},
         "proof_required": {"$ref": "#/$defs/nonemptyStrings"}
       }

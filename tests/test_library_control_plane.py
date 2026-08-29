@@ -12,7 +12,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-from scripts.validate_library import SCHEMA_NAMES, canonical_json_sha256, validate_native_asset_shape, validate_proof_artifact, validate_repository
+from scripts.validate_library import SCHEMA_NAMES, canonical_json_sha256, validate_expansion_resources, validate_native_asset_shape, validate_proof_artifact, validate_repository
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -508,6 +508,25 @@ class LibraryControlPlaneTests(unittest.TestCase):
             rendered = "\n".join(validate_repository(root)[0])
             self.assertIn("must exactly match native workbook sheet order", rendered)
             self.assertIn("does not resolve to a native workbook table", rendered)
+
+    def test_expansion_resources_are_confined_and_present(self):
+        descriptor = {
+            "population_contract": {
+                "expansion_contract": {
+                    "builder": "evidence/reports/template-assets/builders/missing.mjs",
+                    "rebuild_pipeline": "../escape.py",
+                    "evidence_verifier": "evidence/reports/template-assets/builders/missing.py",
+                    "deterministic_test_carrier": "tests/fixtures/missing.csv",
+                }
+            }
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            findings = []
+            validate_expansion_resources(Path(temporary), descriptor, "descriptor", findings)
+            rendered = "\n".join(findings)
+            self.assertIn("builder: referenced file does not exist", rendered)
+            self.assertIn("rebuild_pipeline: path escapes repository root", rendered)
+            self.assertIn("deterministic_test_carrier: referenced file does not exist", rendered)
 
     def test_required_render_rejects_missing_and_text_only_outputs(self):
         with tempfile.TemporaryDirectory() as temporary:
