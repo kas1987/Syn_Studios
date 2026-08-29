@@ -62,7 +62,8 @@ class ConsumerIntegrationTests(unittest.TestCase):
         self.assertIn("consumer_write_authorization", operations["instantiate"]["requires"])
         self.assertIn("library/templates", operations["instantiate"]["must_not_write"])
         self.assertFalse(operations["validate"]["side_effects"])
-        self.assertEqual(operations["validate"]["verdicts"], ["pass", "reject"])
+        self.assertEqual(operations["validate"]["outcomes"], ["pass", "error"])
+        self.assertEqual(operations["validate"]["returns"], "exact_release_identity_and_bound_hashes")
         self.assertEqual(
             operations["validate"]["candidate_artifact_validation"],
             "owned_by_consumer_package_review_workflow",
@@ -81,7 +82,10 @@ class ConsumerIntegrationTests(unittest.TestCase):
             ["discover", "select", "instantiate", "validate"],
         )
         self.assertIn("artifact_map", consumers["holodeck-file-generation"]["modes"])
-        self.assertEqual(consumers["human-artifact-realism"]["modes"], ["plan", "create", "audit"])
+        self.assertEqual(
+            consumers["human-artifact-realism"]["modes"],
+            ["discover", "select", "validate", "plan", "create", "audit"],
+        )
 
     def test_holodeck_mapping_preserves_package_ownership(self):
         mapping = self.profile["holodeck_mapping"]
@@ -196,8 +200,16 @@ class CatalogResolverTests(unittest.TestCase):
         profile = json.loads(profile_path.read_text(encoding="utf-8"))
         next(item for item in profile["consumers"] if item["consumer_id"] == "anna")["modes"] = []
         profile_path.write_text(json.dumps(profile), encoding="utf-8")
-        with self.assertRaisesRegex(CatalogQueryError, "canonical consumer contracts"):
+        with self.assertRaisesRegex(CatalogQueryError, "nonempty unique strings"):
             _canonical_consumer_ids(self.root)
+
+    def test_invoked_operation_must_be_allowed_for_consumer(self):
+        profile_path = self.root / "integrations/consumer-profile.v1.json"
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+        next(item for item in profile["consumers"] if item["consumer_id"] == "anna")["modes"].remove("discover")
+        profile_path.write_text(json.dumps(profile), encoding="utf-8")
+        with self.assertRaisesRegex(CatalogQueryError, "does not allow anna mode: discover"):
+            discover(self.catalog, consumer_id="anna", repository_root=self.root)
 
     def test_discover_filters_and_excludes_unreleased_entries(self):
         matches = discover(

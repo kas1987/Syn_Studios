@@ -144,12 +144,13 @@
         "release_record_and_typed_evidence_binding",
         "render_evidence_binding_when_required"
       ],
-      "returns": "exact_release_identity_bound_hashes_evidence_records_and_verdict",
+      "returns": "exact_release_identity_and_bound_hashes",
       "implementation": "release_only_canonical_repository_validation_plus_exact_release_binding",
-      "verdicts": [
+      "outcomes": [
         "pass",
-        "reject"
+        "error"
       ],
+      "failure_contract": "status_error_on_stderr_exit_2",
       "candidate_artifact_validation": "owned_by_consumer_package_review_workflow",
       "side_effects": false
     }
@@ -268,6 +269,9 @@
     {
       "consumer_id": "human-artifact-realism",
       "modes": [
+        "discover",
+        "select",
+        "validate",
         "plan",
         "create",
         "audit"

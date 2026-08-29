@@ -46,22 +46,6 @@ RELEASED_REQUIRED_FIELDS = {
     "release_status",
     "release_record",
 }
-EXPECTED_INTERFACE_OPERATIONS = ("discover", "select", "instantiate", "validate")
-EXPECTED_CONSUMER_MODES = {
-    "anna": EXPECTED_INTERFACE_OPERATIONS,
-    "holodeck-file-generation": EXPECTED_INTERFACE_OPERATIONS
-    + (
-        "plan",
-        "create",
-        "review",
-        "quick_orientation",
-        "deep_world_brief",
-        "artifact_map",
-        "reuse_scan",
-        "leakage_audit",
-    ),
-    "human-artifact-realism": ("plan", "create", "audit"),
-}
 class CatalogQueryError(ValueError):
     """A deterministic catalog input or query failure."""
 
@@ -92,14 +76,22 @@ def _canonical_consumer_ids(root: Path) -> set[str]:
     profile_path = root.resolve() / "integrations" / "consumer-profile.v1.json"
     profile = _load_object(profile_path, "consumer profile")
     interface = profile.get("interface")
+    operations = interface.get("operations") if isinstance(interface, dict) else None
+    resolver_modes = interface.get("resolver_modes") if isinstance(interface, dict) else None
+    operation_contracts = profile.get("operations")
     if (
         profile.get("schema_version") != "1.0.0"
         or profile.get("profile_id") != "syn-studios-consumer"
         or profile.get("status") != "stable"
         or not isinstance(interface, dict)
-        or interface.get("operations") != list(EXPECTED_INTERFACE_OPERATIONS)
-        or interface.get("resolver_modes") != list(EXPECTED_INTERFACE_OPERATIONS)
+        or not isinstance(operations, list)
+        or not operations
+        or any(not isinstance(value, str) or not value for value in operations)
+        or len(set(operations)) != len(operations)
+        or resolver_modes != operations
         or interface.get("resolver") != "integrations/query_catalog.py"
+        or not isinstance(operation_contracts, dict)
+        or set(operation_contracts) != set(operations)
     ):
         raise CatalogQueryError("consumer profile interface does not match the canonical resolver contract")
     consumers = profile.get("consumers")
@@ -112,18 +104,27 @@ def _canonical_consumer_ids(root: Path) -> set[str]:
     }
     if len(identifiers) != len(consumers) or not identifiers:
         raise CatalogQueryError("consumer profile must declare unique canonical consumer IDs")
-    declared_modes = {
-        item["consumer_id"]: tuple(item.get("modes", ()))
-        for item in consumers
-    }
-    if declared_modes != EXPECTED_CONSUMER_MODES:
-        raise CatalogQueryError("consumer profile modes do not match the canonical consumer contracts")
+    for item in consumers:
+        modes = item.get("modes")
+        if (
+            not isinstance(modes, list)
+            or not modes
+            or any(not isinstance(value, str) or not value for value in modes)
+            or len(set(modes)) != len(modes)
+        ):
+            raise CatalogQueryError("consumer profile modes must be nonempty unique strings")
     return identifiers
 
 
-def _require_consumer_id(root: Path, consumer_id: str) -> None:
+def _require_consumer_id(root: Path, consumer_id: str, operation: str) -> None:
     if not isinstance(consumer_id, str) or consumer_id not in _canonical_consumer_ids(root):
         raise CatalogQueryError("consumer_id must exactly match a canonical consumer profile ID")
+    profile = _load_object(root.resolve() / "integrations" / "consumer-profile.v1.json", "consumer profile")
+    if operation not in profile["interface"]["operations"]:
+        raise CatalogQueryError(f"consumer profile does not declare resolver operation: {operation}")
+    consumer = next(item for item in profile["consumers"] if item["consumer_id"] == consumer_id)
+    if operation not in consumer["modes"]:
+        raise CatalogQueryError(f"consumer profile does not allow {consumer_id} mode: {operation}")
 
 
 def _validate_catalog_consumer_ids(root: Path, catalog: dict[str, Any]) -> None:
@@ -331,7 +332,7 @@ def discover(
     canonical_catalog = load_catalog(repository_root / "library" / "catalog.json")
     if catalog != canonical_catalog:
         raise CatalogQueryError("catalog must exactly match the canonical repository catalog")
-    _require_consumer_id(repository_root, consumer_id)
+    _require_consumer_id(repository_root, consumer_id, "discover")
     _validate_catalog_consumer_ids(repository_root, catalog)
     required_allowed_knowledge = tuple(required_allowed_knowledge)
     prohibited_knowledge = tuple(prohibited_knowledge)
@@ -385,6 +386,7 @@ def select_exact(
     normalized = version.strip().lower()
     if not normalized or normalized in FLOATING_VERSIONS:
         raise CatalogQueryError("version must be an exact value; floating versions are forbidden")
+    _require_consumer_id(repository_root.resolve(), consumer_id, "select")
 
     matches = [
         entry
@@ -466,6 +468,7 @@ def instantiate(
     materialize: bool = False,
 ) -> dict[str, Any]:
     """Return or materialize a package-local binding after all authority gates pass."""
+    _require_consumer_id(root.resolve(), consumer_id, "instantiate")
     if not (manifest_approved and write_authorized and source_authorized):
         raise CatalogQueryError("instantiate requires manifest, write, and source authorization")
     if not isinstance(provenance_reference, str) or not provenance_reference.strip():
@@ -686,6 +689,7 @@ def main(argv: list[str] | None = None) -> int:
                 materialize=args.materialize,
             )
         else:
+            _require_consumer_id(root, args.consumer_id, "validate")
             entry = select_exact(
                 catalog,
                 template_id=args.template_id,
