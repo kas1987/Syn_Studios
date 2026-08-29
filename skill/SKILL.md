@@ -34,8 +34,8 @@ Use when ANNA, Holodeck, world exploration, or a realism workflow needs a reusab
 
 - `discover`: query the catalog using package requirements through `python integrations/query_catalog.py discover`;
 - `select`: use `python integrations/query_catalog.py select` with an exact version to return a compatible released template or an explicit no-match result;
-- `instantiate`: after the consumer's manifest, authorization, and toolchain gates pass, bind package-owned inputs to the selected release in the package output location;
-- `validate`: run the selected validation profile and return evidence without claiming downstream acceptance.
+- `instantiate`: after the consumer's manifest, authorization, release-evidence, output-containment, and toolchain gates pass, return a package-local binding plan; materialize an unchanged copy only when explicitly requested;
+- `validate`: use `python integrations/query_catalog.py validate` to check catalog, descriptor, native bytes, blueprint, and release-evidence consistency without claiming downstream acceptance.
 
 Foundation cards and blueprints are design inputs, not releasable template bytes. World facts, manifests, prompts, provenance cards, and template bindings remain in the consumer package.
 

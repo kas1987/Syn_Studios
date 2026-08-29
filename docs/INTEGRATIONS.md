@@ -7,9 +7,11 @@ The read-only resolver is executable and returns JSON:
 ```powershell
 python integrations/query_catalog.py discover --artifact-type xlsx --consumer holodeck-file-generation
 python integrations/query_catalog.py select --template-id TMPL-0001 --version 1.0.0
+python integrations/query_catalog.py instantiate --template-id TMPL-0001 --version 1.0.0 --package-root .\package --output-location working_world --provenance-reference manifest.md#workbook --manifest-approved --write-authorized --source-authorized
+python integrations/query_catalog.py validate --template-id TMPL-0001 --version 1.0.0
 ```
 
-Discovery excludes unreleased entries. Selection requires the exact recorded version; aliases such as `latest`, `current`, `stable`, and `*` are rejected. A successful command exits `0`, invalid input exits `2`, and a valid exact selection with no compatible match exits `3`.
+Discovery excludes unreleased entries. Selection requires the exact recorded version; aliases such as `latest`, `current`, `stable`, and `*` are rejected. Producer role and medium are checked against the descriptor and blueprint, while knowledge and authority constraints must be compatible with the package provenance request. Instantiation defaults to a no-write plan. `--materialize` copies validated template bytes into the contained package output only after all authorization flags pass; it never edits library bytes or overwrites an existing output. Validation checks catalog, descriptor, native file hashes, blueprint, same-hash reviews, conductor approval, and release evidence. A successful command exits `0`, invalid input exits `2`, and a valid exact selection with no compatible match exits `3`.
 
 ## Authority split
 

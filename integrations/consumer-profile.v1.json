@@ -11,6 +11,12 @@
       "validate"
     ],
     "resolver": "integrations/query_catalog.py",
+    "resolver_modes": [
+      "discover",
+      "select",
+      "instantiate",
+      "validate"
+    ],
     "catalog_path": "library/catalog.json",
     "release_evidence_root": "library/releases",
     "reference_paths": [
@@ -86,6 +92,8 @@
         "capabilities_satisfy_request",
         "provenance_boundary_compatible"
       ],
+      "default_mode": "plan_without_file_writes",
+      "materialization_policy": "explicit_flag_after_all_authorization_and_release_gates",
       "returns": "selected_template_release_or_no_match",
       "version_policy": "exact_only_no_floating_aliases",
       "no_match_behavior": "return_constraints_and_stop",
@@ -130,6 +138,7 @@
         "cross_file_when_applicable"
       ],
       "returns": "evidence_records_and_verdict",
+      "implementation": "catalog_descriptor_native_blueprint_and_release_evidence_consistency_adapter",
       "verdicts": [
         "pass",
         "fix_first",

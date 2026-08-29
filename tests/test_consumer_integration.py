@@ -1,4 +1,5 @@
 import json
+import hashlib
 import re
 import subprocess
 import sys
@@ -6,7 +7,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from integrations.query_catalog import CatalogQueryError, discover, load_catalog, select_exact
+from integrations.query_catalog import (
+    CatalogQueryError,
+    discover,
+    instantiate,
+    load_catalog,
+    select_exact,
+    validate_release,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,6 +35,10 @@ class ConsumerIntegrationTests(unittest.TestCase):
             ["discover", "select", "instantiate", "validate"],
         )
         self.assertEqual(self.profile["interface"]["resolver"], "integrations/query_catalog.py")
+        self.assertEqual(
+            self.profile["interface"]["resolver_modes"],
+            ["discover", "select", "instantiate", "validate"],
+        )
         self.assertTrue((ROOT / self.profile["interface"]["resolver"]).is_file())
 
     def test_all_reference_paths_exist(self):
@@ -218,6 +230,262 @@ class CatalogResolverTests(unittest.TestCase):
         candidate_catalog = load_catalog(self.catalog_path)
         self.assertEqual(discover(candidate_catalog), [])
         self.assertIsNone(select_exact(candidate_catalog, template_id="TMPL-0001", version="1.2.3"))
+
+    def test_windows_drive_and_unc_paths_are_rejected(self):
+        for unsafe in (r"C:\private\template.json", r"\\server\share\template.json", r"\rooted\template.json"):
+            with self.subTest(unsafe=unsafe):
+                self.catalog["templates"][1]["descriptor"] = unsafe
+                self.catalog_path.write_text(json.dumps(self.catalog), encoding="utf-8")
+                with self.assertRaisesRegex(CatalogQueryError, "safe repository-relative path"):
+                    load_catalog(self.catalog_path)
+
+
+def _write_json(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+
+
+def _file_hash(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+class FullConsumerTrajectoryTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        temporary_root = Path(self.temporary.name)
+        self.root = temporary_root / "repo"
+        self.package_root = temporary_root / "package"
+        self.package_root.mkdir()
+
+        asset = self.root / "library/templates/TMPL-0001/1.2.3/workbook.xlsx"
+        asset.parent.mkdir(parents=True)
+        asset.write_bytes(b"authorized fact-free template")
+        asset_hash = _file_hash(asset)
+        descriptor = {
+            "template_id": "TMPL-0001",
+            "version": "1.2.3",
+            "artifact_type": "xlsx",
+            "authority": "supporting",
+            "lifecycle": "reviewed",
+            "lineage": {"blueprint_id": "BP-0001", "foundation_ids": ["FOUND-0001"]},
+            "release_status": "released",
+            "producer": {"role": "senior accountant"},
+            "native_assets": [
+                {
+                    "path": "library/templates/TMPL-0001/1.2.3/workbook.xlsx",
+                    "sha256": asset_hash,
+                }
+            ],
+            "knowledge_and_authority_constraints": ["Questions cannot resolve themselves."],
+            "prohibited_content": ["answer keys", "private world facts"],
+            "supported_consumers": ["anna", "holodeck-file-generation"],
+            "capabilities": ["recalculate", "render"],
+        }
+        _write_json(self.root / "library/templates/TMPL-0001/1.2.3/template.json", descriptor)
+
+        blueprint_path = self.root / "examples/blueprints/BP-0001.internal-close-workbook.json"
+        procedures = {
+            category: f"Verify {category.replace('_', ' ')} against the selected bytes."
+            for category in (
+                "core_integrity",
+                "render",
+                "metadata",
+                "computational",
+                "provenance",
+                "leakage",
+                "authority_separation",
+                "anti_filler",
+            )
+        }
+        _write_json(
+            blueprint_path,
+            {
+                "blueprint_id": "BP-0001",
+                "medium": "Native Excel workbook",
+                "proof_gates": [
+                    {"category": category, "applicable": True, "procedure": procedure}
+                    for category, procedure in procedures.items()
+                ],
+            },
+        )
+        proof_path = self.root / "library/releases/evidence/proof.txt"
+        proof_path.parent.mkdir(parents=True)
+        proof_path.write_text("same-hash validation evidence", encoding="utf-8")
+        proof_hash = _file_hash(proof_path)
+        bound_record = {
+            "template_sha256": asset_hash,
+            "record_path": "library/releases/evidence/proof.txt",
+            "record_sha256": proof_hash,
+        }
+        release = {
+            "release_id": "REL-0001",
+            "version": "1.2.3",
+            "status": "released",
+            "template": {
+                "path": "library/templates/TMPL-0001/1.2.3/workbook.xlsx",
+                "sha256": asset_hash,
+                "artifact_type": "xlsx",
+            },
+            "blueprint": {
+                "blueprint_id": "BP-0001",
+                "path": "examples/blueprints/BP-0001.internal-close-workbook.json",
+                "sha256": _file_hash(blueprint_path),
+            },
+            "sanitization": {
+                **bound_record,
+                "foundation_card_ids": ["FOUND-0001"],
+            },
+            "reviews": {
+                "terra": {**bound_record, "reviewer": "Terra reviewer", "verdict": "pass"},
+                "sol": {**bound_record, "reviewer": "Sol reviewer", "verdict": "pass"},
+            },
+            "conductor_approval": {
+                **bound_record,
+                "approver": "Conductor",
+                "decision": "approved",
+            },
+            "evidence": {
+                category: {**bound_record, "status": "pass", "blueprint_procedure": procedures[category]}
+                for category in procedures
+            },
+        }
+        _write_json(self.root / "library/releases/REL-0001.workbook.json", release)
+
+        self.catalog_entry = {
+            "template_id": "TMPL-0001",
+            "version": "1.2.3",
+            "artifact_type": "xlsx",
+            "blueprint_id": "BP-0001",
+            "authority": "supporting",
+            "lifecycle": "reviewed",
+            "descriptor": "library/templates/TMPL-0001/1.2.3/template.json",
+            "native_assets": ["library/templates/TMPL-0001/1.2.3/workbook.xlsx"],
+            "supported_consumers": ["anna", "holodeck-file-generation"],
+            "capabilities": ["recalculate", "render"],
+            "release_status": "released",
+        }
+        self.catalog_path = self.root / "library/catalog.json"
+        _write_json(
+            self.catalog_path,
+            {
+                "schema_version": "1.0.0",
+                "catalog_id": "syn-studios-artifact-library",
+                "templates": [self.catalog_entry],
+            },
+        )
+
+    def test_full_discover_select_instantiate_plan_validate_trajectory(self):
+        catalog = load_catalog(self.catalog_path)
+        discovered = discover(
+            catalog,
+            producer_role="senior accountant",
+            medium="Native Excel workbook",
+            authority="supporting",
+            required_allowed_knowledge=["Questions cannot resolve themselves."],
+            prohibited_knowledge=["private world facts"],
+            repository_root=self.root,
+        )
+        self.assertEqual(len(discovered), 1)
+        selected = select_exact(
+            catalog,
+            template_id="TMPL-0001",
+            version="1.2.3",
+            producer_role="senior accountant",
+            medium="Native Excel workbook",
+            repository_root=self.root,
+        )
+        validation = validate_release(self.root, selected)
+        self.assertEqual(validation["status"], "pass")
+        handoff = instantiate(
+            root=self.root,
+            catalog=catalog,
+            template_id="TMPL-0001",
+            version="1.2.3",
+            package_root=self.package_root,
+            output_location=Path("working_world"),
+            manifest_approved=True,
+            write_authorized=True,
+            source_authorized=True,
+            world_fact_keys=["close_period_end", "organization_name"],
+            provenance_reference="manifest.md#workbook",
+        )
+        self.assertEqual(handoff["mode"], "plan")
+        self.assertFalse(handoff["template_bytes_mutated"])
+        self.assertFalse((self.package_root / "working_world").exists())
+        self.assertNotIn("world_fact_values", handoff["binding"])
+
+    def test_explicit_materialization_copies_without_mutating_template(self):
+        catalog = load_catalog(self.catalog_path)
+        source = self.root / self.catalog_entry["native_assets"][0]
+        before = _file_hash(source)
+        handoff = instantiate(
+            root=self.root,
+            catalog=catalog,
+            template_id="TMPL-0001",
+            version="1.2.3",
+            package_root=self.package_root,
+            output_location=Path("working_world"),
+            manifest_approved=True,
+            write_authorized=True,
+            source_authorized=True,
+            provenance_reference="manifest.md#workbook",
+            materialize=True,
+        )
+        self.assertEqual(handoff["mode"], "materialized_copy")
+        self.assertEqual(_file_hash(source), before)
+        self.assertEqual(len(handoff["materialized_assets"]), 1)
+
+    def test_selection_rejects_producer_medium_provenance_and_authority_mismatch(self):
+        catalog = load_catalog(self.catalog_path)
+        base = {"catalog": catalog, "template_id": "TMPL-0001", "version": "1.2.3", "repository_root": self.root}
+        cases = (
+            {"producer_role": "lawyer"},
+            {"medium": "Native Word memorandum"},
+            {"authority": "authoritative"},
+            {"required_allowed_knowledge": ["Knows the answer."]},
+            {"prohibited_knowledge": ["unlisted secret"]},
+        )
+        for mismatch in cases:
+            with self.subTest(mismatch=mismatch):
+                self.assertIsNone(select_exact(**base, **mismatch))
+
+    def test_instantiation_enforces_authority_and_output_containment(self):
+        catalog = load_catalog(self.catalog_path)
+        common = {
+            "root": self.root,
+            "catalog": catalog,
+            "template_id": "TMPL-0001",
+            "version": "1.2.3",
+            "package_root": self.package_root,
+            "provenance_reference": "manifest.md#workbook",
+            "manifest_approved": True,
+            "write_authorized": True,
+            "source_authorized": True,
+        }
+        with self.assertRaisesRegex(CatalogQueryError, "authorization"):
+            instantiate(**{**common, "write_authorized": False}, output_location=Path("working"))
+        with self.assertRaisesRegex(CatalogQueryError, "escapes package root"):
+            instantiate(**common, output_location=Path("../outside"))
+
+    def test_validate_detects_native_file_drift(self):
+        catalog = load_catalog(self.catalog_path)
+        (self.root / self.catalog_entry["native_assets"][0]).write_bytes(b"tampered")
+        with self.assertRaisesRegex(CatalogQueryError, "hash does not match"):
+            validate_release(self.root, catalog["templates"][0])
+
+    def test_cli_uses_root_canonical_catalog_by_default(self):
+        command = [
+            sys.executable,
+            str(ROOT / "integrations/query_catalog.py"),
+            "--root",
+            str(self.root),
+            "discover",
+            "--artifact-type",
+            "xlsx",
+        ]
+        completed = subprocess.run(command, check=True, capture_output=True, text=True)
+        self.assertEqual(json.loads(completed.stdout)["count"], 1)
 
 
 if __name__ == "__main__":
