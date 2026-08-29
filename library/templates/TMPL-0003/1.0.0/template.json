@@ -3,7 +3,7 @@
   "template_id": "TMPL-0003",
   "version": "1.0.0",
   "name": "Operational correction email chain",
-  "release_status": "candidate",
+  "release_status": "released",
   "artifact_type": "eml",
   "blueprint_id": "BP-0003",
   "native_assets": [

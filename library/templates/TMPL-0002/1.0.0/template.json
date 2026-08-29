@@ -3,7 +3,7 @@
   "template_id": "TMPL-0002",
   "version": "1.0.0",
   "name": "Internal controller decision memorandum",
-  "release_status": "candidate",
+  "release_status": "released",
   "artifact_type": "docx",
   "blueprint_id": "BP-0002",
   "native_assets": [

@@ -3,7 +3,7 @@
   "template_id": "TMPL-0001",
   "version": "1.0.0",
   "name": "Internal close and reconciliation workbook",
-  "release_status": "candidate",
+  "release_status": "released",
   "artifact_type": "xlsx",
   "blueprint_id": "BP-0001",
   "native_assets": [
