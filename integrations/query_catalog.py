@@ -64,6 +64,8 @@ def _canonical_validate_repository(root: Path) -> None:
         spec.loader.exec_module(module)
         validate_repository = getattr(module, "validate_repository")
         findings, _ = validate_repository(root)
+    except SystemExit as exc:
+        raise CatalogQueryError(f"canonical library validator terminated with exit code {exc.code}") from exc
     except Exception as exc:
         raise CatalogQueryError(f"canonical library validation could not run: {exc}") from exc
     if findings:
@@ -293,6 +295,9 @@ def discover(
     """Return released entries matching every supplied constraint."""
     repository_root = repository_root.resolve()
     _canonical_validate_repository(repository_root)
+    canonical_catalog = load_catalog(repository_root / "library" / "catalog.json")
+    if catalog != canonical_catalog:
+        raise CatalogQueryError("catalog must exactly match the canonical repository catalog")
     _require_consumer_id(repository_root, consumer_id)
     _validate_catalog_consumer_ids(repository_root, catalog)
     required_allowed_knowledge = tuple(required_allowed_knowledge)
@@ -432,6 +437,10 @@ def instantiate(
         raise CatalogQueryError("instantiate requires manifest, write, and source authorization")
     if not isinstance(provenance_reference, str) or not provenance_reference.strip():
         raise CatalogQueryError("instantiate requires a nonempty provenance_reference")
+    capabilities = tuple(capabilities)
+    required_allowed_knowledge = tuple(required_allowed_knowledge)
+    prohibited_knowledge = tuple(prohibited_knowledge)
+    world_fact_keys = tuple(world_fact_keys)
     entry = select_exact(
         catalog,
         template_id=template_id,
@@ -506,6 +515,14 @@ def instantiate(
             "blueprint_id": entry["blueprint_id"],
             "release_id": validation["release_id"],
             "provenance_reference": provenance_reference,
+            "selection_constraints": {
+                "authority": authority,
+                "producer_role": producer_role,
+                "medium": medium,
+                "capabilities": sorted(set(capabilities)),
+                "required_allowed_knowledge": sorted(set(required_allowed_knowledge)),
+                "prohibited_knowledge": sorted(set(prohibited_knowledge)),
+            },
             "world_fact_keys": sorted(set(world_fact_keys)),
             "output_location": str(output),
         },

@@ -511,6 +511,17 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
                 repository_root=self.root,
             )
 
+    def test_canonical_validator_system_exit_uses_error_contract(self):
+        (self.root / "scripts/validate_library.py").write_text("raise SystemExit(2)\n", encoding="utf-8")
+        with self.assertRaisesRegex(CatalogQueryError, "terminated with exit code 2"):
+            discover(load_catalog(self.catalog_path), consumer_id="anna", repository_root=self.root)
+
+    def test_discovery_rejects_forged_in_memory_catalog(self):
+        catalog = load_catalog(self.catalog_path)
+        catalog["templates"][0]["name"] = "Forged display name"
+        with self.assertRaisesRegex(CatalogQueryError, "exactly match the canonical"):
+            discover(catalog, consumer_id="anna", repository_root=self.root)
+
     def test_descriptor_producer_and_knowledge_drift_invalidates_release(self):
         descriptor = json.loads(self.descriptor_path.read_text(encoding="utf-8"))
         descriptor["producer"] = {"role": "outside counsel", "department": "legal"}
@@ -682,6 +693,17 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
         self.assertFalse(handoff["template_bytes_mutated"])
         self.assertFalse((self.package_root / "working_world").exists())
         self.assertNotIn("world_fact_values", handoff["binding"])
+        self.assertEqual(
+            handoff["binding"]["selection_constraints"],
+            {
+                "authority": "supporting",
+                "producer_role": "senior accountant",
+                "medium": "Native Excel workbook",
+                "capabilities": [],
+                "required_allowed_knowledge": ["Questions cannot resolve themselves."],
+                "prohibited_knowledge": ["private world facts"],
+            },
+        )
 
     def test_explicit_materialization_copies_without_mutating_template(self):
         catalog = load_catalog(self.catalog_path)
@@ -733,6 +755,7 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
             )
         )
         catalog["templates"][0]["supported_consumers"] = ["ANNA"]
+        _write_json(self.catalog_path, catalog)
         with self.assertRaisesRegex(CatalogQueryError, "catalog supported_consumers"):
             discover(catalog, consumer_id="anna", repository_root=self.root)
 
