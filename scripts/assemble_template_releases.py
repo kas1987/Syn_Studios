@@ -207,6 +207,88 @@ def render_artifacts(root: Path, descriptor: dict[str, Any], release_id: str) ->
     return result
 
 
+def validate_technical_result(
+    root: Path,
+    release_id: str,
+    template_id: str,
+    version: str,
+    descriptor_hash: str,
+    asset_hashes: list[str],
+    category: str,
+    gate: dict[str, Any],
+    technical_id: str,
+    technical_name: str,
+    expected_rendered_outputs: list[dict[str, str]],
+) -> tuple[dict[str, Any], dict[str, str]]:
+    release_root = root / "evidence/template-releases" / release_id
+    path = release_root / "technical-results" / f"{category}.json"
+    if not path.is_file():
+        raise AssemblyRefused(f"missing technical result: {path.relative_to(root).as_posix()}")
+    result = load_object(path)
+    required_fields = {
+        "schema_version", "result_type", "result_id", "release_id", "template_id", "version",
+        "category", "result_artifact_category", "descriptor_sha256", "native_asset_sha256s",
+        "applicable", "verdict", "procedure", "actor_id", "actor", "checks",
+        "rendered_outputs", "observations", "summary",
+    }
+    if set(result) != required_fields:
+        raise AssemblyRefused(f"{release_id} {category} technical result fields are incomplete or unexpected")
+    applicable = gate.get("applicable") is True
+    expected = {
+        "schema_version": "1.0.0",
+        "result_type": "template_technical_validation_result",
+        "release_id": release_id,
+        "template_id": template_id,
+        "version": version,
+        "category": category,
+        "descriptor_sha256": descriptor_hash,
+        "applicable": applicable,
+        "verdict": "VALIDATION_PASS" if applicable else "VALIDATION_NOT_APPLICABLE",
+        "procedure": gate.get("procedure"),
+    }
+    for field, value in expected.items():
+        if result.get(field) != value:
+            raise AssemblyRefused(f"{release_id} {category} technical result {field} does not match the frozen release")
+    expected_result_id = f"TECHRES-{release_id}-{category.replace('_', '-').upper()}"
+    if result.get("result_id") != expected_result_id:
+        raise AssemblyRefused(f"{release_id} {category} technical result result_id does not match")
+    result_hashes = result.get("native_asset_sha256s")
+    if not isinstance(result_hashes, list) or not all(isinstance(value, str) for value in result_hashes) or len(result_hashes) != len(set(result_hashes)) or set(result_hashes) != set(asset_hashes):
+        raise AssemblyRefused(f"{release_id} {category} technical result is not bound to every native asset")
+    if normalized_actor(result.get("actor_id")) != normalized_actor(technical_id) or normalized_actor(result.get("actor")) != normalized_actor(technical_name):
+        raise AssemblyRefused(f"{release_id} {category} technical result actor does not match the supplied technical validator")
+    checks = result.get("checks")
+    expected_status = "PASS" if applicable else "NOT_APPLICABLE"
+    if not isinstance(checks, list) or not checks:
+        raise AssemblyRefused(f"{release_id} {category} technical result has no structured checks")
+    for index, check in enumerate(checks):
+        if not isinstance(check, dict) or set(check) != {"id", "status", "detail"}:
+            raise AssemblyRefused(f"{release_id} {category} technical result check {index} is malformed")
+        check_id, status, detail = check.get("id"), check.get("status"), check.get("detail")
+        if not isinstance(check_id, str) or not check_id.startswith(f"{category}:"):
+            raise AssemblyRefused(f"{release_id} {category} technical result check {index} is not category-specific")
+        if status != expected_status or not isinstance(detail, str) or len(detail.strip()) < 12:
+            raise AssemblyRefused(f"{release_id} {category} technical result check {index} is not substantive or has the wrong status")
+    observations, summary = result.get("observations"), result.get("summary")
+    if not isinstance(observations, list) or not observations or not all(isinstance(item, str) and len(item.strip()) >= 12 for item in observations):
+        raise AssemblyRefused(f"{release_id} {category} technical result observations are missing or not meaningful")
+    if not isinstance(summary, str) or len(summary.strip()) < 12:
+        raise AssemblyRefused(f"{release_id} {category} technical result summary is missing or not meaningful")
+    if result.get("rendered_outputs") != expected_rendered_outputs:
+        raise AssemblyRefused(f"{release_id} {category} technical result rendered_outputs do not match the frozen release")
+    expected_artifact_category = "provenance" if category == "render" and expected_rendered_outputs else category
+    if result.get("result_artifact_category") != expected_artifact_category:
+        raise AssemblyRefused(f"{release_id} {category} technical result artifact category does not match")
+    artifact = {
+        "path": path.relative_to(root).as_posix(),
+        "sha256": sha256_file(path),
+        "media_type": "application/json",
+        "category": expected_artifact_category,
+    }
+    validate_review_artifact(root, release_root, release_id, template_id, set(asset_hashes), artifact, f"{release_id}.{category}.technical_result")
+    return result, artifact
+
+
 def evidence_record(record_id: str, record_type: str, verdict: str, release_id: str, template_id: str, version: str, descriptor_hash: str, asset_hashes: list[str], actor_id: str, actor: str, observations: list[str], artifacts: list[dict[str, str]], summary: str, *, categories: list[str] | None = None, procedures: dict[str, str] | None = None, render_contract_hash: str | None = None) -> dict[str, Any]:
     record: dict[str, Any] = {
         "schema_version": "1.0.0", "record_id": record_id, "record_type": record_type,
@@ -315,11 +397,20 @@ def assemble(root: Path, *, approved: bool, builder_id: str, builder_name: str, 
         if review_actor_ids["terra"] == review_actor_ids["sol"]:
             raise AssemblyRefused(f"{release_id} Terra and Sol actors must be independent")
         planned_render = render_artifacts(root, descriptor, release_id)
+        technical_results = {
+            category: validate_technical_result(
+                root, release_id, str(template_id), str(version), descriptor_hash, asset_hashes,
+                category, gate_map[category], technical_id, technical_name,
+                planned_render if category == "render" else [],
+            )
+            for category in PROOF_CATEGORIES
+        }
         plans.append({
             "release_id": release_id, "template_id": str(template_id), "version": str(version), "entry": entry,
             "descriptor_path": descriptor_path, "descriptor": descriptor, "descriptor_hash": descriptor_hash,
             "assets": assets, "asset_hashes": asset_hashes, "blueprint_path": blueprint_path, "blueprint": blueprint,
-            "gate_map": gate_map, "foundation_ids": foundation_ids, "reviews": review_refs, "render_artifacts": planned_render,
+            "gate_map": gate_map, "foundation_ids": foundation_ids, "reviews": review_refs,
+            "render_artifacts": planned_render, "technical_results": technical_results,
         })
 
     writes: dict[Path, bytes] = {}
@@ -349,19 +440,17 @@ def assemble(root: Path, *, approved: bool, builder_id: str, builder_name: str, 
             [add_text_proof("sanitization", "leakage", "Sanitization approval binds the frozen artifact set and its prohibited-content review.")],
             "Hash-bound sanitization approval for this exact template version.",
         ))
-        technical_refs: dict[str, dict[str, str]] = {}
         for category in PROOF_CATEGORIES:
             gate = plan["gate_map"][category]
-            applicable = gate.get("applicable") is True
-            artifacts = plan["render_artifacts"] if category == "render" and plan["render_artifacts"] else [
-                add_text_proof(f"technical-{category}", category, f"Technical validation executed the exact blueprint {category} procedure against the frozen asset hashes.")
-            ]
+            technical_result, result_artifact = plan["technical_results"][category]
+            artifacts = [result_artifact]
+            if category == "render" and plan["render_artifacts"]:
+                artifacts.extend(plan["render_artifacts"])
             record = evidence_record(
                 f"EVID-{release_id}-TECH-{category.replace('_', '-').upper()}", "technical_validation",
-                "VALIDATION_PASS" if applicable else "VALIDATION_NOT_APPLICABLE", release_id, template_id, version,
-                plan["descriptor_hash"], plan["asset_hashes"], technical_id, technical_name,
-                [f"The blueprint {category} gate was {'executed' if applicable else 'confirmed not applicable'} for the frozen artifact set."],
-                artifacts, f"Technical validation result for the {category} release gate.",
+                str(technical_result["verdict"]), release_id, template_id, version,
+                plan["descriptor_hash"], plan["asset_hashes"], str(technical_result["actor_id"]), str(technical_result["actor"]),
+                list(technical_result["observations"]), artifacts, str(technical_result["summary"]),
                 categories=[category], procedures={category: str(gate.get("procedure"))},
                 render_contract_hash=canonical_json_sha256(plan["descriptor"].get("render_contract")) if category == "render" else None,
             )

@@ -125,6 +125,67 @@ class ReleaseAssemblyTests(unittest.TestCase):
                     "summary": f"Independent {lane} review passed for this frozen template version.",
                 })
 
+    def add_technical_results(self, root):
+        catalog = json.loads((root / "library/catalog.json").read_text(encoding="utf-8"))
+        for index, entry in enumerate(catalog["templates"], 1):
+            release_id = f"REL-{index:04d}"
+            descriptor_path = root / entry["descriptor"]
+            descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
+            descriptor_hash = sha256(descriptor_path)
+            asset_hashes = [item["sha256"] for item in descriptor["native_assets"]]
+            blueprint_path = next((root / "examples/blueprints").glob(f"{descriptor['blueprint_id']}.*.json"))
+            blueprint = json.loads(blueprint_path.read_text(encoding="utf-8"))
+            for gate in blueprint["proof_gates"]:
+                category = gate["category"]
+                applicable = gate["applicable"] is True
+                rendered_outputs = []
+                contract = descriptor["render_contract"]
+                if category == "render" and contract["required"]:
+                    paths = [
+                        contract["expected_pdf_path"],
+                        *(contract["expected_page_image_pattern"].format(page=page) for page in range(1, contract["expected_page_count"] + 1)),
+                    ]
+                    rendered_outputs = [
+                        {
+                            "path": relative,
+                            "sha256": sha256(root / relative),
+                            "media_type": "application/pdf" if output_index == 0 else "image/png",
+                            "category": "render",
+                        }
+                        for output_index, relative in enumerate(paths)
+                    ]
+                result_artifact_category = "provenance" if category == "render" and rendered_outputs else category
+                write_json(root / f"evidence/template-releases/{release_id}/technical-results/{category}.json", {
+                    "schema_version": "1.0.0",
+                    "result_type": "template_technical_validation_result",
+                    "result_id": f"TECHRES-{release_id}-{category.replace('_', '-').upper()}",
+                    "release_id": release_id,
+                    "template_id": entry["template_id"],
+                    "version": entry["version"],
+                    "category": category,
+                    "result_artifact_category": result_artifact_category,
+                    "descriptor_sha256": descriptor_hash,
+                    "native_asset_sha256s": asset_hashes,
+                    "applicable": applicable,
+                    "verdict": "VALIDATION_PASS" if applicable else "VALIDATION_NOT_APPLICABLE",
+                    "procedure": gate["procedure"],
+                    "actor_id": self.actor_arguments["technical_id"],
+                    "actor": self.actor_arguments["technical_name"],
+                    "checks": [{
+                        "id": f"{category}:fixture-result",
+                        "status": "PASS" if applicable else "NOT_APPLICABLE",
+                        "detail": f"Fixture runner recorded a category-specific {category} result against the frozen hashes.",
+                    }],
+                    "rendered_outputs": rendered_outputs,
+                    "observations": [f"The category-specific {category} procedure completed against the exact frozen descriptor and native assets."],
+                    "summary": f"Machine-readable {category} result for the exact release candidate.",
+                })
+
+    def assert_no_assembly_writes(self, root, catalog_before):
+        self.assertEqual((root / "library/catalog.json").read_bytes(), catalog_before)
+        self.assertFalse((root / "library/releases").exists())
+        self.assertFalse(any((root / "evidence/template-releases").glob("REL-*/build.json")))
+
     def assemble(self, root, **overrides):
         arguments = dict(self.actor_arguments)
         arguments.update(overrides)
@@ -176,18 +237,76 @@ class ReleaseAssemblyTests(unittest.TestCase):
             with self.assertRaisesRegex(AssemblyRefused, "explicit conductor approval"):
                 assemble(root, approved=False, **self.actor_arguments)
 
+    def test_refuses_missing_technical_result_before_writing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_root(temporary)
+            self.add_reviews(root)
+            catalog_before = (root / "library/catalog.json").read_bytes()
+            with self.assertRaisesRegex(AssemblyRefused, "missing technical result"):
+                self.assemble(root)
+            self.assert_no_assembly_writes(root, catalog_before)
+
+    def test_refuses_generic_technical_statement_before_writing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_root(temporary)
+            self.add_reviews(root)
+            self.add_technical_results(root)
+            result_path = root / "evidence/template-releases/REL-0001/technical-results/core_integrity.json"
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            result["checks"] = []
+            result["observations"] = ["Technical validation passed."]
+            result["summary"] = "Generic PASS statement without a category-specific machine result."
+            write_json(result_path, result)
+            catalog_before = (root / "library/catalog.json").read_bytes()
+            with self.assertRaisesRegex(AssemblyRefused, "no structured checks"):
+                self.assemble(root)
+            self.assert_no_assembly_writes(root, catalog_before)
+
+    def test_refuses_stale_technical_result_before_writing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_root(temporary)
+            self.add_reviews(root)
+            self.add_technical_results(root)
+            result_path = root / "evidence/template-releases/REL-0001/technical-results/metadata.json"
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            result["descriptor_sha256"] = "0" * 64
+            write_json(result_path, result)
+            catalog_before = (root / "library/catalog.json").read_bytes()
+            with self.assertRaisesRegex(AssemblyRefused, "descriptor_sha256 does not match"):
+                self.assemble(root)
+            self.assert_no_assembly_writes(root, catalog_before)
+
+    def test_refuses_forged_technical_procedure_before_writing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_root(temporary)
+            self.add_reviews(root)
+            self.add_technical_results(root)
+            result_path = root / "evidence/template-releases/REL-0002/technical-results/authority_separation.json"
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            result["procedure"] = "Trust a generic release statement."
+            write_json(result_path, result)
+            catalog_before = (root / "library/catalog.json").read_bytes()
+            with self.assertRaisesRegex(AssemblyRefused, "procedure does not match"):
+                self.assemble(root)
+            self.assert_no_assembly_writes(root, catalog_before)
+
     def test_happy_path_is_deterministic_preserves_reviews_and_validates(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = self.make_root(temporary)
             self.add_reviews(root)
+            self.add_technical_results(root)
             review_paths = sorted((root / "evidence/template-releases").glob("REL-*/terra.json")) + sorted((root / "evidence/template-releases").glob("REL-*/sol.json"))
             review_bytes = {path: path.read_bytes() for path in review_paths}
+            result_paths = sorted((root / "evidence/template-releases").glob("REL-*/technical-results/*.json"))
+            result_bytes = {path: path.read_bytes() for path in result_paths}
             first = self.assemble(root)
             first_bytes = {path.relative_to(root): path.read_bytes() for path in first}
             second = self.assemble(root)
             second_bytes = {path.relative_to(root): path.read_bytes() for path in second}
             self.assertEqual(first_bytes, second_bytes)
             self.assertEqual(review_bytes, {path: path.read_bytes() for path in review_paths})
+            self.assertEqual(result_bytes, {path: path.read_bytes() for path in result_paths})
+            self.assertFalse(any((root / "evidence/template-releases").glob("REL-*/proofs/technical-*.txt")))
             self.assertEqual(sorted(path.name for path in (root / "library/releases").glob("*.json")), ["REL-0001.template.json", "REL-0002.template.json", "REL-0003.template.json"])
             catalog = json.loads((root / "library/catalog.json").read_text(encoding="utf-8"))
             self.assertTrue(all(entry["release_status"] == "released" and "release_record" in entry for entry in catalog["templates"]))
