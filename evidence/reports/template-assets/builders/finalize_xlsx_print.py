@@ -3,11 +3,13 @@ from __future__ import annotations
 import sys
 import tempfile
 import zipfile
+import re
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
 
 INPUT = Path(sys.argv[1])
+PREPARE_RECALCULATION = "--prepare-recalculation" in sys.argv[2:]
 MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 PACKAGE_REL = "http://schemas.openxmlformats.org/package/2006/relationships"
@@ -27,14 +29,14 @@ PRINT_AREAS = {
     "Checks": ("$A$1:$D$16", "portrait"),
 }
 
-CAPACITY_GUARD = (
-    'COUNTA(INDIRECT("\'Source_Data\'!A30:H1048576"))'
-    '+COUNTA(INDIRECT("\'Account_Map\'!A30:E1048576"))'
-    '+COUNTA(INDIRECT("\'Reconciliation\'!A25:H1048576"))'
-    '+COUNTA(INDIRECT("\'Proposed_Entries\'!A20:H1048576"))'
-    '+COUNTA(INDIRECT("\'Prior_Period\'!A25:E1048576"))'
-    '+COUNTA(INDIRECT("\'Exceptions\'!A20:H1048576"))'
-)
+TABLE_SHEETS = {
+    "SourceDataTable": "Source_Data",
+    "AccountMapTable": "Account_Map",
+    "ReconciliationTable": "Reconciliation",
+    "ProposedEntriesTable": "Proposed_Entries",
+    "PriorPeriodTable": "Prior_Period",
+    "ExceptionsTable": "Exceptions",
+}
 
 
 def qn(local: str) -> str:
@@ -43,6 +45,38 @@ def qn(local: str) -> str:
 
 with zipfile.ZipFile(INPUT, "r") as source:
     members = {info.filename: (info, source.read(info.filename)) for info in source.infolist()}
+
+table_ranges = {}
+for member_name, (_, payload) in members.items():
+    if not member_name.startswith("xl/tables/") or not member_name.endswith(".xml"):
+        continue
+    table = ET.fromstring(payload)
+    table_name = table.attrib.get("name")
+    if table_name in TABLE_SHEETS:
+        table_ranges[TABLE_SHEETS[table_name]] = table.attrib["ref"]
+if set(table_ranges) != set(TABLE_SHEETS.values()):
+    missing = sorted(set(TABLE_SHEETS.values()) - set(table_ranges))
+    raise ValueError(f"missing bounded tables for: {', '.join(missing)}")
+
+
+def table_boundary(sheet_name: str) -> tuple[str, int]:
+    _, end = table_ranges[sheet_name].split(":")
+    match = re.fullmatch(r"([A-Z]+)([0-9]+)", end)
+    if match is None:
+        raise ValueError(f"unsupported table range for {sheet_name}: {table_ranges[sheet_name]}")
+    return match.group(1), int(match.group(2))
+
+
+capacity_terms = []
+for sheet_name in TABLE_SHEETS.values():
+    end_column, end_row = table_boundary(sheet_name)
+    capacity_terms.append(f'COUNTA(INDIRECT("\'{sheet_name}\'!A{end_row + 1}:{end_column}1048576"))')
+CAPACITY_GUARD = "+".join(capacity_terms)
+
+# Source_Data is the executable variable-population carrier. Its rendered
+# boundary follows the rebuilt table instead of retaining the reference cap.
+source_end_column, source_end_row = table_boundary("Source_Data")
+PRINT_AREAS["Source_Data"] = (f"$A$1:${source_end_column}${source_end_row}", "landscape")
 
 # LibreOffice recalculation truthfully updates cached formula values but adds
 # application-identifying package properties. They are not part of the model-
@@ -81,6 +115,13 @@ relationship_targets = {
     for item in relationships
 }
 
+calc_pr = workbook.find("m:calcPr", NS)
+if calc_pr is None:
+    calc_pr = ET.SubElement(workbook, qn("calcPr"))
+calc_pr.set("calcMode", "auto")
+calc_pr.set("fullCalcOnLoad", "1")
+calc_pr.set("forceFullCalc", "1")
+
 defined_names = workbook.find("m:definedNames", NS)
 if defined_names is None:
     defined_names = ET.Element(qn("definedNames"))
@@ -99,6 +140,13 @@ for index, sheet in enumerate(workbook.find("m:sheets", NS)):
     target = relationship_targets[relationship_id].lstrip("/")
     worksheet_path = target if target.startswith("xl/") else f"xl/{target}"
     worksheet = ET.fromstring(members[worksheet_path][1])
+
+    if PREPARE_RECALCULATION:
+        for cell in worksheet.findall(".//m:c", NS):
+            if cell.find("m:f", NS) is not None:
+                cached_value = cell.find("m:v", NS)
+                if cached_value is not None:
+                    cell.remove(cached_value)
 
     if name == "Checks":
         capacity_cell = worksheet.find(".//m:c[@r='C13']", NS)

@@ -7,8 +7,82 @@ if (!managedModules) throw new Error("activate docs/DOCUMENT_STACK.md before bui
 const artifactTool = await import(pathToFileURL(path.join(managedModules, "@oai", "artifact-tool", "dist", "artifact_tool.mjs")).href);
 const { SpreadsheetFile, Workbook } = artifactTool;
 
-const outputPath = process.argv[2];
-if (!outputPath) throw new Error("usage: build_close_template.mjs <output.xlsx>");
+const args = process.argv.slice(2);
+const outputPath = args[0];
+const csvIndex = args.indexOf("--source-csv");
+const sourceCsvPath = csvIndex >= 0 ? args[csvIndex + 1] : null;
+if (!outputPath || (csvIndex >= 0 && !sourceCsvPath)) {
+  throw new Error("usage: build_close_template.mjs <output.xlsx> [--source-csv <source.csv>]");
+}
+
+const SOURCE_HEADERS = ["Source Row ID", "Entity Code", "Account Code", "Transaction Date", "Description", "Debit", "Credit", "Status Code"];
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (quoted) {
+      if (character === '"' && text[index + 1] === '"') {
+        field += '"';
+        index += 1;
+      } else if (character === '"') {
+        quoted = false;
+      } else {
+        field += character;
+      }
+    } else if (character === '"') {
+      quoted = true;
+    } else if (character === ",") {
+      row.push(field);
+      field = "";
+    } else if (character === "\n") {
+      row.push(field.replace(/\r$/, ""));
+      rows.push(row);
+      row = [];
+      field = "";
+    } else {
+      field += character;
+    }
+  }
+  if (quoted) throw new Error("source CSV has an unterminated quoted field");
+  if (field !== "" || row.length > 0) {
+    row.push(field.replace(/\r$/, ""));
+    rows.push(row);
+  }
+  return rows;
+}
+
+async function loadSourceRows(csvPath) {
+  if (!csvPath) return [];
+  const rows = parseCsv(await fs.readFile(csvPath, "utf8"));
+  if (rows.length < 2) throw new Error("source CSV must contain a header and at least one data row");
+  if (JSON.stringify(rows[0]) !== JSON.stringify(SOURCE_HEADERS)) {
+    throw new Error(`source CSV headers must exactly match: ${SOURCE_HEADERS.join(",")}`);
+  }
+  return rows.slice(1).map((raw, offset) => {
+    if (raw.length !== SOURCE_HEADERS.length || raw.some((value) => value.trim() === "")) {
+      throw new Error(`source CSV row ${offset + 2} must contain all eight fields`);
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw[3]) || !/^-?(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw[5]) || !/^-?(?:\d+(?:\.\d*)?|\.\d+)$/.test(raw[6])) {
+      throw new Error(`source CSV row ${offset + 2} has an invalid date, debit, or credit`);
+    }
+    const date = new Date(`${raw[3]}T00:00:00Z`);
+    const debit = Number(raw[5]);
+    const credit = Number(raw[6]);
+    if (Number.isNaN(date.valueOf()) || date.toISOString().slice(0, 10) !== raw[3] || !Number.isFinite(debit) || !Number.isFinite(credit)) {
+      throw new Error(`source CSV row ${offset + 2} has an invalid date, debit, or credit`);
+    }
+    const excelDateSerial = Math.floor((date.valueOf() - Date.UTC(1899, 11, 30)) / 86400000);
+    return [raw[0], raw[1], raw[2], excelDateSerial, raw[4], debit, credit, raw[7]];
+  });
+}
+
+const sourceRows = await loadSourceRows(sourceCsvPath);
+const sourceCapacity = Math.max(25, sourceRows.length);
+const sourceLastRow = sourceCapacity + 4;
 
 const workbook = Workbook.create();
 const navy = "#17365D";
@@ -77,14 +151,15 @@ const source = workbook.worksheets.add("Source_Data");
 title(source, "Source Data", "Paste or generate authorized transaction-level rows. Do not place conclusions in this source-system layer.");
 source.getRange("A4:H4").values = [["Source Row ID", "Entity Code", "Account Code", "Transaction Date", "Description", "Debit", "Credit", "Status Code"]];
 header(source.getRange("A4:H4"));
-source.getRange("A5:H29").format.borders = { preset: "inside", style: "thin", color: "#E7E6E6" };
-source.getRange("D5:D29").format.numberFormat = "yyyy-mm-dd";
-source.getRange("F5:G29").format.numberFormat = '$#,##0.00;[Red]($#,##0.00);-';
-source.getRange("A4:H29").format.wrapText = false;
+source.getRange(`A5:H${sourceLastRow}`).format.borders = { preset: "inside", style: "thin", color: "#E7E6E6" };
+source.getRange(`D5:D${sourceLastRow}`).format.numberFormat = "yyyy-mm-dd";
+source.getRange(`F5:G${sourceLastRow}`).format.numberFormat = '$#,##0.00;[Red]($#,##0.00);-';
+source.getRange(`A4:H${sourceLastRow}`).format.wrapText = false;
+if (sourceRows.length > 0) source.getRange(`A5:H${sourceRows.length + 4}`).values = sourceRows;
 source.freezePanes.freezeRows(4);
 source.getRange("A:H").format.columnWidth = 18;
 source.getRange("E:E").format.columnWidth = 34;
-source.tables.add("A4:H29", true, "SourceDataTable").style = "TableStyleMedium2";
+source.tables.add(`A4:H${sourceLastRow}`, true, "SourceDataTable").style = "TableStyleMedium2";
 
 const map = workbook.worksheets.add("Account_Map");
 title(map, "Account Mapping", "Map source codes to the reporting structure. Mapping fields are inputs, not inferred authority.");
@@ -104,7 +179,7 @@ recon.getRange("A5:B24").format.fill = input;
 recon.getRange("D5:D24").format.fill = input;
 recon.getRange("F5:F24").format.fill = input;
 recon.getRange("H5:H24").format.fill = input;
-recon.getRange("C5").formulas = [["=IF(A5=\"\",\"\",SUMIFS('Source_Data'!$F$5:$F$29,'Source_Data'!$C$5:$C$29,A5)-SUMIFS('Source_Data'!$G$5:$G$29,'Source_Data'!$C$5:$C$29,A5))"]];
+recon.getRange("C5").formulas = [[`=IF(A5="","",SUMIFS('Source_Data'!$F$5:$F$${sourceLastRow},'Source_Data'!$C$5:$C$${sourceLastRow},A5)-SUMIFS('Source_Data'!$G$5:$G$${sourceLastRow},'Source_Data'!$C$5:$C$${sourceLastRow},A5))`]];
 recon.getRange("C5:C24").fillDown();
 recon.getRange("E5").formulas = [["=IF(A5=\"\",\"\",C5-D5)"]];
 recon.getRange("E5:E24").fillDown();
@@ -163,26 +238,31 @@ const checks = workbook.worksheets.add("Checks");
 title(checks, "Control Checks", "PASS indicates internal workbook checks only; it is not evidence of approval or release.");
 checks.getRange("A4:D4").values = [["Check", "Result", "Delta / Count", "Where to fix"]];
 header(checks.getRange("A4:D4"));
-checks.getRange("A5:A13").values = [["Source rows complete"], ["Source activity is nonzero"], ["Source debits equal source credits"], ["Account mapping rows complete"], ["Reconciliation inputs complete and passing"], ["Proposed entries balanced when present"], ["No open exceptions"], ["Required close fields populated"], ["No out-of-capacity data"]];
-const sourceActiveRows = "SUMPRODUCT(--((('Source_Data'!$A$5:$A$29<>\"\")+('Source_Data'!$B$5:$B$29<>\"\")+('Source_Data'!$C$5:$C$29<>\"\")+('Source_Data'!$D$5:$D$29<>\"\")+('Source_Data'!$E$5:$E$29<>\"\")+('Source_Data'!$F$5:$F$29<>\"\")+('Source_Data'!$G$5:$G$29<>\"\")+('Source_Data'!$H$5:$H$29<>\"\"))>0))";
-const sourceCompleteRows = "SUMPRODUCT(--('Source_Data'!$A$5:$A$29<>\"\"),--('Source_Data'!$B$5:$B$29<>\"\"),--('Source_Data'!$C$5:$C$29<>\"\"),--ISNUMBER('Source_Data'!$D$5:$D$29),--('Source_Data'!$E$5:$E$29<>\"\"),--ISNUMBER('Source_Data'!$F$5:$F$29),--ISNUMBER('Source_Data'!$G$5:$G$29),--('Source_Data'!$H$5:$H$29<>\"\"))";
+checks.getRange("A5:A13").values = [["Source rows complete"], ["Source activity is nonzero"], ["Source debits equal source credits"], ["Account mappings complete; source covered"], ["Reconciliation inputs complete and passing"], ["Proposed entries complete and balanced"], ["Exceptions valid; none open"], ["Required close fields populated"], ["No out-of-capacity data"]];
+const sourceActiveRows = `SUMPRODUCT(--((('Source_Data'!$A$5:$A$${sourceLastRow}<>"")+('Source_Data'!$B$5:$B$${sourceLastRow}<>"")+('Source_Data'!$C$5:$C$${sourceLastRow}<>"")+('Source_Data'!$D$5:$D$${sourceLastRow}<>"")+('Source_Data'!$E$5:$E$${sourceLastRow}<>"")+('Source_Data'!$F$5:$F$${sourceLastRow}<>"")+('Source_Data'!$G$5:$G$${sourceLastRow}<>"")+('Source_Data'!$H$5:$H$${sourceLastRow}<>""))>0))`;
+const sourceCompleteRows = `SUMPRODUCT(--('Source_Data'!$A$5:$A$${sourceLastRow}<>""),--('Source_Data'!$B$5:$B$${sourceLastRow}<>""),--('Source_Data'!$C$5:$C$${sourceLastRow}<>""),--ISNUMBER('Source_Data'!$D$5:$D$${sourceLastRow}),--('Source_Data'!$E$5:$E$${sourceLastRow}<>""),--ISNUMBER('Source_Data'!$F$5:$F$${sourceLastRow}),--ISNUMBER('Source_Data'!$G$5:$G$${sourceLastRow}),--('Source_Data'!$H$5:$H$${sourceLastRow}<>""))`;
 checks.getRange("C5").formulas = [[`=${sourceActiveRows}-${sourceCompleteRows}`]];
 checks.getRange("B5").formulas = [[`=IF(${sourceActiveRows}=0,"NOT READY",IF(C5=0,"PASS","FAIL"))`]];
-checks.getRange("C6").formulas = [["=SUMPRODUCT(IFERROR(ABS('Source_Data'!$F$5:$F$29),0))+SUMPRODUCT(IFERROR(ABS('Source_Data'!$G$5:$G$29),0))"]];
+checks.getRange("C6").formulas = [[`=SUMPRODUCT(IFERROR(ABS('Source_Data'!$F$5:$F$${sourceLastRow}),0))+SUMPRODUCT(IFERROR(ABS('Source_Data'!$G$5:$G$${sourceLastRow}),0))`]];
 checks.getRange("B6").formulas = [["=IF(B5<>\"PASS\",\"NOT READY\",IF(C6>0,\"PASS\",\"FAIL\"))"]];
-checks.getRange("C7").formulas = [["=SUM('Source_Data'!$F$5:$F$29)-SUM('Source_Data'!$G$5:$G$29)"]];
+checks.getRange("C7").formulas = [[`=SUM('Source_Data'!$F$5:$F$${sourceLastRow})-SUM('Source_Data'!$G$5:$G$${sourceLastRow})`]];
 checks.getRange("B7").formulas = [["=IF(B5<>\"PASS\",\"NOT READY\",IF(ABS(C7)<0.005,\"PASS\",\"FAIL\"))"]];
 const mapActiveRows = "SUMPRODUCT(--((('Account_Map'!$A$5:$A$29<>\"\")+('Account_Map'!$B$5:$B$29<>\"\")+('Account_Map'!$C$5:$C$29<>\"\")+('Account_Map'!$D$5:$D$29<>\"\")+('Account_Map'!$E$5:$E$29<>\"\"))>0))";
 const mapCompleteRows = "SUMPRODUCT(--('Account_Map'!$A$5:$A$29<>\"\"),--('Account_Map'!$B$5:$B$29<>\"\"),--('Account_Map'!$C$5:$C$29<>\"\"),--('Account_Map'!$D$5:$D$29<>\"\"),--((('Account_Map'!$E$5:$E$29=\"Yes\")+('Account_Map'!$E$5:$E$29=\"No\"))>0))";
-checks.getRange("C8").formulas = [[`=${mapActiveRows}-${mapCompleteRows}`]];
+const sourceAccountsWithoutOneActiveMap = `SUMPRODUCT(--('Source_Data'!$C$5:$C$${sourceLastRow}<>""),--(COUNTIFS('Account_Map'!$A$5:$A$29,'Source_Data'!$C$5:$C$${sourceLastRow},'Account_Map'!$E$5:$E$29,"Yes")<>1))`;
+checks.getRange("C8").formulas = [[`=${mapActiveRows}-${mapCompleteRows}+${sourceAccountsWithoutOneActiveMap}`]];
 checks.getRange("B8").formulas = [[`=IF(${mapActiveRows}=0,"NOT READY",IF(C8=0,"PASS","FAIL"))`]];
 const reconActiveRows = "SUMPRODUCT(--((('Reconciliation'!$A$5:$A$24<>\"\")+('Reconciliation'!$B$5:$B$24<>\"\")+('Reconciliation'!$D$5:$D$24<>\"\")+('Reconciliation'!$F$5:$F$24<>\"\")+('Reconciliation'!$H$5:$H$24<>\"\"))>0))";
 const reconCompleteRows = "SUMPRODUCT(--('Reconciliation'!$A$5:$A$24<>\"\"),--('Reconciliation'!$B$5:$B$24<>\"\"),--ISNUMBER('Reconciliation'!$D$5:$D$24),--ISNUMBER('Reconciliation'!$F$5:$F$24),--('Reconciliation'!$G$5:$G$24=\"PASS\"))";
 checks.getRange("C9").formulas = [[`=${reconActiveRows}-${reconCompleteRows}`]];
 checks.getRange("B9").formulas = [[`=IF(${reconActiveRows}=0,"NOT READY",IF(C9=0,"PASS","FAIL"))`]];
-checks.getRange("C10").formulas = [["=SUM('Proposed_Entries'!$D$5:$D$19)-SUM('Proposed_Entries'!$E$5:$E$19)"]];
-checks.getRange("B10").formulas = [["=IF(COUNTA('Proposed_Entries'!$A$5:$A$19)=0,\"NOT APPLICABLE\",IF(ABS(C10)<0.005,\"PASS\",\"FAIL\"))"]];
-checks.getRange("C11").formulas = [["=COUNTIF('Exceptions'!$G$5:$G$19,\"Open\")"]];
+const entryActiveRows = "SUMPRODUCT(--((('Proposed_Entries'!$A$5:$A$19<>\"\")+('Proposed_Entries'!$B$5:$B$19<>\"\")+('Proposed_Entries'!$C$5:$C$19<>\"\")+('Proposed_Entries'!$D$5:$D$19<>\"\")+('Proposed_Entries'!$E$5:$E$19<>\"\")+('Proposed_Entries'!$F$5:$F$19<>\"\")+('Proposed_Entries'!$G$5:$G$19<>\"\")+('Proposed_Entries'!$H$5:$H$19<>\"\"))>0))";
+const entryCompleteRows = "SUMPRODUCT(--('Proposed_Entries'!$A$5:$A$19<>\"\"),--('Proposed_Entries'!$B$5:$B$19<>\"\"),--('Proposed_Entries'!$C$5:$C$19<>\"\"),--ISNUMBER('Proposed_Entries'!$D$5:$D$19),--ISNUMBER('Proposed_Entries'!$E$5:$E$19),--('Proposed_Entries'!$F$5:$F$19<>\"\"),--((('Proposed_Entries'!$G$5:$G$19=\"Draft\")+('Proposed_Entries'!$G$5:$G$19=\"Ready for review\")+('Proposed_Entries'!$G$5:$G$19=\"Hold\"))>0))";
+checks.getRange("C10").formulas = [[`=${entryActiveRows}-${entryCompleteRows}+IF(ABS(SUM('Proposed_Entries'!$D$5:$D$19)-SUM('Proposed_Entries'!$E$5:$E$19))<0.005,0,1)`]];
+checks.getRange("B10").formulas = [[`=IF(${entryActiveRows}=0,"NOT APPLICABLE",IF(C10=0,"PASS","FAIL"))`]];
+const exceptionActiveRows = "SUMPRODUCT(--((('Exceptions'!$A$5:$A$19<>\"\")+('Exceptions'!$B$5:$B$19<>\"\")+('Exceptions'!$C$5:$C$19<>\"\")+('Exceptions'!$D$5:$D$19<>\"\")+('Exceptions'!$E$5:$E$19<>\"\")+('Exceptions'!$F$5:$F$19<>\"\")+('Exceptions'!$G$5:$G$19<>\"\")+('Exceptions'!$H$5:$H$19<>\"\"))>0))";
+const exceptionCompleteRows = "SUMPRODUCT(--('Exceptions'!$A$5:$A$19<>\"\"),--('Exceptions'!$B$5:$B$19<>\"\"),--('Exceptions'!$C$5:$C$19<>\"\"),--((('Exceptions'!$D$5:$D$19=\"supporting\")+('Exceptions'!$D$5:$D$19=\"contextual\")+('Exceptions'!$D$5:$D$19=\"question-only\")+('Exceptions'!$D$5:$D$19=\"superseded\"))>0),--('Exceptions'!$E$5:$E$19<>\"\"),--ISNUMBER('Exceptions'!$F$5:$F$19),--((('Exceptions'!$G$5:$G$19=\"Open\")+('Exceptions'!$G$5:$G$19=\"Resolved\")+('Exceptions'!$G$5:$G$19=\"Retained\"))>0),--((('Exceptions'!$G$5:$G$19<>\"Resolved\")+('Exceptions'!$H$5:$H$19<>\"\"))>0))";
+checks.getRange("C11").formulas = [[`=${exceptionActiveRows}-${exceptionCompleteRows}+COUNTIF('Exceptions'!$G$5:$G$19,"Open")`]];
 checks.getRange("B11").formulas = [["=IF(B9<>\"PASS\",\"NOT READY\",IF(C11=0,\"PASS\",\"FAIL\"))"]];
 checks.getRange("C12").formulas = [["=IF(OR(COUNTBLANK('Close_Control'!B5:B8)>0,LEFT('Close_Control'!B5,1)=\"{\",LEFT('Close_Control'!B6,1)=\"{\",LEFT('Close_Control'!B7,1)=\"{\",LEFT('Close_Control'!B8,1)=\"{\"),1,0)"]];
 checks.getRange("B12").formulas = [["=IF(C12=0,\"PASS\",\"NOT READY\")"]];

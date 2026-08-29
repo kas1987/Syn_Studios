@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -345,6 +346,9 @@ class TemplateAssetTests(unittest.TestCase):
         self.assertEqual(set(carriers["csv_import"]["required_target_columns"]), set(contract["tables"][0]["columns"]))
         expansion = contract["expansion_contract"]
         self.assertTrue(expansion["reference_capacity_only"])
+        self.assertEqual((expansion["minimum_population_rows"], expansion["reference_population_rows"], expansion["expanded_proof_rows"]), (1, 25, 30))
+        for key in ("builder", "rebuild_pipeline", "evidence_verifier", "deterministic_test_carrier"):
+            self.assertTrue((ROOT / expansion[key]).is_file(), key)
         self.assertIn("formula", expansion["formula_propagation"])
         self.assertIn("print", expansion["print_propagation"])
         self.assertEqual(set(expansion["proof_required"]), {"typed row validation", "formula recalculation", "out-of-capacity scan", "all-sheet render", "fresh native and render hashes"})
@@ -409,6 +413,88 @@ class TemplateAssetTests(unittest.TestCase):
         checks = recalculate_workbook(populate_minimal_valid_workbook)
         self.assertEqual(checks["B10"], "NOT APPLICABLE")
         self.assertEqual(checks["B16"], "PASS")
+
+    def test_xlsx_unmatched_source_account_recalculates_to_fail(self):
+        def unmatched_mapping(workbook):
+            populate_minimal_valid_workbook(workbook)
+            workbook["Account_Map"]["A5"] = "DIFFERENT"
+
+        checks = recalculate_workbook(unmatched_mapping)
+        self.assertEqual(checks["B8"], "FAIL")
+        self.assertEqual(checks["B16"], "FAIL")
+
+    def test_xlsx_malformed_exception_recalculates_to_fail(self):
+        def malformed_exception(workbook):
+            populate_minimal_valid_workbook(workbook)
+            workbook["Exceptions"]["A5"] = "EX-1"
+            workbook["Exceptions"]["C5"] = "Unresolved"
+            workbook["Exceptions"]["G5"] = "Pending"
+
+        checks = recalculate_workbook(malformed_exception)
+        self.assertEqual(checks["B11"], "FAIL")
+        self.assertEqual(checks["B16"], "FAIL")
+
+    def test_xlsx_partial_proposed_entry_recalculates_to_fail(self):
+        def partial_entry(workbook):
+            populate_minimal_valid_workbook(workbook)
+            workbook["Proposed_Entries"]["D5"] = 500
+
+        checks = recalculate_workbook(partial_entry)
+        self.assertEqual(checks["B10"], "FAIL")
+        self.assertEqual(checks["B16"], "FAIL")
+
+    def test_xlsx_csv_population_rebuilds_and_binds_expanded_render_evidence(self):
+        node = os.environ.get("SYN_STUDIOS_NODE") or shutil.which("node")
+        if not node or not os.environ.get("SYN_STUDIOS_NODE_MODULES"):
+            raise unittest.SkipTest("activated document generation stack is unavailable")
+        soffice = os.environ.get("SYN_STUDIOS_SOFFICE")
+        poppler = os.environ.get("SYN_STUDIOS_POPPLER_BIN")
+        if not soffice or not poppler:
+            raise unittest.SkipTest("activated render stack is unavailable")
+
+        pipeline = ROOT / "evidence/reports/template-assets/builders/build_close_population.py"
+        fixture = ROOT / "tests/fixtures/populations/source-expanded-30.csv"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rebuilt = root / "expanded.xlsx"
+            evidence_dir = root / "evidence"
+            subprocess.run(
+                [sys.executable, str(pipeline), "--source-csv", str(fixture), "--output", str(rebuilt), "--evidence-dir", str(evidence_dir)],
+                check=True,
+                timeout=180,
+            )
+            evidence_path = evidence_dir / "population-evidence.json"
+            evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+            self.assertEqual(evidence["source_table_ref"], "A4:H34")
+            self.assertEqual(evidence["source_print_area"], "'Source_Data'!$A$1:$H$34")
+            self.assertEqual(evidence["formula_boundary"], 34)
+            self.assertEqual(evidence["control_results"], {"B5": "PASS", "B6": "PASS", "B7": "PASS", "B8": "NOT READY", "B13": "PASS", "B16": "NOT READY"})
+            self.assertEqual(evidence["verdict"], "PASS")
+            self.assertGreaterEqual(len(evidence["rendered_outputs"]), 2)
+            self.assertTrue(all(re.fullmatch(r"[0-9a-f]{64}", item["sha256"]) for item in evidence["rendered_outputs"]))
+
+    def test_xlsx_csv_population_rejects_incomplete_typed_row(self):
+        node = os.environ.get("SYN_STUDIOS_NODE") or shutil.which("node")
+        if not node or not os.environ.get("SYN_STUDIOS_NODE_MODULES"):
+            raise unittest.SkipTest("activated document generation stack is unavailable")
+        builder = ROOT / "evidence/reports/template-assets/builders/build_close_template.mjs"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            incomplete = root / "incomplete.csv"
+            incomplete.write_text(
+                "Source Row ID,Entity Code,Account Code,Transaction Date,Description,Debit,Credit,Status Code\n"
+                "ROW-1,ENTITY-A,1000,2026-08-31,Incomplete row,100.00,,POSTED\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.run(
+                [node, str(builder), str(root / "rejected.xlsx"), "--source-csv", str(incomplete)],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("must contain all eight fields", completed.stderr)
 
     def test_xlsx_out_of_capacity_cell_recalculates_to_fail(self):
         def out_of_capacity(workbook):

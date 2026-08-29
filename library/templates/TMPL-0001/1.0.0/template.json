@@ -10,7 +10,7 @@
     {
       "path": "library/templates/TMPL-0001/1.0.0/internal-close-reconciliation.xlsx",
       "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "sha256": "90fa62db132fb965aba7fbdf248f1e831450e38a33fc3d52f9670858fa47e08d"
+      "sha256": "6e7dcce5515284892f50b60ec652e696316f70cad63be031772fe3e4954e307d"
     }
   ],
   "producer": {"role": "senior accountant", "review_role": "controller", "department": "finance"},
@@ -44,7 +44,15 @@
     ],
     "expansion_contract": {
       "reference_capacity_only": true,
+      "minimum_population_rows": 1,
+      "reference_population_rows": 25,
+      "expanded_proof_rows": 30,
       "strategy": "rebuild_native_tables_to_requested_population_size",
+      "builder": "evidence/reports/template-assets/builders/build_close_template.mjs",
+      "builder_csv_option": "--source-csv",
+      "rebuild_pipeline": "evidence/reports/template-assets/builders/build_close_population.py",
+      "evidence_verifier": "evidence/reports/template-assets/builders/verify_population_rebuild.py",
+      "deterministic_test_carrier": "tests/fixtures/populations/source-expanded-30.csv",
       "formula_propagation": "extend every calculated column, reconciliation range, and control formula to the rebuilt table boundary",
       "print_propagation": "recompute print areas and pagination for the populated footprint instead of forcing the reference one-page layout",
       "proof_required": ["typed row validation", "formula recalculation", "out-of-capacity scan", "all-sheet render", "fresh native and render hashes"]
@@ -81,9 +89,10 @@
     "Every populated source row must provide all eight typed fields; every populated mapping row must provide all five fields; reconciliation rows require account, name, numeric ledger balance, numeric threshold, and a passing formula result.",
     "The committed 25-row source table is a compact reference capacity, not a library-wide population model; select a source carrier and rebuild table, formula, and print boundaries for larger authorized populations.",
     "CSV imports must use the declared target columns or an explicit header map and then pass the same typed-row, formula, capacity, and render gates as native entry.",
+    "The executable CSV rebuild path accepts an exact-header UTF-8 source carrier, sizes SourceDataTable to the population, propagates dependent formula ranges, derives its out-of-capacity guard and print area from native table boundaries, and binds fresh rendered-output hashes.",
     "Reject populations above a declared table maximum; a larger capacity requires a rebuilt workbook, extended formulas and tables, and fresh render evidence.",
     "Preserve formulas, validations, number formats, freeze panes, and distinct layer styling.",
-    "The untouched candidate intentionally shows MODEL STATUS FAIL until required identity slots are replaced."
+    "The untouched candidate intentionally shows MODEL STATUS NOT READY until required identity slots and populations are supplied."
   ],
   "proof_expectations": [
     {"id": "xlsx-structure", "capability": "native_structure", "required": true, "description": "Open as OOXML and verify all eight named sheets."},
