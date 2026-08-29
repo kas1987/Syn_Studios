@@ -11,7 +11,7 @@ python integrations/query_catalog.py instantiate --template-id TMPL-0001 --versi
 python integrations/query_catalog.py validate --template-id TMPL-0001 --version 1.0.0
 ```
 
-Discovery excludes unreleased entries. Selection requires the exact recorded version; aliases such as `latest`, `current`, `stable`, and `*` are rejected. Producer role and medium are checked against the descriptor and blueprint, while knowledge and authority constraints must be compatible with the package provenance request. Instantiation defaults to a no-write plan. `--materialize` copies validated template bytes into the contained package output only after all authorization flags pass; it never edits library bytes or overwrites an existing output. Validation checks catalog, descriptor, native file hashes, blueprint, same-hash reviews, conductor approval, and release evidence. A successful command exits `0`, invalid input exits `2`, and a valid exact selection with no compatible match exits `3`.
+Discovery excludes unreleased entries. Selection requires the exact recorded version; aliases such as `latest`, `current`, `stable`, and `*` are rejected. Producer role and medium are checked against the descriptor and blueprint, while knowledge and authority constraints must be compatible with the package provenance request. Instantiation defaults to a no-write plan. `--materialize` stages validated template bytes and atomically commits them to a new, contained package output after all authorization flags pass; it never edits library bytes, accepts an existing target, or leaves a partial copy on failure. Validation follows the catalog-bound release record and checks the exact descriptor, every native asset, blueprint, typed same-hash reviews, conductor approval, and technical evidence. A successful command exits `0`, invalid input exits `2`, and a valid exact selection with no compatible match exits `3`.
 
 ## Authority split
 
@@ -53,6 +53,6 @@ The consumer supplies the released template's blueprint constraints alongside th
 
 ## ANNA compatibility
 
-ANNA should route synthetic-artifact work through its Holodeck Bridge and then call the Syn Studios interface at the selected stage. The interface deliberately preserves ANNA's existing stop conditions: create still requires an approved manifest, write authorization, and validated assignment; review still requires a complete package and its own reviewer controls. No private world content or path is copied into ANNA or this repository.
+ANNA uses the canonical consumer identifier `anna`; Holodeck workflows use `holodeck-file-generation`, including world-exploration modes. ANNA should route synthetic-artifact work through its Holodeck Bridge and then call the Syn Studios interface at the selected stage. The interface deliberately preserves ANNA's existing stop conditions: create still requires an approved manifest, write authorization, and validated assignment; review still requires a complete package and its own reviewer controls. No private world content or path is copied into ANNA or this repository.
 
 This repository does not install or modify ANNA. ANNA registration is a separate change under ANNA's own catalog authority.

@@ -225,7 +225,7 @@
   },
   "consumers": [
     {
-      "consumer_id": "anna-holodeck-bridge",
+      "consumer_id": "anna",
       "modes": [
         "discover",
         "select",
@@ -241,24 +241,22 @@
       ]
     },
     {
-      "consumer_id": "holodeck-synthetic-data",
+      "consumer_id": "holodeck-file-generation",
       "modes": [
+        "discover",
+        "select",
+        "instantiate",
+        "validate",
         "plan",
         "create",
-        "review"
-      ],
-      "handoff": "provenance_card_and_package_local_template_binding"
-    },
-    {
-      "consumer_id": "holodeck-synthetic-data-explore-world",
-      "modes": [
+        "review",
         "quick_orientation",
         "deep_world_brief",
         "artifact_map",
         "reuse_scan",
         "leakage_audit"
       ],
-      "handoff": "artifact_map_or_world_brief"
+      "handoff": "provenance_card_package_local_template_binding_artifact_map_or_world_brief"
     },
     {
       "consumer_id": "human-artifact-realism",

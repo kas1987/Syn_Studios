@@ -1,10 +1,13 @@
 import json
 import hashlib
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
+from unittest import mock
 from pathlib import Path
 
 from integrations.query_catalog import (
@@ -61,17 +64,16 @@ class ConsumerIntegrationTests(unittest.TestCase):
     def test_required_consumers_and_modes_are_declared(self):
         consumers = {item["consumer_id"]: item for item in self.profile["consumers"]}
         expected = {
-            "anna-holodeck-bridge",
-            "holodeck-synthetic-data",
-            "holodeck-synthetic-data-explore-world",
+            "anna",
+            "holodeck-file-generation",
             "human-artifact-realism",
         }
         self.assertEqual(set(consumers), expected)
         self.assertEqual(
-            consumers["anna-holodeck-bridge"]["modes"],
+            consumers["anna"]["modes"],
             ["discover", "select", "instantiate", "validate"],
         )
-        self.assertIn("artifact_map", consumers["holodeck-synthetic-data-explore-world"]["modes"])
+        self.assertIn("artifact_map", consumers["holodeck-file-generation"]["modes"])
         self.assertEqual(consumers["human-artifact-realism"]["modes"], ["plan", "create", "audit"])
 
     def test_holodeck_mapping_preserves_package_ownership(self):
@@ -130,8 +132,10 @@ class CatalogResolverTests(unittest.TestCase):
                     "catalog_id": "syn-studios-artifact-library",
                     "templates": [
                         {
+                            "kind": "artifact_template",
                             "template_id": "TMPL-0002",
                             "version": "1.0.0",
+                            "name": "Draft memo",
                             "artifact_type": "docx",
                             "blueprint_id": "BP-0002",
                             "authority": "supporting",
@@ -143,8 +147,10 @@ class CatalogResolverTests(unittest.TestCase):
                             "release_status": "draft",
                         },
                         {
+                            "kind": "artifact_template",
                             "template_id": "TMPL-0001",
                             "version": "1.2.3",
+                            "name": "Released workbook",
                             "artifact_type": "xlsx",
                             "blueprint_id": "BP-0001",
                             "authority": "supporting",
@@ -154,6 +160,7 @@ class CatalogResolverTests(unittest.TestCase):
                             "supported_consumers": ["anna", "holodeck-file-generation"],
                             "capabilities": ["recalculate", "render", "metadata"],
                             "release_status": "released",
+                            "release_record": {"path": "library/releases/REL-0001.template.json", "sha256": "0" * 64},
                         },
                     ],
                 }
@@ -258,34 +265,15 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
         self.package_root = temporary_root / "package"
         self.package_root.mkdir()
 
-        asset = self.root / "library/templates/TMPL-0001/1.2.3/workbook.xlsx"
-        asset.parent.mkdir(parents=True)
-        asset.write_bytes(b"authorized fact-free template")
-        asset_hash = _file_hash(asset)
-        descriptor = {
-            "template_id": "TMPL-0001",
-            "version": "1.2.3",
-            "artifact_type": "xlsx",
-            "authority": "supporting",
-            "lifecycle": "reviewed",
-            "lineage": {"blueprint_id": "BP-0001", "foundation_ids": ["FOUND-0001"]},
-            "release_status": "released",
-            "producer": {"role": "senior accountant"},
-            "native_assets": [
-                {
-                    "path": "library/templates/TMPL-0001/1.2.3/workbook.xlsx",
-                    "sha256": asset_hash,
-                }
-            ],
-            "knowledge_and_authority_constraints": ["Questions cannot resolve themselves."],
-            "prohibited_content": ["answer keys", "private world facts"],
-            "supported_consumers": ["anna", "holodeck-file-generation"],
-            "capabilities": ["recalculate", "render"],
-        }
-        _write_json(self.root / "library/templates/TMPL-0001/1.2.3/template.json", descriptor)
-
-        blueprint_path = self.root / "examples/blueprints/BP-0001.internal-close-workbook.json"
-        procedures = {
+        self.asset = self.root / "library/templates/TMPL-0001/1.2.3/workbook.xlsx"
+        self.asset.parent.mkdir(parents=True)
+        with zipfile.ZipFile(self.asset, "w") as package:
+            package.writestr("[Content_Types].xml", "<Types/>")
+            package.writestr("xl/workbook.xml", "<workbook/>")
+        asset_hash = _file_hash(self.asset)
+        self.descriptor_path = self.asset.parent / "template.json"
+        self.blueprint_path = self.root / "examples/blueprints/BP-0001.internal-close-workbook.json"
+        self.procedures = {
             category: f"Verify {category.replace('_', ' ')} against the selected bytes."
             for category in (
                 "core_integrity",
@@ -299,62 +287,110 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
             )
         }
         _write_json(
-            blueprint_path,
+            self.blueprint_path,
             {
+                "schema_version": "2.0.0",
                 "blueprint_id": "BP-0001",
+                "archetype": "close_workbook",
+                "name": "Internal close workbook",
+                "artifact_type": "xlsx",
+                "producer": "senior accountant",
+                "purpose": "Reconcile authorized source activity to the ledger.",
+                "lifecycle": "reviewed",
+                "authority": {"primary_class": "supporting", "governing_scope": "internal analysis", "non_governing_scope": "external approval"},
+                "foundation_lineage": [{"card_id": "FOUND-0001", "card_sha256": "0" * 64, "reviewed_source_sha256": "1" * 64, "use_mode": "reviewed_pattern", "patterns_used": ["reconciliation layers"], "prohibited_content_acknowledged": True, "transformation_boundary": "No source facts are reused."}],
                 "medium": "Native Excel workbook",
+                "source_boundary": {"authorized_inputs": ["approved world facts"], "excluded_inputs": ["private source answers"], "conflict_resolution": "Authoritative package sources control."},
+                "footprint": {"target": "eight worksheets", "natural_depth": ["source rows", "mapping rows"], "source_owned_rationale": "A close workflow naturally preserves source and reconciliation layers."},
+                "handling_history": {"mode": "none", "justification": "The reusable template has no handling history."},
+                "complexity_layers": [{"layer": "core", "features": ["reconciliation"]}, {"layer": "operational_depth", "features": ["source population"]}],
+                "prohibited": ["private world facts"],
                 "proof_gates": [
                     {"category": category, "applicable": True, "procedure": procedure}
-                    for category, procedure in procedures.items()
+                    for category, procedure in self.procedures.items()
                 ],
             },
         )
-        proof_path = self.root / "library/releases/evidence/proof.txt"
-        proof_path.parent.mkdir(parents=True)
-        proof_path.write_text("same-hash validation evidence", encoding="utf-8")
-        proof_hash = _file_hash(proof_path)
-        bound_record = {
-            "template_sha256": asset_hash,
-            "record_path": "library/releases/evidence/proof.txt",
-            "record_sha256": proof_hash,
+        descriptor = {
+            "schema_version": "1.0.0",
+            "template_id": "TMPL-0001",
+            "version": "1.2.3",
+            "name": "Released workbook",
+            "artifact_type": "xlsx",
+            "authority": "supporting",
+            "lifecycle": "reviewed",
+            "lineage": {"blueprint_id": "BP-0001", "foundation_ids": ["FOUND-0001"], "lineage_source": "examples/blueprints/BP-0001.internal-close-workbook.json#foundation_lineage", "method": "Built from scratch using only the reviewed abstract blueprint pattern."},
+            "release_status": "released",
+            "producer": {"role": "senior accountant", "department": "finance"},
+            "native_assets": [{"path": self.asset.relative_to(self.root).as_posix(), "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "sha256": asset_hash}],
+            "knowledge_and_authority_constraints": ["Questions cannot resolve themselves."],
+            "prohibited_content": ["answer keys", "private world facts"],
+            "supported_consumers": ["anna", "holodeck-file-generation"],
+            "capabilities": ["recalculate", "render"],
+            "purpose": "Reconcile authorized source activity to the ledger.",
+            "slots": ["organization_name"],
+            "slot_contract": {"token_format": "{{slot_name}}", "required": True, "instantiated_artifact_policy": "reject unresolved tokens", "value_source": "authorized world facts only"},
+            "generation_notes": ["Populate source layers before reconciliation."],
+            "proof_expectations": [{"id": "render-all", "capability": "render", "required": True, "description": "Render and inspect every worksheet."}],
         }
+        _write_json(self.descriptor_path, descriptor)
+        descriptor_hash = _file_hash(self.descriptor_path)
+
+        self.evidence_paths = {}
+        def evidence(name, record_type, verdict, actor_id, categories=None):
+            artifact_categories = categories or ["provenance"]
+            artifacts = []
+            for category in artifact_categories:
+                proof = self.root / "evidence/template-releases/REL-0001/proofs" / f"{name}-{category}.txt"
+                proof.parent.mkdir(parents=True, exist_ok=True)
+                proof.write_text(f"Observed output for {name} {category}.\n", encoding="utf-8")
+                artifacts.append({"path": proof.relative_to(self.root).as_posix(), "sha256": _file_hash(proof), "media_type": "text/plain", "category": category})
+            record = {
+                "schema_version": "1.0.0", "record_id": f"EVID-RECORD-{name.upper()}",
+                "record_type": record_type, "release_id": "REL-0001", "template_id": "TMPL-0001", "version": "1.2.3",
+                "descriptor_sha256": descriptor_hash, "native_asset_sha256s": [asset_hash], "verdict": verdict,
+                "actor_id": actor_id, "actor": name.title(), "observations": [f"Observed concrete output for the {name} gate."],
+                "artifacts": artifacts, "summary": f"Typed evidence for the {name} release gate.",
+            }
+            if categories is not None:
+                record["categories"] = categories
+                record["procedures"] = {category: self.procedures[category] for category in categories}
+            path = self.root / "evidence/template-releases/REL-0001" / f"{name}.json"
+            _write_json(path, record)
+            self.evidence_paths[name] = path
+            return {"record_path": path.relative_to(self.root).as_posix(), "record_sha256": _file_hash(path)}
+
+        sanitization = evidence("sanitization", "sanitization", "SANITIZATION_PASS", "reviewer:sanitization")
+        terra = evidence("terra", "terra_review", "USABILITY_PASS", "reviewer:terra")
+        sol = evidence("sol", "sol_review", "INTEGRITY_PASS", "reviewer:sol")
+        conductor = evidence("conductor", "conductor_approval", "APPROVED", "reviewer:conductor")
+        technical = evidence("technical", "technical_validation", "VALIDATION_PASS", "runner:validation", sorted(self.procedures))
         release = {
+            "schema_version": "2.0.0",
             "release_id": "REL-0001",
+            "template_id": "TMPL-0001",
             "version": "1.2.3",
             "status": "released",
-            "template": {
-                "path": "library/templates/TMPL-0001/1.2.3/workbook.xlsx",
-                "sha256": asset_hash,
-                "artifact_type": "xlsx",
-            },
+            "descriptor": {"path": self.descriptor_path.relative_to(self.root).as_posix(), "sha256": descriptor_hash},
+            "native_assets": [{"path": self.asset.relative_to(self.root).as_posix(), "sha256": asset_hash}],
             "blueprint": {
                 "blueprint_id": "BP-0001",
                 "path": "examples/blueprints/BP-0001.internal-close-workbook.json",
-                "sha256": _file_hash(blueprint_path),
+                "sha256": _file_hash(self.blueprint_path),
             },
-            "sanitization": {
-                **bound_record,
-                "foundation_card_ids": ["FOUND-0001"],
-            },
-            "reviews": {
-                "terra": {**bound_record, "reviewer": "Terra reviewer", "verdict": "pass"},
-                "sol": {**bound_record, "reviewer": "Sol reviewer", "verdict": "pass"},
-            },
-            "conductor_approval": {
-                **bound_record,
-                "approver": "Conductor",
-                "decision": "approved",
-            },
-            "evidence": {
-                category: {**bound_record, "status": "pass", "blueprint_procedure": procedures[category]}
-                for category in procedures
-            },
+            "sanitization": {"evidence": sanitization, "foundation_card_ids": ["FOUND-0001"]},
+            "reviews": {"terra": terra, "sol": sol},
+            "conductor_approval": conductor,
+            "evidence": {category: technical for category in self.procedures},
         }
-        _write_json(self.root / "library/releases/REL-0001.workbook.json", release)
+        self.release_path = self.root / "library/releases/REL-0001.workbook.json"
+        _write_json(self.release_path, release)
 
         self.catalog_entry = {
+            "kind": "artifact_template",
             "template_id": "TMPL-0001",
             "version": "1.2.3",
+            "name": "Released workbook",
             "artifact_type": "xlsx",
             "blueprint_id": "BP-0001",
             "authority": "supporting",
@@ -364,6 +400,7 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
             "supported_consumers": ["anna", "holodeck-file-generation"],
             "capabilities": ["recalculate", "render"],
             "release_status": "released",
+            "release_record": {"path": self.release_path.relative_to(self.root).as_posix(), "sha256": _file_hash(self.release_path)},
         }
         self.catalog_path = self.root / "library/catalog.json"
         _write_json(
@@ -371,9 +408,152 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
             {
                 "schema_version": "1.0.0",
                 "catalog_id": "syn-studios-artifact-library",
+                "discovery_fields": ["artifact_type", "authority", "lifecycle", "capabilities", "supported_consumers", "blueprint_id", "release_status"],
                 "templates": [self.catalog_entry],
             },
         )
+
+    def _add_secondary_asset(self, *, bind_evidence):
+        secondary = self.asset.parent / "secondary.txt"
+        secondary.write_bytes(b"authorized secondary template asset")
+        secondary_binding = {"path": secondary.relative_to(self.root).as_posix(), "sha256": _file_hash(secondary)}
+        descriptor = json.loads(self.descriptor_path.read_text(encoding="utf-8"))
+        descriptor["native_assets"].append({**secondary_binding, "media_type": "text/plain"})
+        _write_json(self.descriptor_path, descriptor)
+        descriptor_hash = _file_hash(self.descriptor_path)
+
+        release = json.loads(self.release_path.read_text(encoding="utf-8"))
+        release["descriptor"]["sha256"] = descriptor_hash
+        release["native_assets"].append(secondary_binding)
+        asset_hashes = [item["sha256"] for item in release["native_assets"]]
+        for path in self.evidence_paths.values():
+            record = json.loads(path.read_text(encoding="utf-8"))
+            record["descriptor_sha256"] = descriptor_hash
+            if bind_evidence:
+                record["native_asset_sha256s"] = asset_hashes
+            _write_json(path, record)
+
+        def reference(name):
+            path = self.evidence_paths[name]
+            return {"record_path": path.relative_to(self.root).as_posix(), "record_sha256": _file_hash(path)}
+
+        release["sanitization"]["evidence"] = reference("sanitization")
+        release["reviews"] = {"terra": reference("terra"), "sol": reference("sol")}
+        release["conductor_approval"] = reference("conductor")
+        release["evidence"] = {category: reference("technical") for category in self.procedures}
+        _write_json(self.release_path, release)
+        catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
+        catalog["templates"][0]["native_assets"].append(secondary_binding["path"])
+        catalog["templates"][0]["release_record"]["sha256"] = _file_hash(self.release_path)
+        _write_json(self.catalog_path, catalog)
+        return secondary
+
+    def _refresh_evidence_reference(self, name):
+        path = self.evidence_paths[name]
+        reference = {"record_path": path.relative_to(self.root).as_posix(), "record_sha256": _file_hash(path)}
+        release = json.loads(self.release_path.read_text(encoding="utf-8"))
+        if name == "technical":
+            release["evidence"] = {category: reference for category in self.procedures}
+        elif name in {"terra", "sol"}:
+            release["reviews"][name] = reference
+        elif name == "conductor":
+            release["conductor_approval"] = reference
+        else:
+            release["sanitization"]["evidence"] = reference
+        _write_json(self.release_path, release)
+        catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
+        catalog["templates"][0]["release_record"]["sha256"] = _file_hash(self.release_path)
+        _write_json(self.catalog_path, catalog)
+
+    def test_control_compatible_release_fixture_is_accepted(self):
+        catalog = load_catalog(self.catalog_path)
+        result = validate_release(self.root, catalog["templates"][0])
+        self.assertEqual(result["status"], "pass")
+        self.assertEqual(result["descriptor_sha256"], _file_hash(self.descriptor_path))
+
+    def test_descriptor_producer_and_knowledge_drift_invalidates_release(self):
+        descriptor = json.loads(self.descriptor_path.read_text(encoding="utf-8"))
+        descriptor["producer"] = {"role": "outside counsel", "department": "legal"}
+        descriptor["knowledge_and_authority_constraints"] = ["May invent governing conclusions."]
+        _write_json(self.descriptor_path, descriptor)
+        with self.assertRaisesRegex(CatalogQueryError, "descriptor binding"):
+            validate_release(self.root, load_catalog(self.catalog_path)["templates"][0])
+
+    def test_secondary_asset_omitted_from_typed_evidence_is_rejected(self):
+        self._add_secondary_asset(bind_evidence=False)
+        with self.assertRaisesRegex(CatalogQueryError, "every native asset"):
+            validate_release(self.root, load_catalog(self.catalog_path)["templates"][0])
+
+    def test_typed_review_actor_independence_is_enforced(self):
+        terra = json.loads(self.evidence_paths["terra"].read_text(encoding="utf-8"))
+        sol = json.loads(self.evidence_paths["sol"].read_text(encoding="utf-8"))
+        sol["actor_id"] = terra["actor_id"].upper()
+        _write_json(self.evidence_paths["sol"], sol)
+        self._refresh_evidence_reference("sol")
+        with self.assertRaisesRegex(CatalogQueryError, "identities must be independent"):
+            validate_release(self.root, load_catalog(self.catalog_path)["templates"][0])
+
+    def test_typed_technical_procedure_must_match_blueprint(self):
+        technical = json.loads(self.evidence_paths["technical"].read_text(encoding="utf-8"))
+        technical["procedures"]["render"] = "Run a different unapproved procedure."
+        _write_json(self.evidence_paths["technical"], technical)
+        self._refresh_evidence_reference("technical")
+        with self.assertRaisesRegex(CatalogQueryError, "procedure does not match"):
+            validate_release(self.root, load_catalog(self.catalog_path)["templates"][0])
+
+    def test_later_target_collision_has_zero_partial_copy_side_effects(self):
+        secondary = self._add_secondary_asset(bind_evidence=True)
+        output = self.package_root / "working_world"
+        output.mkdir()
+        existing = output / secondary.name
+        existing.write_bytes(b"preserve existing")
+        with self.assertRaisesRegex(CatalogQueryError, "new output location"):
+            instantiate(
+                root=self.root,
+                catalog=load_catalog(self.catalog_path),
+                template_id="TMPL-0001",
+                version="1.2.3",
+                package_root=self.package_root,
+                output_location=Path("working_world"),
+                manifest_approved=True,
+                write_authorized=True,
+                source_authorized=True,
+                provenance_reference="manifest.md#workbook",
+                materialize=True,
+            )
+        self.assertFalse((output / self.asset.name).exists())
+        self.assertEqual(existing.read_bytes(), b"preserve existing")
+        self.assertEqual(list(self.package_root.glob(".working_world.syn-studios-*")), [])
+
+    def test_second_copy_failure_leaves_no_committed_or_staged_output(self):
+        self._add_secondary_asset(bind_evidence=True)
+        real_copy = shutil.copy2
+        copy_count = 0
+
+        def fail_second_copy(source, target):
+            nonlocal copy_count
+            copy_count += 1
+            if copy_count == 2:
+                raise OSError("injected second-copy failure")
+            return real_copy(source, target)
+
+        with mock.patch("integrations.query_catalog.shutil.copy2", side_effect=fail_second_copy):
+            with self.assertRaisesRegex(CatalogQueryError, "failed before commit"):
+                instantiate(
+                    root=self.root,
+                    catalog=load_catalog(self.catalog_path),
+                    template_id="TMPL-0001",
+                    version="1.2.3",
+                    package_root=self.package_root,
+                    output_location=Path("working_world"),
+                    manifest_approved=True,
+                    write_authorized=True,
+                    source_authorized=True,
+                    provenance_reference="manifest.md#workbook",
+                    materialize=True,
+                )
+        self.assertFalse((self.package_root / "working_world").exists())
+        self.assertEqual(list(self.package_root.glob(".working_world.syn-studios-*")), [])
 
     def test_full_discover_select_instantiate_plan_validate_trajectory(self):
         catalog = load_catalog(self.catalog_path)
