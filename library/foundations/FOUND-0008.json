@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "card_id": "FOUND-0008",
+  "status": "reviewed",
+  "artifact_type": "pdf",
+  "source": {
+    "locator": "ANNA::.02_Phase_2/Sub_005/02_staging/generated_v2/ECN-25-184_Engineering_Change_Record.pdf",
+    "sha256": "9b662db862a533f30c0e789f6c4d6c160e6f19bbff5e067dd18096f86b52ac7e",
+    "synthetic_authorized": true
+  },
+  "assessment": {
+    "strengths": [
+      "Credible two-page controlled-record structure with identifiers, approvals, implementation, distribution, attachments, and retention fields.",
+      "Rendered pages are clean, restrained, and appropriate to an approved operational form."
+    ],
+    "defects": [
+      "Most optional attachment and distribution fields are blank, so the record does not demonstrate a rich supporting packet.",
+      "The large blank form areas should remain only when the lifecycle explains them."
+    ],
+    "confidence_limits": ["No comparison was made with a real organization's engineering-change form." ]
+  },
+  "reuse": {
+    "patterns": ["Use a controlled two-page form with explicit lifecycle, approvals, implementation, distribution, optional attachments, and retention metadata."],
+    "prohibited_content": ["All identifiers, components, dates, approvals, line references, and change facts."],
+    "sanitization": ["Recreate the form around a new fictional control system and vary which optional blocks are populated."],
+    "proof_gate": ["Render every page, verify field completeness against the new lifecycle, and confirm no false signatures or approvals are introduced."]
+  }
+}
+

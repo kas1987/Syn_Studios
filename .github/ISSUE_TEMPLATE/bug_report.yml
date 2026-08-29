@@ -1,0 +1,46 @@
+name: Bug report
+description: Report a reproducible problem in a Syn Studios contract, schema, validator, or example.
+title: "fix: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what should have happened?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Design contract
+        - Agent skill or references
+        - Foundation card or blueprint
+        - Schema or validator
+        - CI or repository governance
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Provide the smallest public-safe reproduction and exact validation command.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Public-safety check
+      options:
+        - label: I removed private answers, real records, credentials, local-only paths, and raw submission artifacts.
+          required: true

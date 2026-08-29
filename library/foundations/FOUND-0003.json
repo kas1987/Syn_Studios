@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0.0",
+  "card_id": "FOUND-0003",
+  "status": "candidate",
+  "artifact_type": "xlsx",
+  "source": {
+    "locator": "ANNA::.02_Phase_2/Sub_003/_Per_DA/Submission_R2/UPLOAD/DA_Sub_003_Iteration_0.zip::inputs/FY2024_Capital_Budget_Working.xlsx",
+    "sha256": "457f5845062bcdee63d9b680dba0335b8c1ebd846e7177611d9b03b7b0743b1f",
+    "synthetic_authorized": true
+  },
+  "assessment": {
+    "strengths": [
+      "Compact three-tab structure distinguishes formal requests, departmental scratch work, and carryover items.",
+      "Twenty formulas and 231 populated cells provide a credible small-department footprint."
+    ],
+    "defects": ["No native comments, filters, freeze panes, or print areas were detected."],
+    "confidence_limits": ["The workbook has not yet received a fresh Syn Studios visual review." ]
+  },
+  "reuse": {
+    "patterns": ["Use source-owned scratch and carryover tabs in small departmental planning workbooks."],
+    "prohibited_content": ["All project names, departments, dates, requests, values, and task-relevant calculations."],
+    "sanitization": ["Rebuild formulas and labels around a new capital-planning world; preserve only the three-role tab concept."],
+    "proof_gate": ["Render all tabs, recompute formulas, and confirm scratch/carryover material does not disclose the assigned conclusion."]
+  }
+}
+

@@ -1,0 +1,34 @@
+name: Feature request
+description: Propose one focused, public-safe improvement to Syn Studios.
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What artifact-design or operator problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the smallest useful change and its acceptance check.
+    validations:
+      required: true
+  - type: textarea
+    id: authority
+    attributes:
+      label: Source of truth
+      description: Which existing contract should own the rule, or why is a new owner needed?
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundary
+    attributes:
+      label: Integrity boundary
+      options:
+        - label: This proposal uses only authorized synthetic or fictional material and does not require private submission content.
+          required: true

@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "card_id": "FOUND-0004",
+  "status": "rejected",
+  "artifact_type": "xlsx",
+  "source": {
+    "locator": "ANNA::.02_Phase_2/Sub_003/99_archive/rejected_builds/20260818_first_realism_draft/workbooks/MII_Project_Ridge_PPA_Model_v18.xlsx",
+    "sha256": "cc2030c96afb5e15b10192b3653bfc619d04f23b1beddfdd298f5779c76dbf41",
+    "synthetic_authorized": true
+  },
+  "assessment": {
+    "strengths": [
+      "Thirty-four tabs model a realistic layered transaction workbook: sources, imports, assumptions, valuation, tax, entries, checks, and backups.",
+      "The workbook contains 183,452 populated cells and 2,413 formulas."
+    ],
+    "defects": [
+      "The canonical rejection record says the draft exposed neutral totals, lacked reconstruction evidence, contained unplanned defects, mirrored the seller workbook too closely, and used mechanical filler.",
+      "Exact builder, configuration, issue-ledger, and release lineage were not bound."
+    ],
+    "confidence_limits": ["Retained only for forensic comparison; no stored mechanical PASS promotes it." ]
+  },
+  "reuse": {
+    "patterns": ["Layer raw imports, sources, assumptions, analysis schedules, tax, entries, checks, and visibly superseded side work in a complex workbook."],
+    "prohibited_content": ["All workbook bytes, values, formulas, identities, conclusions, defect mechanisms, mirrored tab structures, and visual styling."],
+    "sanitization": ["Do not sanitize this workbook into a template; design a new workbook using only the abstract layered architecture."],
+    "proof_gate": ["A new implementation must bind its builder and configuration, reconstruct every conclusion from visible evidence, and pass anti-filler and cross-party differentiation review."]
+  }
+}
+

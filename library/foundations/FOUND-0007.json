@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0.0",
+  "card_id": "FOUND-0007",
+  "status": "rejected",
+  "artifact_type": "pdf",
+  "source": {
+    "locator": "ANNA::.02_Phase_2/Sub_005/02_staging/generated_v2/Fork_Shift_Handoff_Note_2026-01-05.pdf",
+    "sha256": "a67f8a8b697c12d924f100777bf8e6e05f78715e96d4d738b0f9ee4f22159398",
+    "synthetic_authorized": true
+  },
+  "assessment": {
+    "strengths": ["A brief handwritten shift handoff is a plausible artifact concept for an operations package."],
+    "defects": [
+      "The single page contains only 108 extractable characters and excessive blank space.",
+      "Letterforms, spacing, angle, and pressure appear too uniform and font-like for a handled note."
+    ],
+    "confidence_limits": ["This is a Syn Studios template disposition, not a reversal of the source submission's package QC." ]
+  },
+  "reuse": {
+    "patterns": ["Retain the concept of a terse shift handoff tied to an operational event."],
+    "prohibited_content": ["The source page, handwriting treatment, identifiers, dates, and operational facts."],
+    "sanitization": ["Do not derive a template from these bytes; create a new note with credible medium, spatial grouping, and bounded variation."],
+    "proof_gate": ["Inspect at normal and close scale; reject uniform typeface behavior, theatrical wear, illegibility, or notes that disclose the task answer."]
+  }
+}
+

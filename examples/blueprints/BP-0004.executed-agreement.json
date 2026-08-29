@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "blueprint_id": "BP-0004",
+  "name": "Executed commercial or incentive agreement",
+  "artifact_type": "pdf",
+  "producer": "Legal, commercial, and governmental or counterparty representatives",
+  "purpose": "Record enforceable terms, definitions, conditions, remedies, schedules, and execution evidence.",
+  "medium": "Native or assembled executed PDF with exhibits",
+  "lifecycle": "Executed final record",
+  "authority": "authoritative",
+  "footprint": {
+    "target": "15-40 pages including schedules and signature pages",
+    "natural_depth": [
+      "Defined terms and interpretation",
+      "Representations, covenants, conditions, and remedies",
+      "Notice and amendment mechanics",
+      "Schedules, exhibits, and referenced calculations",
+      "Execution blocks supported by the approved fictional world"
+    ]
+  },
+  "complexity_layers": [
+    {"layer": "core", "features": ["Governing terms", "Effective date", "Scope", "Conditions"]},
+    {"layer": "operational_depth", "features": ["Boilerplate", "Definitions", "Schedules", "Notice details"]},
+    {"layer": "adjacent_context", "features": ["Standard clauses not needed for the assignment", "Blank notice fields only where normal"]},
+    {"layer": "handling_history", "features": ["Restrained assembly or scan variation when the execution lifecycle supports it"]}
+  ],
+  "prohibited": ["Summary masquerading as agreement", "Invented real signature", "Casual internal annotations on the authoritative original", "Missing referenced exhibit that carries a governing fact"],
+  "proof_gates": ["Render every page", "Verify page and exhibit continuity", "Inspect signatures and metadata boundaries", "Cross-check defined terms and governing schedules"]
+}
+

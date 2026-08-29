@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "card_id": "FOUND-0005",
+  "status": "reviewed",
+  "artifact_type": "docx",
+  "source": {
+    "locator": "ANNA::.02_Phase_2/Sub_006/02_staging/generated/AIM_Board_Strategy_Memo_2025-10-03.docx",
+    "sha256": "83dd23a84274355243d569506f72b759eaba6c23c7f92e6521994e5ca93bbc9f",
+    "synthetic_authorized": true
+  },
+  "assessment": {
+    "strengths": [
+      "Clean one-page executive hierarchy, readable table, restrained footer, and a single routing note.",
+      "Thirty paragraphs and one table remain visually legible without clipping."
+    ],
+    "defects": [
+      "Too compressed and polished for a full internal analysis or working memorandum.",
+      "The handwriting treatment should not become a package-wide default."
+    ],
+    "confidence_limits": ["Suitable only for concise executive or approved-record archetypes." ]
+  },
+  "reuse": {
+    "patterns": ["Use restrained one-page structure for a board decision or approved handoff endpoint."],
+    "prohibited_content": ["All company names, transaction facts, dates, financial values, conclusions, and handwritten text."],
+    "sanitization": ["Recreate the hierarchy with new facts and role-appropriate routing; do not clone the source file."],
+    "proof_gate": ["Render the full document, verify table geometry, and confirm the chosen archetype genuinely warrants one page."]
+  }
+}
+

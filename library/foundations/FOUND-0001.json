@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0.0",
+  "card_id": "FOUND-0001",
+  "status": "reviewed",
+  "artifact_type": "xlsx",
+  "source": {
+    "locator": "ANNA::.02_Phase_2/Sub_005/02_staging/generated_v2/Kestrel_ERP_Close_Exports_Dec2025.xlsx",
+    "sha256": "65c876aaafec4168af12446b258f5fe9978df4fc8eabde48a91630e2cda47e4e",
+    "synthetic_authorized": true
+  },
+  "assessment": {
+    "strengths": [
+      "Eleven source-specific tabs separate masters, histories, populations, postings, trial balance, and close preparation.",
+      "Filters, frozen panes, and print areas reinforce a source-system export lifecycle.",
+      "Existing package QC found source-specific layouts usable and differentiated."
+    ],
+    "defects": [
+      "Only 591 populated cells across eleven tabs; several source populations are visibly sparse.",
+      "Not a complete analyst workpaper and intentionally contains no formulas."
+    ],
+    "confidence_limits": [
+      "Review used native OOXML metrics and stored renders, not a live ERP export comparison."
+    ]
+  },
+  "reuse": {
+    "patterns": [
+      "Separate source populations by originating module and retain system-like field order.",
+      "Use a small close-preparation/control tab beside raw export tabs.",
+      "Vary row density by population instead of normalizing every sheet."
+    ],
+    "prohibited_content": ["All entity names, identifiers, dates, values, accounting conclusions, and source-specific codes."],
+    "sanitization": ["Rebuild from a new world schema; increase population depth where the workflow warrants it; replace every identifier and value."],
+    "proof_gate": ["Recalculate source totals, inspect every sheet, compare field order with the new source-system specification, and run leakage review."]
+  }
+}
+

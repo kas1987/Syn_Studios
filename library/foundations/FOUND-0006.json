@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0.0",
+  "card_id": "FOUND-0006",
+  "status": "candidate",
+  "artifact_type": "eml",
+  "source": {
+    "locator": "ANNA::.02_Phase_2/Sub_006/02_staging/generated/FLT320_Service_Billing_Status_Dec2025.eml",
+    "sha256": "7a66916cd5c372da179f85f0c53d9cbd684bf49d4e93c3d2200a143eab8ca050",
+    "synthetic_authorized": true
+  },
+  "assessment": {
+    "strengths": ["Complete core headers, 870 body characters, and four quoted-reply markers create a credible short operational reply."],
+    "defects": ["No attachments and insufficient depth for a longer internal/external chain archetype."],
+    "confidence_limits": ["Body structure was inspected; no email-client visual render was produced." ]
+  },
+  "reuse": {
+    "patterns": ["Use quoted operational context and incomplete role-specific replies for compact status correspondence."],
+    "prohibited_content": ["All addresses, names, dates, amounts, identifiers, and business facts."],
+    "sanitization": ["Create a new standards-compliant message; preserve only the reply-chain concept."],
+    "proof_gate": ["Parse MIME structure, validate headers and attachments, and confirm each participant knows only role-appropriate facts."]
+  }
+}
+

@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "blueprint_id": "BP-0002",
+  "name": "Internal controller decision memorandum",
+  "artifact_type": "docx",
+  "producer": "Controller or technical accounting manager",
+  "purpose": "Document a multi-issue accounting recommendation, evidence basis, risks, and unresolved support before approval.",
+  "medium": "Native Word working memorandum with appendices",
+  "lifecycle": "Reviewed internal working copy",
+  "authority": "supporting",
+  "footprint": {
+    "target": "5-10 pages plus 1-3 appendices",
+    "natural_depth": [
+      "Executive conclusion and scope",
+      "Issue-by-issue analysis",
+      "Source and policy citations",
+      "Alternative treatments and sensitivities",
+      "Unresolved questions, ownership, and attachment index"
+    ]
+  },
+  "complexity_layers": [
+    {"layer": "core", "features": ["Clear recommendation", "Issue conclusions", "Required actions"]},
+    {"layer": "operational_depth", "features": ["Evidence matrix", "Appendix schedules", "Source index"]},
+    {"layer": "adjacent_context", "features": ["Prior-period practice", "Governance history", "Non-dispositive operational background"]},
+    {"layer": "working_residue", "features": ["Two or three terse review comments", "One resolved wording correction", "Open-item owner list"]}
+  ],
+  "prohibited": ["One-page evaluator answer sheet", "Margin notes that supply the conclusion", "Fabricated approvals", "Uncited governing facts"],
+  "proof_gates": ["Check every citation", "Render and inspect every page", "Classify every comment or note", "Confirm appendices do not leak private grading material"]
+}
+

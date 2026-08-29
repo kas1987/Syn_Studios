@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0.0",
+  "blueprint_id": "BP-0005",
+  "name": "Mixed internal and external HITL review packet",
+  "artifact_type": "mixed_package",
+  "producer": "Finance, operations, legal, HR, external counterparties, and source systems",
+  "purpose": "Provide a realistic evidence package that a knowledgeable human reviewer must synthesize across independent sources.",
+  "medium": "ZIP package containing native Office files, PDFs, EML, and system exports",
+  "lifecycle": "Assembled review-room package",
+  "authority": "mixed",
+  "footprint": {
+    "target": "17-30 files with intentionally varied depth",
+    "natural_depth": [
+      "Authoritative agreements and approvals",
+      "Operational populations and registers",
+      "Internal analyses, notes, and correspondence",
+      "Contextual policies and incidental administrative content",
+      "No private controls, answer keys, or build files"
+    ]
+  },
+  "complexity_layers": [
+    {"layer": "core", "features": ["Complete evidence chain", "Resolvable authority conflicts", "Exact source identities"]},
+    {"layer": "operational_depth", "features": ["Full populations", "Schedules", "Exhibits", "Attachments"]},
+    {"layer": "adjacent_context", "features": ["Routine policies", "Administrative pages", "Inactive records"]},
+    {"layer": "working_residue", "features": ["Concentrated in internal files", "Different patterns by owner"]},
+    {"layer": "handling_history", "features": ["Clean executed records beside selectively handled working copies"]}
+  ],
+  "prohibited": ["Uniform formatting across producers", "Every file equally messy", "False authority conflict", "Combined notes that reveal the answer", "Private generation or grading residue"],
+  "proof_gates": ["Open every file", "Render every paginated page and workbook sheet", "Recompute all material formulas", "Map every requirement to model-visible evidence", "Run package-wide variation and leakage review"]
+}
+

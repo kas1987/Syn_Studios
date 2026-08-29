@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "blueprint_id": "BP-0003",
+  "name": "Operational issue and attachment-correction email chain",
+  "artifact_type": "eml",
+  "producer": "Operations manager, analyst, and external counterparty",
+  "purpose": "Coordinate an operational exception, circulate support, correct one attachment, and leave a bounded open item.",
+  "medium": "Native MIME email thread with ordinary attachments",
+  "lifecycle": "Sent and received thread retained in the project file",
+  "authority": "contextual",
+  "footprint": {
+    "target": "6-12 messages with 2-4 attachments",
+    "natural_depth": [
+      "Initial request and incomplete first response",
+      "Quoted prior messages",
+      "Attachment reference and corrected attachment",
+      "Internal shorthand and external formal reply",
+      "One unresolved owner and due date"
+    ]
+  },
+  "complexity_layers": [
+    {"layer": "core", "features": ["Authentic headers", "Thread order", "Attachment correspondence"]},
+    {"layer": "operational_depth", "features": ["Partial replies", "Forwarding", "Role-specific vocabulary"]},
+    {"layer": "adjacent_context", "features": ["Scheduling reply", "Distribution correction", "Unrelated but plausible administrative line"]},
+    {"layer": "handling_history", "features": ["One printed retained copy only if separately manifested"]}
+  ],
+  "prohibited": ["Identical voice across senders", "Perfectly complete reply from every participant", "Attachment facts absent from the attachments", "Thread that directly states the task answer"],
+  "proof_gates": ["Parse MIME structure", "Open every attachment", "Check chronological and role knowledge boundaries", "Confirm no duplicate or impossible message IDs"]
+}
+

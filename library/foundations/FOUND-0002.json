@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "card_id": "FOUND-0002",
+  "status": "reviewed",
+  "artifact_type": "xlsx",
+  "source": {
+    "locator": "ANNA::.02_Phase_2/Sub_006/02_staging/generated/IND410_Workforce_Payroll_2025.xlsx",
+    "sha256": "17a0b226144b97323cad5c48eb0f25076f30e1fc7b127238d86c788af0b9d713",
+    "synthetic_authorized": true
+  },
+  "assessment": {
+    "strengths": [
+      "Three tabs contain 3,128 populated cells and approximately 300-row HR and payroll populations.",
+      "Difficulty arises from population review and cross-source reconciliation rather than hidden calculations.",
+      "Filters and frozen panes support ordinary analyst navigation."
+    ],
+    "defects": [
+      "Only one formula and limited visible review history make it a source population, not a full workpaper.",
+      "No mapping, exception, reconciliation, or reviewer tab."
+    ],
+    "confidence_limits": ["The current review did not independently reperform the submission's payroll arithmetic." ]
+  },
+  "reuse": {
+    "patterns": ["Use realistic employee-level populations, separate event types, and retain source identifiers and dates."],
+    "prohibited_content": ["All employee identities, role facts, dates, amounts, program conclusions, and source identifiers."],
+    "sanitization": ["Generate a new population from approved world facts and a role-specific schema; do not transform existing rows."],
+    "proof_gate": ["Reconcile row counts and totals to the new authority record; inspect filters, types, nulls, and duplicate identifiers."]
+  }
+}
+

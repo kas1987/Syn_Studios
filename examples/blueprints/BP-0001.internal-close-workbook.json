@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "blueprint_id": "BP-0001",
+  "name": "Internal monthly close and reconciliation workbook",
+  "artifact_type": "xlsx",
+  "producer": "Senior accountant with controller review",
+  "purpose": "Reconcile source-system activity to the general ledger and prepare supported close entries.",
+  "medium": "Native Excel workbook assembled from ERP exports and analyst schedules",
+  "lifecycle": "Working copy through reviewed close file",
+  "authority": "supporting",
+  "footprint": {
+    "target": "8-14 tabs with population-dependent rows",
+    "natural_depth": [
+      "Raw ERP exports with repeated fields and dormant records",
+      "Account and entity mappings",
+      "Prior-period comparison",
+      "Reconciliation bridges and proposed entries",
+      "Exception log, review checks, and source index"
+    ]
+  },
+  "complexity_layers": [
+    {"layer": "core", "features": ["Balanced entry", "Reconciled source and ledger totals", "Explicit close date"]},
+    {"layer": "operational_depth", "features": ["Transaction populations", "Mappings", "Status codes", "Prior-period rows"]},
+    {"layer": "adjacent_context", "features": ["Dormant accounts", "Unrelated valid exceptions", "Administrative close checklist"]},
+    {"layer": "working_residue", "features": ["One bounded scratch area", "Reviewer check cells", "Clearly superseded bridge"]}
+  ],
+  "prohibited": ["Hidden answer key", "Broken or pasted-over formulas", "Every tab sharing one presentation style", "Task-only rows"],
+  "proof_gates": ["Recalculate workbook", "Tie source populations to mapped totals", "Render and inspect every sheet", "Audit hidden content and leakage"]
+}
+
