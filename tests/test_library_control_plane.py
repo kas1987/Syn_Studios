@@ -74,7 +74,7 @@ class LibraryControlPlaneTests(unittest.TestCase):
         findings, _ = validate_repository(root)
         self.assertTrue(any(fragment in item for item in findings), "\n".join(findings))
 
-    def make_release(self, root, blueprint_path):
+    def make_release(self, root, blueprint_path, *, empty_workbook=False):
         blueprint = json.loads(blueprint_path.read_text(encoding="utf-8"))
         asset = root / "library/templates/TMPL-0001/1.0.0/workbook.xlsx"
         asset.parent.mkdir(parents=True, exist_ok=True)
@@ -82,7 +82,8 @@ class LibraryControlPlaneTests(unittest.TestCase):
             package.writestr("[Content_Types].xml", '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/></Types>')
             package.writestr("xl/workbook.xml", '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>')
             package.writestr("xl/_rels/workbook.xml.rels", '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>')
-            package.writestr("xl/worksheets/sheet1.xml", '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>')
+            sheet_data = "" if empty_workbook else '<row r="1"><c r="A1" t="inlineStr"><is><t>{{organization_name}}</t></is></c></row>'
+            package.writestr("xl/worksheets/sheet1.xml", f'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{sheet_data}</sheetData></worksheet>')
         asset_binding = {"path": asset.relative_to(root).as_posix(), "sha256": file_hash(asset)}
         descriptor = {
             "schema_version": "1.0.0",
@@ -329,6 +330,13 @@ class LibraryControlPlaneTests(unittest.TestCase):
             release_path, release, _, descriptor = self.make_release(root, blueprint_path)
             self.make_catalog(root, release_path, release, descriptor)
             self.assertEqual(validate_repository(root)[0], [])
+
+    def test_released_required_render_workbook_cannot_be_cell_empty(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, _, descriptor = self.make_release(root, blueprint_path, empty_workbook=True)
+            self.make_catalog(root, release_path, release, descriptor)
+            self.assert_finding(root, "native workbook has no cells in any rendered worksheet")
 
     def test_descriptor_uses_direct_blueprint_reference_without_lineage_copy(self):
         schema = json.loads((ROOT / "schemas/template-descriptor.schema.json").read_text(encoding="utf-8"))

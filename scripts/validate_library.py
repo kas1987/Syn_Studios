@@ -198,6 +198,13 @@ def inspect_xlsx_contract(path: Path, descriptor: dict[str, Any], label: str, fi
             if expected_sheets != sheets:
                 findings.append(f"{label}:render_contract.expected_sheet_names: must exactly match native workbook sheet order")
 
+            cell_counts: dict[str, int] = {}
+            for sheet_name, sheet_member in sheet_members.items():
+                worksheet = ElementTree.fromstring(package.read(sheet_member))
+                cell_counts[sheet_name] = len(worksheet.findall(f".//{{{SPREADSHEET_NS}}}c"))
+            if expected_sheets and not any(cell_counts.get(str(sheet_name), 0) for sheet_name in expected_sheets):
+                findings.append(f"{label}:native workbook has no cells in any rendered worksheet")
+
             native_tables: dict[str, tuple[str, str, list[str]]] = {}
             for sheet_name, sheet_member in sheet_members.items():
                 relationship_member = posixpath.join(posixpath.dirname(sheet_member), "_rels", posixpath.basename(sheet_member) + ".rels")
