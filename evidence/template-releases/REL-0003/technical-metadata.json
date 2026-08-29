@@ -13,17 +13,17 @@
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
   "observations": [
-    "The blueprint metadata gate was executed for the frozen artifact set."
+    "Deterministic metadata checks inspected the frozen descriptor and every native asset byte."
   ],
   "artifacts": [
     {
-      "path": "evidence/template-releases/REL-0003/proofs/technical-metadata.txt",
-      "sha256": "4a8e5a858aee892bd92aa046b678fee8399836c8907656330b219458d1845072",
-      "media_type": "text/plain",
+      "path": "evidence/template-releases/REL-0003/technical-results/metadata.json",
+      "sha256": "f3fa3c9fc39a0b6cdf143cf7278965f57917675cf3bb085c35d62bf805ab01cb",
+      "media_type": "application/json",
       "category": "metadata"
     }
   ],
-  "summary": "Technical validation result for the metadata release gate.",
+  "summary": "Category-specific metadata validation completed against the frozen release inputs.",
   "categories": [
     "metadata"
   ],

@@ -49,35 +49,35 @@
   "evidence": {
     "core_integrity": {
       "record_path": "evidence/template-releases/REL-0001/technical-core_integrity.json",
-      "record_sha256": "8156000eadfc20abd1ccb157b87aa801754068faab02d5bfccb42495eadf6be2"
+      "record_sha256": "ec432bc29090e482d2e2fc2ad3fd94d5cdcbd08f0f625ca156ef9e0b0104ae9d"
     },
     "render": {
       "record_path": "evidence/template-releases/REL-0001/technical-render.json",
-      "record_sha256": "d0a84766bb68e67d53b54c0df500b5aa09fd846902c9e093c51095034fba76a7"
+      "record_sha256": "58ff61033c07a986955f1dc523328cdaa70b03e33fbdf0f440da153ad4f6f597"
     },
     "metadata": {
       "record_path": "evidence/template-releases/REL-0001/technical-metadata.json",
-      "record_sha256": "4c1bb8f89b2ecd3c993e31154082a2f149dfa604751c5bc88a04652594ba370d"
+      "record_sha256": "1838e92df97f167c897e6b91e2400d3fbe706906d54e0a85483156ac20ddabf9"
     },
     "computational": {
       "record_path": "evidence/template-releases/REL-0001/technical-computational.json",
-      "record_sha256": "506ef2936ab5a2c680614fe9eba356af28e4a3827ea3f1feeb780d3b34700546"
+      "record_sha256": "9990d1c469337dd815e7e33e7ba38f8e10e53c9c426196a2ad26a2ec9a68065d"
     },
     "provenance": {
       "record_path": "evidence/template-releases/REL-0001/technical-provenance.json",
-      "record_sha256": "8a371d0ae95a72a78adae4a0a62543d0ef9e135b4d92488ac0f7b9ec8e6a58ca"
+      "record_sha256": "cf8c09e8789ba78fbd9f6455da626270a3fa3735566e5a1f7a7b79cfb913a9b9"
     },
     "leakage": {
       "record_path": "evidence/template-releases/REL-0001/technical-leakage.json",
-      "record_sha256": "b01fbd7c592de002a78be9931b791dfd501667a6a2353ccb8e7d3db107794468"
+      "record_sha256": "a4f2c7d6731d218f4b6656484b886f4ae226730d4393cd4b5cd180703a4c009e"
     },
     "authority_separation": {
       "record_path": "evidence/template-releases/REL-0001/technical-authority_separation.json",
-      "record_sha256": "cd6c0225de252e672125bd20d7a5622e5ee1049980939e53ce23b7095c22c0ad"
+      "record_sha256": "8b37081696aa644b4c486ac50db60385d8b04c2b7e90039cc6ab2fe3e9f61fdb"
     },
     "anti_filler": {
       "record_path": "evidence/template-releases/REL-0001/technical-anti_filler.json",
-      "record_sha256": "6e1b7e23fad030bf01c56f7ee032092fec2654963929eef92df5855684a78bae"
+      "record_sha256": "aabce62e1d5074e908d805a817ab5bb42843377ee76bde1f1b60b7d1ae538ebf"
     }
   }
 }

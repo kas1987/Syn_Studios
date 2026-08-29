@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0.0",
+  "result_type": "template_technical_validation_result",
+  "result_id": "TECHRES-REL-0003-COMPUTATIONAL",
+  "release_id": "REL-0003",
+  "template_id": "TMPL-0003",
+  "version": "1.0.0",
+  "category": "computational",
+  "result_artifact_category": "computational",
+  "descriptor_sha256": "850e4665fc96a18aab826296243c6f86e0af3833f1dea60547a62049e2559dfe",
+  "native_asset_sha256s": [
+    "8acaf754686fa23b1bbc59d229094d6444b54224ea9a0dae53c50086b8c5bf99"
+  ],
+  "applicable": false,
+  "verdict": "VALIDATION_NOT_APPLICABLE",
+  "procedure": "Confirm the email body contains no material calculation contract.",
+  "actor_id": "syn-validation-runner-2026-08-29",
+  "actor": "Syn Studios validation runner",
+  "checks": [
+    {
+      "id": "computational:blueprint-rationale",
+      "status": "NOT_APPLICABLE",
+      "detail": "Any calculations are owned and validated by separately manifested attachments."
+    }
+  ],
+  "rendered_outputs": [],
+  "observations": [
+    "Deterministic computational checks inspected the frozen descriptor and every native asset byte."
+  ],
+  "summary": "Category-specific computational validation completed against the frozen release inputs."
+}

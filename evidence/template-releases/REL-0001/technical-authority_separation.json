@@ -13,17 +13,17 @@
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
   "observations": [
-    "The blueprint authority_separation gate was executed for the frozen artifact set."
+    "Deterministic authority_separation checks inspected the frozen descriptor and every native asset byte."
   ],
   "artifacts": [
     {
-      "path": "evidence/template-releases/REL-0001/proofs/technical-authority_separation.txt",
-      "sha256": "466c351f3efc43d3fe0a276a4e46bfb314a18dca4ed5e413714dc91b5fa684ab",
-      "media_type": "text/plain",
+      "path": "evidence/template-releases/REL-0001/technical-results/authority_separation.json",
+      "sha256": "9eef564c74212314a8cf36ca3d690295973b408340b95dd1fd7a47ba1cd16142",
+      "media_type": "application/json",
       "category": "authority_separation"
     }
   ],
-  "summary": "Technical validation result for the authority_separation release gate.",
+  "summary": "Category-specific authority_separation validation completed against the frozen release inputs.",
   "categories": [
     "authority_separation"
   ],

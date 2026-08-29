@@ -13,17 +13,17 @@
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
   "observations": [
-    "The blueprint render gate was executed for the frozen artifact set."
+    "Deterministic render checks inspected the frozen descriptor and every native asset byte."
   ],
   "artifacts": [
     {
-      "path": "evidence/template-releases/REL-0003/proofs/technical-render.txt",
-      "sha256": "8e7309a8e87a8e4d7affef7adeaf24bc3dc343f4da96cebe916b96cca34159a5",
-      "media_type": "text/plain",
+      "path": "evidence/template-releases/REL-0003/technical-results/render.json",
+      "sha256": "b8474ad3911c7d5416b326bf88559bce30cc1b610df1b2f279b0008942358434",
+      "media_type": "application/json",
       "category": "render"
     }
   ],
-  "summary": "Technical validation result for the render release gate.",
+  "summary": "Category-specific render validation completed against the frozen release inputs.",
   "categories": [
     "render"
   ],

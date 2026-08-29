@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0.0",
+  "result_type": "template_technical_validation_result",
+  "result_id": "TECHRES-REL-0001-METADATA",
+  "release_id": "REL-0001",
+  "template_id": "TMPL-0001",
+  "version": "1.0.0",
+  "category": "metadata",
+  "result_artifact_category": "metadata",
+  "descriptor_sha256": "642d3c4d81d898667606140d4f50ca0c040f66c2bf602312bc57a40aea318c7c",
+  "native_asset_sha256s": [
+    "2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66"
+  ],
+  "applicable": true,
+  "verdict": "VALIDATION_PASS",
+  "procedure": "Inspect properties, hidden content, comments, names, links, and external connections.",
+  "actor_id": "syn-validation-runner-2026-08-29",
+  "actor": "Syn Studios validation runner",
+  "checks": [
+    {
+      "id": "metadata:xlsx-surfaces",
+      "status": "PASS",
+      "detail": "Inspected workbook relationships, 8 sheet states, row/column visibility, and 0 parsed comment parts; found no external links or hidden surfaces."
+    }
+  ],
+  "rendered_outputs": [],
+  "observations": [
+    "Deterministic metadata checks inspected the frozen descriptor and every native asset byte."
+  ],
+  "summary": "Category-specific metadata validation completed against the frozen release inputs."
+}

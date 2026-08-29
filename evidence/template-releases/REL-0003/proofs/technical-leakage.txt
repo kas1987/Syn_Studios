@@ -1,5 +1,0 @@
-release_id=REL-0003
-template_id=TMPL-0003
-category=leakage
-native_asset_sha256=8acaf754686fa23b1bbc59d229094d6444b54224ea9a0dae53c50086b8c5bf99
-observation=Technical validation executed the exact blueprint leakage procedure against the frozen asset hashes.

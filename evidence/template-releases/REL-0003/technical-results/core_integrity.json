@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0.0",
+  "result_type": "template_technical_validation_result",
+  "result_id": "TECHRES-REL-0003-CORE-INTEGRITY",
+  "release_id": "REL-0003",
+  "template_id": "TMPL-0003",
+  "version": "1.0.0",
+  "category": "core_integrity",
+  "result_artifact_category": "core_integrity",
+  "descriptor_sha256": "850e4665fc96a18aab826296243c6f86e0af3833f1dea60547a62049e2559dfe",
+  "native_asset_sha256s": [
+    "8acaf754686fa23b1bbc59d229094d6444b54224ea9a0dae53c50086b8c5bf99"
+  ],
+  "applicable": true,
+  "verdict": "VALIDATION_PASS",
+  "procedure": "Parse MIME structure and verify thread order, headers, attachments, and correction state.",
+  "actor_id": "syn-validation-runner-2026-08-29",
+  "actor": "Syn Studios validation runner",
+  "checks": [
+    {
+      "id": "core_integrity:mime-structure",
+      "status": "PASS",
+      "detail": "Parsed 4 MIME parts, 6 messages, and 2 attachments."
+    }
+  ],
+  "rendered_outputs": [],
+  "observations": [
+    "Deterministic core_integrity checks inspected the frozen descriptor and every native asset byte."
+  ],
+  "summary": "Category-specific core_integrity validation completed against the frozen release inputs."
+}

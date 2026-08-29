@@ -13,17 +13,17 @@
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
   "observations": [
-    "The blueprint computational gate was confirmed not applicable for the frozen artifact set."
+    "Deterministic computational checks inspected the frozen descriptor and every native asset byte."
   ],
   "artifacts": [
     {
-      "path": "evidence/template-releases/REL-0002/proofs/technical-computational.txt",
-      "sha256": "d92f3a1e21b2df952a9764c2cc551ed840329f7e41d5c3714df2fabe468cc0a8",
-      "media_type": "text/plain",
+      "path": "evidence/template-releases/REL-0002/technical-results/computational.json",
+      "sha256": "9fcf27f3e531f0d082117a0508b8ddc07627491705ea240cd8a9e582cbdff1f8",
+      "media_type": "application/json",
       "category": "computational"
     }
   ],
-  "summary": "Technical validation result for the computational release gate.",
+  "summary": "Category-specific computational validation completed against the frozen release inputs.",
   "categories": [
     "computational"
   ],

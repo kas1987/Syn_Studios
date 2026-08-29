@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0.0",
+  "result_type": "template_technical_validation_result",
+  "result_id": "TECHRES-REL-0001-PROVENANCE",
+  "release_id": "REL-0001",
+  "template_id": "TMPL-0001",
+  "version": "1.0.0",
+  "category": "provenance",
+  "result_artifact_category": "provenance",
+  "descriptor_sha256": "642d3c4d81d898667606140d4f50ca0c040f66c2bf602312bc57a40aea318c7c",
+  "native_asset_sha256s": [
+    "2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66"
+  ],
+  "applicable": true,
+  "verdict": "VALIDATION_PASS",
+  "procedure": "Trace every input population to the approved fictional-world source manifest.",
+  "actor_id": "syn-validation-runner-2026-08-29",
+  "actor": "Syn Studios validation runner",
+  "checks": [
+    {
+      "id": "provenance:lineage-hashes",
+      "status": "PASS",
+      "detail": "Recomputed the blueprint and descriptor hashes and verified 1 reviewed, synthetic-authorized foundation bindings."
+    }
+  ],
+  "rendered_outputs": [],
+  "observations": [
+    "Deterministic provenance checks inspected the frozen descriptor and every native asset byte."
+  ],
+  "summary": "Category-specific provenance validation completed against the frozen release inputs."
+}

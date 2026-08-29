@@ -13,17 +13,17 @@
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
   "observations": [
-    "The blueprint core_integrity gate was executed for the frozen artifact set."
+    "Deterministic core_integrity checks inspected the frozen descriptor and every native asset byte."
   ],
   "artifacts": [
     {
-      "path": "evidence/template-releases/REL-0003/proofs/technical-core_integrity.txt",
-      "sha256": "39a20ed0f3e25d8d5a904d9fb95749db83bc285d1cbbf2b648495f8d1db5eefc",
-      "media_type": "text/plain",
+      "path": "evidence/template-releases/REL-0003/technical-results/core_integrity.json",
+      "sha256": "a9a75e0a9439b7db189d3c548939654a5f1216cbeb05f83800179aa5a2a7c7c6",
+      "media_type": "application/json",
       "category": "core_integrity"
     }
   ],
-  "summary": "Technical validation result for the core_integrity release gate.",
+  "summary": "Category-specific core_integrity validation completed against the frozen release inputs.",
   "categories": [
     "core_integrity"
   ],

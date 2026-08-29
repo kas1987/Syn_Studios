@@ -13,17 +13,17 @@
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
   "observations": [
-    "The blueprint anti_filler gate was executed for the frozen artifact set."
+    "Deterministic anti_filler checks inspected the frozen descriptor and every native asset byte."
   ],
   "artifacts": [
     {
-      "path": "evidence/template-releases/REL-0003/proofs/technical-anti_filler.txt",
-      "sha256": "cec5a8601c17c6846f01196688c6abf26d04cd69a088460fd109763a09590fb8",
-      "media_type": "text/plain",
+      "path": "evidence/template-releases/REL-0003/technical-results/anti_filler.json",
+      "sha256": "72a422b3772c067f046c32aee967ada071912c8a8adff7a33e55cf7671f0566a",
+      "media_type": "application/json",
       "category": "anti_filler"
     }
   ],
-  "summary": "Technical validation result for the anti_filler release gate.",
+  "summary": "Category-specific anti_filler validation completed against the frozen release inputs.",
   "categories": [
     "anti_filler"
   ],

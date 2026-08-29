@@ -13,17 +13,17 @@
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
   "observations": [
-    "The blueprint leakage gate was executed for the frozen artifact set."
+    "Deterministic leakage checks inspected the frozen descriptor and every native asset byte."
   ],
   "artifacts": [
     {
-      "path": "evidence/template-releases/REL-0002/proofs/technical-leakage.txt",
-      "sha256": "bc66146953dec139660e9134b585064487e4ddcb62856f57901e9a2f2c8380c2",
-      "media_type": "text/plain",
+      "path": "evidence/template-releases/REL-0002/technical-results/leakage.json",
+      "sha256": "e1551bd30e81011839b249b0c8aa4c1a4f05e6daeb41e4d12268c8541d261fe5",
+      "media_type": "application/json",
       "category": "leakage"
     }
   ],
-  "summary": "Technical validation result for the leakage release gate.",
+  "summary": "Category-specific leakage validation completed against the frozen release inputs.",
   "categories": [
     "leakage"
   ],

@@ -1,27 +1,59 @@
 {
   "schema_version": "1.0.0",
-  "record_id": "EVID-REL-0002-TECH-RENDER",
-  "record_type": "technical_validation",
+  "result_type": "template_technical_validation_result",
+  "result_id": "TECHRES-REL-0002-RENDER",
   "release_id": "REL-0002",
   "template_id": "TMPL-0002",
   "version": "1.0.0",
+  "category": "render",
+  "result_artifact_category": "provenance",
   "descriptor_sha256": "2d44a466e4c4a5da4bf0203b89ce6af3fcffe8a2e7e61ac6324f12bc7882472b",
   "native_asset_sha256s": [
     "1a922e87a29682bdea8a04734084f9f9fe1631bf785139b95b2b0f74c238818f"
   ],
+  "applicable": true,
   "verdict": "VALIDATION_PASS",
+  "procedure": "Render and inspect every page, appendix, header, footer, and comment anchor.",
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
-  "observations": [
-    "Deterministic render checks inspected the frozen descriptor and every native asset byte."
-  ],
-  "artifacts": [
+  "checks": [
     {
-      "path": "evidence/template-releases/REL-0002/technical-results/render.json",
-      "sha256": "8b0132cfbad832e3f67fd24fcaa918d08dffaeb229502461b58a4587c7e62bb4",
-      "media_type": "application/json",
-      "category": "provenance"
+      "id": "render:output-0",
+      "status": "PASS",
+      "detail": "PDF parsed successfully with the required 5 pages."
     },
+    {
+      "id": "render:output-1",
+      "status": "PASS",
+      "detail": "Page image 1 parsed successfully at 1275x1650 pixels."
+    },
+    {
+      "id": "render:output-2",
+      "status": "PASS",
+      "detail": "Page image 2 parsed successfully at 1275x1650 pixels."
+    },
+    {
+      "id": "render:output-3",
+      "status": "PASS",
+      "detail": "Page image 3 parsed successfully at 1275x1650 pixels."
+    },
+    {
+      "id": "render:output-4",
+      "status": "PASS",
+      "detail": "Page image 4 parsed successfully at 1275x1650 pixels."
+    },
+    {
+      "id": "render:output-5",
+      "status": "PASS",
+      "detail": "Page image 5 parsed successfully at 1275x1650 pixels."
+    },
+    {
+      "id": "render:manifest-binding",
+      "status": "PASS",
+      "detail": "Render manifest binds the frozen native asset, page count, and ordered output hashes."
+    }
+  ],
+  "rendered_outputs": [
     {
       "path": "evidence/template-releases/REL-0002/render/internal-controller-memo.pdf",
       "sha256": "7ab74990636dc585a29f83c681181c8eacf6b1a24327a40404209b4ce861049c",
@@ -59,12 +91,8 @@
       "category": "render"
     }
   ],
-  "summary": "Category-specific render validation completed against the frozen release inputs.",
-  "categories": [
-    "render"
+  "observations": [
+    "Deterministic render checks inspected the frozen descriptor and every native asset byte."
   ],
-  "procedures": {
-    "render": "Render and inspect every page, appendix, header, footer, and comment anchor."
-  },
-  "render_contract_sha256": "ef4faa3dbba264870c11eb870c04a2c6e4d9e770512e26039d2819b909c0aa1d"
+  "summary": "Category-specific render validation completed against the frozen release inputs."
 }

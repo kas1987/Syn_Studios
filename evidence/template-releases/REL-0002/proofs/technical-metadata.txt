@@ -1,5 +1,0 @@
-release_id=REL-0002
-template_id=TMPL-0002
-category=metadata
-native_asset_sha256=1a922e87a29682bdea8a04734084f9f9fe1631bf785139b95b2b0f74c238818f
-observation=Technical validation executed the exact blueprint metadata procedure against the frozen asset hashes.

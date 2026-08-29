@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0.0",
+  "result_type": "template_technical_validation_result",
+  "result_id": "TECHRES-REL-0002-CORE-INTEGRITY",
+  "release_id": "REL-0002",
+  "template_id": "TMPL-0002",
+  "version": "1.0.0",
+  "category": "core_integrity",
+  "result_artifact_category": "core_integrity",
+  "descriptor_sha256": "2d44a466e4c4a5da4bf0203b89ce6af3fcffe8a2e7e61ac6324f12bc7882472b",
+  "native_asset_sha256s": [
+    "1a922e87a29682bdea8a04734084f9f9fe1631bf785139b95b2b0f74c238818f"
+  ],
+  "applicable": true,
+  "verdict": "VALIDATION_PASS",
+  "procedure": "Check every conclusion, required action, citation, and appendix reference.",
+  "actor_id": "syn-validation-runner-2026-08-29",
+  "actor": "Syn Studios validation runner",
+  "checks": [
+    {
+      "id": "core_integrity:docx-structure",
+      "status": "PASS",
+      "detail": "Parsed 100 paragraphs and 5 tables from native WordprocessingML."
+    }
+  ],
+  "rendered_outputs": [],
+  "observations": [
+    "Deterministic core_integrity checks inspected the frozen descriptor and every native asset byte."
+  ],
+  "summary": "Category-specific core_integrity validation completed against the frozen release inputs."
+}

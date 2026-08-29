@@ -13,17 +13,17 @@
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
   "observations": [
-    "The blueprint provenance gate was executed for the frozen artifact set."
+    "Deterministic provenance checks inspected the frozen descriptor and every native asset byte."
   ],
   "artifacts": [
     {
-      "path": "evidence/template-releases/REL-0001/proofs/technical-provenance.txt",
-      "sha256": "745f688d00c3c736f59578e6c64dfe4b2904ec9b5aaf2cb4d991d270118d7a37",
-      "media_type": "text/plain",
+      "path": "evidence/template-releases/REL-0001/technical-results/provenance.json",
+      "sha256": "8edc769c44a424fe47ab51d92a38b0cf99528ec90b655585048ff6164d87efaa",
+      "media_type": "application/json",
       "category": "provenance"
     }
   ],
-  "summary": "Technical validation result for the provenance release gate.",
+  "summary": "Category-specific provenance validation completed against the frozen release inputs.",
   "categories": [
     "provenance"
   ],

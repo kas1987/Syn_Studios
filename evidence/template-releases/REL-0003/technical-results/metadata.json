@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0.0",
+  "result_type": "template_technical_validation_result",
+  "result_id": "TECHRES-REL-0003-METADATA",
+  "release_id": "REL-0003",
+  "template_id": "TMPL-0003",
+  "version": "1.0.0",
+  "category": "metadata",
+  "result_artifact_category": "metadata",
+  "descriptor_sha256": "850e4665fc96a18aab826296243c6f86e0af3833f1dea60547a62049e2559dfe",
+  "native_asset_sha256s": [
+    "8acaf754686fa23b1bbc59d229094d6444b54224ea9a0dae53c50086b8c5bf99"
+  ],
+  "applicable": true,
+  "verdict": "VALIDATION_PASS",
+  "procedure": "Inspect MIME headers, message identifiers, timestamps, encodings, and attachment names.",
+  "actor_id": "syn-validation-runner-2026-08-29",
+  "actor": "Syn Studios validation runner",
+  "checks": [
+    {
+      "id": "metadata:mime-headers",
+      "status": "PASS",
+      "detail": "Inspected MIME encodings, attachment names, timestamps, and 1 unique message identifiers."
+    }
+  ],
+  "rendered_outputs": [],
+  "observations": [
+    "Deterministic metadata checks inspected the frozen descriptor and every native asset byte."
+  ],
+  "summary": "Category-specific metadata validation completed against the frozen release inputs."
+}

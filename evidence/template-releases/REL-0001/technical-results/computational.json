@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0.0",
+  "result_type": "template_technical_validation_result",
+  "result_id": "TECHRES-REL-0001-COMPUTATIONAL",
+  "release_id": "REL-0001",
+  "template_id": "TMPL-0001",
+  "version": "1.0.0",
+  "category": "computational",
+  "result_artifact_category": "computational",
+  "descriptor_sha256": "642d3c4d81d898667606140d4f50ca0c040f66c2bf602312bc57a40aea318c7c",
+  "native_asset_sha256s": [
+    "2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66"
+  ],
+  "applicable": true,
+  "verdict": "VALIDATION_PASS",
+  "procedure": "Recalculate every formula and verify material totals and error states.",
+  "actor_id": "syn-validation-runner-2026-08-29",
+  "actor": "Syn Studios validation runner",
+  "checks": [
+    {
+      "id": "computational:live-formulas",
+      "status": "PASS",
+      "detail": "Parsed 99 live formulas with cached values across 3 sheets, automatic full recalculation, and no formula errors."
+    },
+    {
+      "id": "computational:control-checks",
+      "status": "PASS",
+      "detail": "Inspected 10 cached control results; none report FAIL."
+    }
+  ],
+  "rendered_outputs": [],
+  "observations": [
+    "Deterministic computational checks inspected the frozen descriptor and every native asset byte."
+  ],
+  "summary": "Category-specific computational validation completed against the frozen release inputs."
+}
