@@ -9,6 +9,7 @@ import hashlib
 import json
 import re
 import sys
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -139,6 +140,26 @@ def bound_pairs(value: object) -> list[tuple[str, str]]:
     return pairs
 
 
+def validate_native_asset_shape(path: Path, artifact_type: object, label: str, findings: list[str]) -> None:
+    """Reject obvious extension-only impostors before release evidence is considered."""
+    if artifact_type in {"xlsx", "docx"}:
+        required_member = "xl/workbook.xml" if artifact_type == "xlsx" else "word/document.xml"
+        try:
+            with zipfile.ZipFile(path) as package:
+                names = set(package.namelist())
+        except (OSError, zipfile.BadZipFile):
+            findings.append(f"{label}: is not a valid {artifact_type} OOXML package")
+            return
+        if "[Content_Types].xml" not in names or required_member not in names:
+            findings.append(f"{label}: is missing required {artifact_type} package members")
+    elif artifact_type == "pdf":
+        try:
+            if not path.read_bytes().startswith(b"%PDF-"):
+                findings.append(f"{label}: is not a valid PDF header")
+        except OSError as error:
+            findings.append(f"{label}: cannot inspect native asset: {error}")
+
+
 def apply_fixture(base: dict[str, Any], fixture: dict[str, Any]) -> dict[str, Any]:
     result = copy.deepcopy(base)
     for mutation in as_list(fixture.get("mutations")):
@@ -173,9 +194,12 @@ def load_typed_evidence(
     expected_type: str,
     label: str,
     findings: list[str],
+    evidence_ids: dict[str, Path],
     category: str | None = None,
 ) -> tuple[Path | None, dict[str, Any]]:
-    path = check_bound_file(root, reference, "record_path", "record_sha256", label, findings, EVIDENCE_ROOT)
+    release_id = release.get("release_id")
+    release_evidence_root = EVIDENCE_ROOT / release_id if isinstance(release_id, str) else EVIDENCE_ROOT
+    path = check_bound_file(root, reference, "record_path", "record_sha256", label, findings, release_evidence_root)
     if path is None:
         return None, {}
     record = load_json(path, root, findings)
@@ -183,6 +207,13 @@ def load_typed_evidence(
         return path, {}
     record_label = display_path(path, root)
     findings.extend(schema_findings(record, schema, record_label))
+    record_id = record.get("record_id")
+    if isinstance(record_id, str):
+        prior = evidence_ids.get(record_id)
+        if prior is not None and prior != path:
+            findings.append(f"{label}:record_id: duplicate evidence identity {record_id}")
+        else:
+            evidence_ids[record_id] = path
     expected = {
         "release_id": release.get("release_id"),
         "template_id": release.get("template_id"),
@@ -201,6 +232,24 @@ def load_typed_evidence(
         categories = {value for value in as_list(record.get("categories")) if isinstance(value, str)}
         if category not in categories:
             findings.append(f"{label}:categories: technical record does not declare {category}")
+    artifact_categories: set[str] = set()
+    for index, artifact in enumerate(as_list(record.get("artifacts"))):
+        if not isinstance(artifact, dict):
+            continue
+        artifact_path = check_bound_file(root, artifact, "path", "sha256", f"{label}:artifacts.{index}", findings, release_evidence_root)
+        if artifact_path is not None:
+            if artifact_path == path:
+                findings.append(f"{label}:artifacts.{index}.path: evidence record cannot cite itself as proof output")
+            try:
+                if artifact_path.stat().st_size == 0:
+                    findings.append(f"{label}:artifacts.{index}.path: proof output must not be empty")
+            except OSError:
+                pass
+        artifact_category = artifact.get("category")
+        if isinstance(artifact_category, str):
+            artifact_categories.add(artifact_category)
+    if category is not None and category not in artifact_categories:
+        findings.append(f"{label}:artifacts: no proof output is bound to category {category}")
     return path, record
 
 
@@ -221,6 +270,7 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
     release_template_keys: set[tuple[str, str]] = set()
     release_descriptors: dict[Path, dict[str, Any]] = {}
     release_version_files: dict[Path, set[Path]] = {}
+    evidence_ids: dict[str, Path] = {}
     count = 0
 
     for path in sorted((root / "library/foundations").glob("FOUND-*.json")):
@@ -352,6 +402,7 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
                     if asset_path != version_root and version_root not in asset_path.parents:
                         findings.append(f"{label}:native_assets.{index}.path: must be under its template version directory")
                     release_version_files[version_root].add(asset_path)
+                    validate_native_asset_shape(asset_path, descriptor.get("artifact_type") if descriptor else None, f"{label}:native_assets.{index}", findings)
         asset_hashes = {hash_value for _, hash_value in asset_pairs}
 
         blueprint_ref = as_dict(data.get("blueprint"))
@@ -368,12 +419,14 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
                 "template_id": data.get("template_id"),
                 "version": data.get("version"),
                 "artifact_type": blueprint_entry[1].get("artifact_type") if blueprint_entry else None,
-                "blueprint_id": blueprint_id,
-                "blueprint_sha256": blueprint_ref.get("sha256"),
             }
             for field, expected in comparisons.items():
                 if descriptor.get(field) != expected:
                     findings.append(f"{label}:descriptor.{field}: does not match release")
+            if as_dict(descriptor.get("lineage")).get("blueprint_id") != blueprint_id:
+                findings.append(f"{label}:descriptor.lineage.blueprint_id: does not match release")
+            if descriptor.get("release_status") != data.get("status"):
+                findings.append(f"{label}:descriptor.release_status: does not match release")
             if set(bound_pairs(descriptor.get("native_assets"))) != set(asset_pairs):
                 findings.append(f"{label}:descriptor.native_assets: must exactly match release native assets")
 
@@ -382,13 +435,17 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
             supplied_ids = {item for item in as_list(as_dict(data.get("sanitization")).get("foundation_card_ids")) if isinstance(item, str)}
             if supplied_ids != lineage_ids:
                 findings.append(f"{label}:sanitization.foundation_card_ids: must exactly match blueprint lineage")
+            if descriptor is not None:
+                descriptor_ids = {item for item in as_list(as_dict(descriptor.get("lineage")).get("foundation_ids")) if isinstance(item, str)}
+                if descriptor_ids != lineage_ids:
+                    findings.append(f"{label}:descriptor.lineage.foundation_ids: must exactly match blueprint lineage")
 
         typed: dict[str, tuple[Path | None, dict[str, Any]]] = {}
-        typed["sanitization"] = load_typed_evidence(root, as_dict(as_dict(data.get("sanitization")).get("evidence")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "sanitization", f"{label}:sanitization.evidence", findings)
+        typed["sanitization"] = load_typed_evidence(root, as_dict(as_dict(data.get("sanitization")).get("evidence")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "sanitization", f"{label}:sanitization.evidence", findings, evidence_ids)
         reviews = as_dict(data.get("reviews"))
-        typed["terra"] = load_typed_evidence(root, as_dict(reviews.get("terra")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "terra_review", f"{label}:reviews.terra", findings)
-        typed["sol"] = load_typed_evidence(root, as_dict(reviews.get("sol")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "sol_review", f"{label}:reviews.sol", findings)
-        typed["conductor"] = load_typed_evidence(root, as_dict(data.get("conductor_approval")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "conductor_approval", f"{label}:conductor_approval", findings)
+        typed["terra"] = load_typed_evidence(root, as_dict(reviews.get("terra")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "terra_review", f"{label}:reviews.terra", findings, evidence_ids)
+        typed["sol"] = load_typed_evidence(root, as_dict(reviews.get("sol")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "sol_review", f"{label}:reviews.sol", findings, evidence_ids)
+        typed["conductor"] = load_typed_evidence(root, as_dict(data.get("conductor_approval")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "conductor_approval", f"{label}:conductor_approval", findings, evidence_ids)
         review_paths = [typed[name][0] for name in ("terra", "sol", "conductor") if typed[name][0] is not None]
         if len(review_paths) != len(set(review_paths)):
             findings.append(f"{label}:reviews: Terra, Sol, and conductor record paths must be distinct")
@@ -400,31 +457,13 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
         blueprint_gates = {gate.get("category"): gate for gate in as_list(blueprint_entry[1].get("proof_gates")) if blueprint_entry and isinstance(gate, dict) and isinstance(gate.get("category"), str)} if blueprint_entry else {}
         for category in PROOF_CATEGORIES:
             reference = as_dict(as_dict(data.get("evidence")).get(category))
-            _, record = load_typed_evidence(root, reference, schemas["release-evidence"], data, descriptor_hash, asset_hashes, "technical_validation", f"{label}:evidence.{category}", findings, category)
+            _, record = load_typed_evidence(root, reference, schemas["release-evidence"], data, descriptor_hash, asset_hashes, "technical_validation", f"{label}:evidence.{category}", findings, evidence_ids, category)
             expected_verdict = "VALIDATION_PASS" if as_dict(blueprint_gates.get(category)).get("applicable") is True else "VALIDATION_NOT_APPLICABLE"
             if record and record.get("verdict") != expected_verdict:
                 findings.append(f"{label}:evidence.{category}.verdict: must align with blueprint applicability")
             expected_procedure = as_dict(blueprint_gates.get(category)).get("procedure")
             if record and as_dict(record.get("procedures")).get(category) != expected_procedure:
                 findings.append(f"{label}:evidence.{category}.procedures: must exactly match the blueprint proof gate")
-
-    templates_root = root / "library/templates"
-    discovered_version_roots = {
-        version_path.resolve()
-        for template_path in templates_root.glob("TMPL-*")
-        if template_path.is_dir()
-        for version_path in template_path.iterdir()
-        if version_path.is_dir() and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version_path.name)
-    }
-    for version_root in sorted(discovered_version_roots | set(release_version_files), key=str):
-        label = display_path(version_root, root)
-        expected_files = release_version_files.get(version_root)
-        if expected_files is None:
-            findings.append(f"{label}: template version directory is not bound by a release")
-            continue
-        actual_files = {file_path.resolve() for file_path in version_root.rglob("*") if file_path.is_file()} if version_root.is_dir() else set()
-        for anonymous in sorted(actual_files - expected_files, key=str):
-            findings.append(f"{display_path(anonymous, root)}: file is not bound as the descriptor or a native asset")
 
     fixture_pairs: dict[str, list[tuple[str, str]]] = {}
     for path in sorted((root / "examples/blueprints/fixtures").glob("*.json")):
@@ -464,6 +503,8 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
             findings.append(f"examples/blueprints/fixtures:{blueprint_id}: requires exactly one pass and one fail fixture")
 
     catalog_path = root / "library/catalog.json"
+    catalog_version_files: dict[Path, set[Path]] = {}
+    release_catalog_counts: dict[Path, int] = {path.resolve(): 0 for path, _ in releases.values()}
     if catalog_path.is_file():
         count += 1
         catalog = load_json(catalog_path, root, findings)
@@ -477,45 +518,104 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
                     continue
                 prefix = f"{label}:templates.{index}"
                 template_id, version = entry.get("template_id"), entry.get("version")
+                version_root = None
                 if isinstance(template_id, str) and isinstance(version, str):
                     key = (template_id, version)
                     if key in seen_keys:
                         findings.append(f"{prefix}: duplicate template_id/version")
                     seen_keys.add(key)
-                if entry.get("release_status") != "released":
-                    continue
-                release_ref = as_dict(entry.get("release_record"))
-                release_path = check_bound_file(root, release_ref, "path", "sha256", f"{prefix}.release_record", findings, Path("library/releases"))
-                release = release_by_path.get(release_path) if release_path is not None else None
-                if release is None:
-                    findings.append(f"{prefix}.release_record: does not identify an indexed release")
-                    continue
+                    version_root = (root / "library/templates" / template_id / version).resolve()
+                    catalog_version_files.setdefault(version_root, set())
+
+                descriptor_path = resolve_bound_path(root, entry.get("descriptor"), f"{prefix}.descriptor", findings, Path("library/templates"))
+                descriptor_data = load_json(descriptor_path, root, findings) if descriptor_path is not None else None
+                if descriptor_path is not None and version_root is not None:
+                    if descriptor_path.parent != version_root:
+                        findings.append(f"{prefix}.descriptor: must be directly under its template version directory")
+                    catalog_version_files[version_root].add(descriptor_path)
+                if descriptor_data is not None:
+                    findings.extend(schema_findings(descriptor_data, schemas["template-descriptor"], display_path(descriptor_path, root)))
+
+                catalog_asset_paths: set[str] = set()
+                for asset_index, asset_value in enumerate(as_list(entry.get("native_assets"))):
+                    asset_path = resolve_bound_path(root, asset_value, f"{prefix}.native_assets.{asset_index}", findings, Path("library/templates"))
+                    if isinstance(asset_value, str):
+                        catalog_asset_paths.add(asset_value)
+                    if asset_path is not None and version_root is not None:
+                        if asset_path != version_root and version_root not in asset_path.parents:
+                            findings.append(f"{prefix}.native_assets.{asset_index}: must be under its template version directory")
+                        catalog_version_files[version_root].add(asset_path)
+
+                descriptor_asset_pairs = bound_pairs(as_dict(descriptor_data).get("native_assets"))
+                descriptor_asset_paths = {path_value for path_value, _ in descriptor_asset_pairs}
+                if descriptor_data is not None and catalog_asset_paths != descriptor_asset_paths:
+                    findings.append(f"{prefix}.native_assets: must exactly match descriptor native assets")
+                for asset_index, (asset_value, asset_hash) in enumerate(descriptor_asset_pairs):
+                    asset_path = resolve_bound_path(root, asset_value, f"{prefix}.descriptor.native_assets.{asset_index}", findings, Path("library/templates"))
+                    if asset_path is not None:
+                        if sha256_file(asset_path) != asset_hash:
+                            findings.append(f"{prefix}.descriptor.native_assets.{asset_index}.sha256: hash does not match {asset_value}")
+                        validate_native_asset_shape(asset_path, as_dict(descriptor_data).get("artifact_type"), f"{prefix}.descriptor.native_assets.{asset_index}", findings)
+
+                lineage = as_dict(as_dict(descriptor_data).get("lineage"))
+                blueprint_id = lineage.get("blueprint_id")
+                bound_blueprint = blueprints.get(blueprint_id) if isinstance(blueprint_id, str) else None
                 comparisons = {
-                    "template_id": release.get("template_id"),
-                    "version": release.get("version"),
-                    "blueprint_id": as_dict(release.get("blueprint")).get("blueprint_id"),
+                    "template_id": as_dict(descriptor_data).get("template_id"), "version": as_dict(descriptor_data).get("version"),
+                    "name": as_dict(descriptor_data).get("name"), "artifact_type": as_dict(descriptor_data).get("artifact_type"),
+                    "blueprint_id": blueprint_id, "authority": as_dict(descriptor_data).get("authority"),
+                    "lifecycle": as_dict(descriptor_data).get("lifecycle"), "release_status": as_dict(descriptor_data).get("release_status"),
                 }
-                descriptor_data = release_descriptors.get(release_path.resolve(), {})
-                comparisons["artifact_type"] = as_dict(descriptor_data).get("artifact_type")
-                bound_blueprint = blueprints.get(comparisons["blueprint_id"]) if isinstance(comparisons["blueprint_id"], str) else None
-                if bound_blueprint is not None:
-                    comparisons["authority"] = as_dict(bound_blueprint[1].get("authority")).get("primary_class")
-                    comparisons["lifecycle"] = bound_blueprint[1].get("lifecycle")
                 for field, expected in comparisons.items():
                     if entry.get(field) != expected:
-                        findings.append(f"{prefix}.{field}: does not match release")
-                if release.get("status") != "released":
-                    findings.append(f"{prefix}.release_status: bound release is not released")
-                if as_dict(entry.get("descriptor")) != as_dict(release.get("descriptor")):
-                    findings.append(f"{prefix}.descriptor: does not match release")
-                if set(bound_pairs(entry.get("native_assets"))) != set(bound_pairs(release.get("native_assets"))):
-                    findings.append(f"{prefix}.native_assets: do not match release")
-                if descriptor_data is not None:
-                    for field in ("supported_consumers", "capabilities"):
-                        entry_values = {value for value in as_list(entry.get(field)) if isinstance(value, str)}
-                        descriptor_values = {value for value in as_list(descriptor_data.get(field)) if isinstance(value, str)}
-                        if entry_values != descriptor_values:
-                            findings.append(f"{prefix}.{field}: does not match descriptor")
+                        findings.append(f"{prefix}.{field}: does not match descriptor")
+                for field in ("supported_consumers", "capabilities"):
+                    if set(as_list(entry.get(field))) != set(as_list(as_dict(descriptor_data).get(field))):
+                        findings.append(f"{prefix}.{field}: does not match descriptor")
+                if bound_blueprint is None and isinstance(blueprint_id, str):
+                    findings.append(f"{prefix}.blueprint_id: unknown blueprint")
+                elif bound_blueprint is not None:
+                    expected_ids = {item.get("card_id") for item in as_list(bound_blueprint[1].get("foundation_lineage")) if isinstance(item, dict)}
+                    if set(as_list(lineage.get("foundation_ids"))) != expected_ids:
+                        findings.append(f"{prefix}.descriptor.lineage.foundation_ids: must exactly match blueprint lineage")
+                    if entry.get("artifact_type") != bound_blueprint[1].get("artifact_type"):
+                        findings.append(f"{prefix}.artifact_type: does not match blueprint")
+                    if entry.get("authority") != as_dict(bound_blueprint[1].get("authority")).get("primary_class"):
+                        findings.append(f"{prefix}.authority: does not match blueprint")
+
+                if entry.get("release_status") in {"released", "deprecated", "withdrawn"}:
+                    release_ref = as_dict(entry.get("release_record"))
+                    release_path = check_bound_file(root, release_ref, "path", "sha256", f"{prefix}.release_record", findings, Path("library/releases"))
+                    release = release_by_path.get(release_path) if release_path is not None else None
+                    if release is None:
+                        findings.append(f"{prefix}.release_record: does not identify an indexed release")
+                    else:
+                        release_catalog_counts[release_path] += 1
+                        release_comparisons = {"template_id": release.get("template_id"), "version": release.get("version"), "blueprint_id": as_dict(release.get("blueprint")).get("blueprint_id"), "release_status": release.get("status")}
+                        for field, expected in release_comparisons.items():
+                            if entry.get(field) != expected:
+                                findings.append(f"{prefix}.{field}: does not match release")
+                        if entry.get("descriptor") != as_dict(release.get("descriptor")).get("path"):
+                            findings.append(f"{prefix}.descriptor: does not match release")
+                        if catalog_asset_paths != {path_value for path_value, _ in bound_pairs(release.get("native_assets"))}:
+                            findings.append(f"{prefix}.native_assets: do not match release")
+
+    for release_path, release in releases.values():
+        uses = release_catalog_counts.get(release_path.resolve(), 0)
+        if uses != 1:
+            findings.append(f"{display_path(release_path, root)}: release must appear exactly once in library/catalog.json; found {uses}")
+
+    templates_root = root / "library/templates"
+    expected_template_files: set[Path] = set()
+    for files in list(release_version_files.values()) + list(catalog_version_files.values()):
+        expected_template_files.update(files)
+    if templates_root.is_dir():
+        for actual in sorted((path.resolve() for path in templates_root.rglob("*") if path.is_file()), key=str):
+            if actual in expected_template_files:
+                continue
+            if actual.name == ".gitkeep" and not actual.read_bytes().strip():
+                continue
+            findings.append(f"{display_path(actual, root)}: file is not bound by a catalog descriptor/native asset or release")
 
     return findings, count
 

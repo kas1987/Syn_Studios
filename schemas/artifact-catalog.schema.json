@@ -3,33 +3,20 @@
   "$id": "https://syn-studios.local/schemas/artifact-catalog.schema.json",
   "title": "Syn Studios consumer catalog",
   "type": "object", "additionalProperties": false,
-  "required": ["schema_version", "catalog_id", "templates"],
+  "required": ["schema_version", "catalog_id", "discovery_fields", "templates"],
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "boundPath": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}},
-    "entry": {
-      "type": "object", "additionalProperties": false,
-      "required": ["template_id", "version", "artifact_type", "blueprint_id", "authority", "lifecycle", "descriptor", "native_assets", "supported_consumers", "capabilities", "release_status"],
-      "properties": {
-        "template_id": {"type": "string", "pattern": "^TMPL-[0-9]{4}$"},
-        "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
-        "artifact_type": {"enum": ["docx", "xlsx", "pdf", "eml", "csv", "mixed_package"]},
-        "blueprint_id": {"type": "string", "pattern": "^BP-[0-9]{4}$"},
-        "authority": {"enum": ["authoritative", "supporting", "contextual", "superseded", "question-only", "incidental", "mixed"]},
-        "lifecycle": {"type": "string", "minLength": 3},
-        "descriptor": {"$ref": "#/$defs/boundPath"},
-        "native_assets": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/boundPath"}},
-        "supported_consumers": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-        "capabilities": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-        "release_status": {"enum": ["draft", "candidate", "released", "deprecated", "withdrawn"]},
-        "release_record": {"$ref": "#/$defs/boundPath"}
-      },
-      "allOf": [{"if": {"properties": {"release_status": {"const": "released"}}}, "then": {"required": ["release_record"]}, "else": {"not": {"required": ["release_record"]}}}]
-    }
+    "entry": {"type": "object", "additionalProperties": false, "required": ["kind", "template_id", "version", "name", "artifact_type", "blueprint_id", "authority", "lifecycle", "descriptor", "native_assets", "supported_consumers", "capabilities", "release_status"], "properties": {
+      "kind": {"const": "artifact_template"}, "template_id": {"type": "string", "pattern": "^TMPL-[0-9]{4}$"}, "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"}, "name": {"type": "string", "minLength": 3},
+      "artifact_type": {"enum": ["docx", "xlsx", "pdf", "eml", "csv", "mixed_package"]}, "blueprint_id": {"type": "string", "pattern": "^BP-[0-9]{4}$"}, "authority": {"enum": ["authoritative", "supporting", "contextual", "superseded", "question-only", "incidental", "mixed"]}, "lifecycle": {"type": "string", "minLength": 3},
+      "descriptor": {"type": "string", "minLength": 1}, "native_assets": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "supported_consumers": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}}, "capabilities": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+      "release_status": {"enum": ["draft", "candidate", "released", "deprecated", "withdrawn"]}, "release_record": {"$ref": "#/$defs/boundPath"}
+    }, "allOf": [{"if": {"properties": {"release_status": {"enum": ["released", "deprecated", "withdrawn"]}}}, "then": {"required": ["release_record"]}, "else": {"not": {"required": ["release_record"]}}}]}
   },
   "properties": {
-    "schema_version": {"const": "1.0.0"},
-    "catalog_id": {"const": "syn-studios-artifact-library"},
+    "schema_version": {"const": "1.0.0"}, "catalog_id": {"const": "syn-studios-artifact-library"},
+    "discovery_fields": {"type": "array", "minItems": 1, "uniqueItems": true, "contains": {"const": "artifact_type"}, "items": {"enum": ["artifact_type", "authority", "lifecycle", "capabilities", "supported_consumers", "blueprint_id", "release_status"]}},
     "templates": {"type": "array", "items": {"$ref": "#/$defs/entry"}}
   }
 }

@@ -3,6 +3,7 @@ import json
 import shutil
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
@@ -53,24 +54,44 @@ class LibraryControlPlaneTests(unittest.TestCase):
         blueprint = json.loads(blueprint_path.read_text(encoding="utf-8"))
         asset = root / "library/templates/TMPL-0001/1.0.0/workbook.xlsx"
         asset.parent.mkdir(parents=True, exist_ok=True)
-        asset.write_bytes(b"authorized synthetic workbook template")
+        with zipfile.ZipFile(asset, "w") as package:
+            package.writestr("[Content_Types].xml", "<Types/>")
+            package.writestr("xl/workbook.xml", "<workbook/>")
         asset_binding = {"path": asset.relative_to(root).as_posix(), "sha256": file_hash(asset)}
         descriptor = {
             "schema_version": "1.0.0",
             "template_id": "TMPL-0001",
             "version": "1.0.0",
+            "name": "Internal close and reconciliation workbook",
+            "release_status": "released",
             "artifact_type": "xlsx",
-            "blueprint_id": "BP-0001",
-            "blueprint_sha256": file_hash(blueprint_path),
-            "native_assets": [asset_binding],
+            "lineage": {"blueprint_id": "BP-0001", "foundation_ids": ["FOUND-0001"], "lineage_source": "examples/blueprints/BP-0001.internal-close-workbook.json#foundation_lineage", "method": "Built from scratch using only the reviewed abstract blueprint pattern."},
+            "native_assets": [{**asset_binding, "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}],
+            "producer": {"role": "senior accountant", "department": "finance"},
+            "purpose": "Reconcile authorized source activity to the ledger.",
+            "lifecycle": blueprint["lifecycle"],
+            "authority": blueprint["authority"]["primary_class"],
+            "slots": ["organization_name"],
+            "slot_contract": {"token_format": "{{slot_name}}", "required": True, "instantiated_artifact_policy": "reject unresolved tokens", "value_source": "authorized world facts only"},
+            "knowledge_and_authority_constraints": ["Source rows cannot manufacture conclusions."],
+            "prohibited_content": ["prior submission facts"],
             "supported_consumers": ["anna-holodeck-bridge"],
             "capabilities": ["recalculate", "render"],
+            "generation_notes": ["Populate source layers before reconciliation."],
+            "proof_expectations": [{"id": "render-all", "capability": "render", "required": True, "description": "Render and inspect every worksheet."}],
         }
         descriptor_path = asset.parent / "template.json"
         write_json(descriptor_path, descriptor)
         descriptor_binding = {"path": descriptor_path.relative_to(root).as_posix(), "sha256": file_hash(descriptor_path)}
 
         def evidence(name, record_type, verdict, actor_id, actor, categories=None, procedures=None):
+            artifact_categories = categories or ["provenance"]
+            artifacts = []
+            for category in artifact_categories:
+                proof = root / "evidence/template-releases/REL-0001/proofs" / f"{name}-{category}.txt"
+                proof.parent.mkdir(parents=True, exist_ok=True)
+                proof.write_text(f"Observed output for {name} {category}.\n", encoding="utf-8")
+                artifacts.append({"path": proof.relative_to(root).as_posix(), "sha256": file_hash(proof), "media_type": "text/plain", "category": category})
             record = {
                 "schema_version": "1.0.0",
                 "record_id": f"EVID-RECORD-{name.upper()}",
@@ -83,6 +104,8 @@ class LibraryControlPlaneTests(unittest.TestCase):
                 "verdict": verdict,
                 "actor_id": actor_id,
                 "actor": actor,
+                "observations": [f"Observed concrete output for the {name} gate."],
+                "artifacts": artifacts,
                 "summary": f"Typed evidence for the {name} release gate.",
             }
             if categories is not None:
@@ -122,15 +145,18 @@ class LibraryControlPlaneTests(unittest.TestCase):
         catalog = {
             "schema_version": "1.0.0",
             "catalog_id": "syn-studios-artifact-library",
+            "discovery_fields": ["artifact_type", "authority", "lifecycle", "capabilities", "supported_consumers", "blueprint_id", "release_status"],
             "templates": [{
+                "kind": "artifact_template",
                 "template_id": release["template_id"],
                 "version": release["version"],
+                "name": descriptor["name"],
                 "artifact_type": descriptor["artifact_type"],
                 "blueprint_id": release["blueprint"]["blueprint_id"],
                 "authority": blueprint["authority"]["primary_class"],
                 "lifecycle": blueprint["lifecycle"],
-                "descriptor": release["descriptor"],
-                "native_assets": release["native_assets"],
+                "descriptor": release["descriptor"]["path"],
+                "native_assets": [item["path"] for item in release["native_assets"]],
                 "supported_consumers": descriptor["supported_consumers"],
                 "capabilities": descriptor["capabilities"],
                 "release_status": "released",
@@ -285,7 +311,7 @@ class LibraryControlPlaneTests(unittest.TestCase):
             extra = descriptor_path.parent / "unbound.csv"
             extra.write_text("secret,world,facts", encoding="utf-8")
             descriptor["template_id"] = "TMPL-9999"
-            descriptor["native_assets"].append({"path": extra.relative_to(root).as_posix(), "sha256": file_hash(extra)})
+            descriptor["native_assets"].append({"path": extra.relative_to(root).as_posix(), "media_type": "text/csv", "sha256": file_hash(extra)})
             write_json(descriptor_path, descriptor)
             release["descriptor"]["sha256"] = file_hash(descriptor_path)
             write_json(release_path, release)
@@ -301,10 +327,11 @@ class LibraryControlPlaneTests(unittest.TestCase):
             build_side = descriptor_path.parent.parent / "build/build.log"
             build_side.parent.mkdir(parents=True, exist_ok=True)
             build_side.write_text("build output\n", encoding="utf-8")
-            self.assertEqual(validate_repository(root)[0], [])
+            self.assert_finding(root, "file is not bound by a catalog descriptor/native asset or release")
+            build_side.unlink()
             anonymous = descriptor_path.parent / "anonymous-world-facts.csv"
             anonymous.write_text("private,answer\n", encoding="utf-8")
-            self.assert_finding(root, "file is not bound as the descriptor or a native asset")
+            self.assert_finding(root, "file is not bound by a catalog descriptor/native asset or release")
 
     def test_catalog_mismatched_id_descriptor_and_asset_hashes_fail(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -313,14 +340,112 @@ class LibraryControlPlaneTests(unittest.TestCase):
             catalog_path, catalog = self.make_catalog(root, release_path, release, descriptor)
             entry = catalog["templates"][0]
             entry["template_id"] = "TMPL-9999"
-            entry["descriptor"]["sha256"] = "0" * 64
-            entry["native_assets"][0]["sha256"] = "1" * 64
+            entry["descriptor"] = "library/templates/TMPL-0001/1.0.0/missing.json"
+            entry["native_assets"] = ["library/templates/TMPL-0001/1.0.0/missing.xlsx"]
             write_json(catalog_path, catalog)
             findings, _ = validate_repository(root)
             rendered = "\n".join(findings)
             self.assertIn("template_id: does not match release", rendered)
             self.assertIn("descriptor: does not match release", rendered)
             self.assertIn("native_assets: do not match release", rendered)
+
+    def test_rich_candidate_catalog_and_descriptor_pass_without_release(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, descriptor_path, descriptor = self.make_release(root, blueprint_path)
+            descriptor["release_status"] = "candidate"
+            write_json(descriptor_path, descriptor)
+            catalog_path, catalog = self.make_catalog(root, release_path, release, descriptor)
+            release_path.unlink()
+            entry = catalog["templates"][0]
+            entry["release_status"] = "candidate"
+            entry.pop("release_record")
+            write_json(catalog_path, catalog)
+            self.assertEqual(validate_repository(root)[0], [])
+
+    def test_candidate_catalog_paths_and_hashes_are_validated(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, descriptor_path, descriptor = self.make_release(root, blueprint_path)
+            descriptor["release_status"] = "candidate"
+            write_json(descriptor_path, descriptor)
+            catalog_path, catalog = self.make_catalog(root, release_path, release, descriptor)
+            release_path.unlink()
+            entry = catalog["templates"][0]
+            entry["release_status"] = "candidate"
+            entry.pop("release_record")
+            entry["descriptor"] = "library/templates/TMPL-0001/1.0.0/missing.json"
+            entry["native_assets"] = ["library/templates/TMPL-0001/1.0.0/missing.xlsx"]
+            write_json(catalog_path, catalog)
+            findings, _ = validate_repository(root)
+            self.assertIn("referenced file does not exist", "\n".join(findings))
+
+    def test_every_release_must_appear_exactly_once_in_catalog(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            self.make_release(root, blueprint_path)
+            write_json(root / "library/catalog.json", {"schema_version": "1.0.0", "catalog_id": "syn-studios-artifact-library", "discovery_fields": ["artifact_type"], "templates": []})
+            self.assert_finding(root, "release must appear exactly once in library/catalog.json; found 0")
+
+    def test_generic_evidence_record_without_outputs_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, _, descriptor = self.make_release(root, blueprint_path)
+            self.make_catalog(root, release_path, release, descriptor)
+            technical_path = root / release["evidence"]["render"]["record_path"]
+            technical = json.loads(technical_path.read_text(encoding="utf-8"))
+            technical.pop("observations")
+            technical.pop("artifacts")
+            write_json(technical_path, technical)
+            new_hash = file_hash(technical_path)
+            for reference in release["evidence"].values():
+                reference["record_sha256"] = new_hash
+            write_json(release_path, release)
+            self.assert_finding(root, "'artifacts' is a required property")
+
+    def test_hash_consistent_fake_xlsx_is_rejected_by_native_shape(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, descriptor_path, descriptor = self.make_release(root, blueprint_path)
+            asset_path = root / release["native_assets"][0]["path"]
+            asset_path.write_bytes(b"authorized synthetic workbook template")
+            asset_hash = file_hash(asset_path)
+            release["native_assets"][0]["sha256"] = asset_hash
+            descriptor["native_assets"][0]["sha256"] = asset_hash
+            write_json(descriptor_path, descriptor)
+            descriptor_hash = file_hash(descriptor_path)
+            release["descriptor"]["sha256"] = descriptor_hash
+            evidence_references = [release["sanitization"]["evidence"], release["reviews"]["terra"], release["reviews"]["sol"], release["conductor_approval"], *release["evidence"].values()]
+            seen_paths = set()
+            for reference in evidence_references:
+                evidence_path = root / reference["record_path"]
+                if evidence_path in seen_paths:
+                    continue
+                seen_paths.add(evidence_path)
+                record = json.loads(evidence_path.read_text(encoding="utf-8"))
+                record["descriptor_sha256"] = descriptor_hash
+                record["native_asset_sha256s"] = [asset_hash]
+                write_json(evidence_path, record)
+            for reference in evidence_references:
+                reference["record_sha256"] = file_hash(root / reference["record_path"])
+            write_json(release_path, release)
+            self.make_catalog(root, release_path, release, descriptor)
+            self.assert_finding(root, "is not a valid xlsx OOXML package")
+
+    def test_evidence_record_ids_are_unique_across_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, _, descriptor = self.make_release(root, blueprint_path)
+            terra_path = root / release["reviews"]["terra"]["record_path"]
+            sol_path = root / release["reviews"]["sol"]["record_path"]
+            terra = json.loads(terra_path.read_text(encoding="utf-8"))
+            sol = json.loads(sol_path.read_text(encoding="utf-8"))
+            sol["record_id"] = terra["record_id"]
+            write_json(sol_path, sol)
+            release["reviews"]["sol"]["record_sha256"] = file_hash(sol_path)
+            write_json(release_path, release)
+            self.make_catalog(root, release_path, release, descriptor)
+            self.assert_finding(root, "duplicate evidence identity")
 
     def test_malformed_unhashable_ids_report_without_crashing(self):
         with tempfile.TemporaryDirectory() as temporary:
