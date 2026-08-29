@@ -53,6 +53,25 @@ def load_csv(path: Path, rule: dict, findings: list[str]) -> list[dict[str, str]
         observed = {row.get(column, "").strip() for row in rows if row.get(column, "").strip()}
         if len(observed) < int(threshold):
             findings.append(f"{path.name}: {column} has {len(observed)} unique values; requires {threshold}")
+    lifecycle = rule.get("lifecycle")
+    if isinstance(lifecycle, dict):
+        status_column = str(lifecycle.get("status_column", ""))
+        resolution_column = str(lifecycle.get("resolution_column", ""))
+        allowed = set(lifecycle.get("allowed_statuses", []))
+        observed_statuses = {row.get(status_column, "").strip() for row in rows}
+        invalid = sorted(observed_statuses - allowed) if allowed else []
+        if invalid:
+            findings.append(f"{path.name}: invalid lifecycle statuses {invalid}")
+        required = set(lifecycle.get("required_statuses", []))
+        if not required <= observed_statuses:
+            findings.append(f"{path.name}: missing required lifecycle statuses {sorted(required - observed_statuses)}")
+        for row_number, row in enumerate(rows, start=2):
+            status = row.get(status_column, "").strip()
+            resolution = row.get(resolution_column, "").strip()
+            if status in set(lifecycle.get("requires_resolution", [])) and not resolution:
+                findings.append(f"{path.name}: row {row_number} {status} requires a resolution reference")
+            if status in set(lifecycle.get("forbids_resolution", [])) and resolution:
+                findings.append(f"{path.name}: row {row_number} {status} cannot carry a resolution reference")
     if rows and len({tuple(row.get(header, "") for header in headers) for row in rows}) != len(rows):
         findings.append(f"{path.name}: contains exact duplicate rows")
     return rows

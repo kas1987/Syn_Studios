@@ -22,7 +22,7 @@ def workbook(path: Path, *, token=False, formula=True, hidden=False):
 
 
 class TabularConformanceTests(unittest.TestCase):
-    def build_package(self, root: Path, *, mismatch=False, token=False, formula=True, hidden=False):
+    def build_package(self, root: Path, *, mismatch=False, token=False, formula=True, hidden=False, malformed_lifecycle=False):
         (root / "manifest.md").write_text("approved synthetic package\n", encoding="utf-8")
         workbook(root / "working.xlsx", token=token, formula=formula, hidden=hidden)
         rows = [
@@ -37,12 +37,22 @@ class TabularConformanceTests(unittest.TestCase):
         with (root / "mapping.csv").open("w", encoding="utf-8", newline="") as target:
             writer = csv.DictWriter(target, fieldnames=["Account"])
             writer.writeheader(); writer.writerows(mappings)
+        exceptions = [
+            {"Exception ID": "X-01", "Status": "Open", "Resolution Reference": "bad" if malformed_lifecycle else ""},
+            {"Exception ID": "X-02", "Status": "Resolved", "Resolution Reference": "NOTE-17"},
+            {"Exception ID": "X-03", "Status": "Retained", "Resolution Reference": "POLICY-4"},
+            {"Exception ID": "X-04", "Status": "Superseded", "Resolution Reference": "X-02"},
+        ]
+        with (root / "exceptions.csv").open("w", encoding="utf-8", newline="") as target:
+            writer = csv.DictWriter(target, fieldnames=list(exceptions[0]))
+            writer.writeheader(); writer.writerows(exceptions)
         return {
             "provenance_reference": "manifest.md",
             "workbook": {"path": "working.xlsx", "require_formulas": True},
             "csv_carriers": [
                 {"path": "source.csv", "minimum_rows": 3, "required_columns": ["Row ID", "Entity", "Account"], "id_column": "Row ID", "minimum_unique": {"Entity": 2, "Account": 3}},
                 {"path": "mapping.csv", "minimum_rows": 3, "required_columns": ["Account"], "id_column": "Account"},
+                {"path": "exceptions.csv", "minimum_rows": 4, "required_columns": ["Exception ID", "Status", "Resolution Reference"], "id_column": "Exception ID", "lifecycle": {"status_column": "Status", "resolution_column": "Resolution Reference", "allowed_statuses": ["Open", "Resolved", "Retained", "Superseded"], "required_statuses": ["Open", "Resolved", "Retained", "Superseded"], "requires_resolution": ["Resolved", "Retained", "Superseded"], "forbids_resolution": ["Open"]}},
             ],
             "reconciliations": [{"id": "source-to-map", "left_path": "source.csv", "left_column": "Account", "right_path": "mapping.csv", "right_column": "Account", "relationship": "equal"}],
         }
@@ -70,6 +80,12 @@ class TabularConformanceTests(unittest.TestCase):
                 root = Path(temporary)
                 result = audit(root, self.build_package(root, **options))
                 self.assertTrue(any(fragment in finding for finding in result["findings"]), result)
+
+    def test_malformed_exception_lifecycle_fails(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            result = audit(root, self.build_package(root, malformed_lifecycle=True))
+            self.assertTrue(any("Open cannot carry a resolution reference" in finding for finding in result["findings"]), result)
 
 
 if __name__ == "__main__":
