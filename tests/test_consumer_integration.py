@@ -12,6 +12,7 @@ from pathlib import Path
 
 from integrations.query_catalog import (
     _atomic_rename_no_replace,
+    _canonical_consumer_ids,
     CatalogQueryError,
     discover,
     instantiate,
@@ -61,6 +62,11 @@ class ConsumerIntegrationTests(unittest.TestCase):
         self.assertIn("consumer_write_authorization", operations["instantiate"]["requires"])
         self.assertIn("library/templates", operations["instantiate"]["must_not_write"])
         self.assertFalse(operations["validate"]["side_effects"])
+        self.assertEqual(operations["validate"]["verdicts"], ["pass", "reject"])
+        self.assertEqual(
+            operations["validate"]["candidate_artifact_validation"],
+            "owned_by_consumer_package_review_workflow",
+        )
 
     def test_required_consumers_and_modes_are_declared(self):
         consumers = {item["consumer_id"]: item for item in self.profile["consumers"]}
@@ -176,6 +182,22 @@ class CatalogResolverTests(unittest.TestCase):
             encoding="utf-8",
         )
         self.catalog = load_catalog(self.catalog_path)
+
+    def test_profile_operation_drift_is_rejected_at_runtime(self):
+        profile_path = self.root / "integrations/consumer-profile.v1.json"
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+        profile["interface"]["operations"].remove("discover")
+        profile_path.write_text(json.dumps(profile), encoding="utf-8")
+        with self.assertRaisesRegex(CatalogQueryError, "canonical resolver contract"):
+            _canonical_consumer_ids(self.root)
+
+    def test_profile_consumer_mode_drift_is_rejected_at_runtime(self):
+        profile_path = self.root / "integrations/consumer-profile.v1.json"
+        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+        next(item for item in profile["consumers"] if item["consumer_id"] == "anna")["modes"] = []
+        profile_path.write_text(json.dumps(profile), encoding="utf-8")
+        with self.assertRaisesRegex(CatalogQueryError, "canonical consumer contracts"):
+            _canonical_consumer_ids(self.root)
 
     def test_discover_filters_and_excludes_unreleased_entries(self):
         matches = discover(

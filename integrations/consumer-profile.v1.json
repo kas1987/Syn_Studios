@@ -133,27 +133,24 @@
     "validate": {
       "accepts": [
         "consumer_id",
-        "candidate_artifact",
-        "template_binding",
-        "provenance_card",
-        "validation_profile"
+        "exact_released_template_id",
+        "exact_released_version",
+        "canonical_catalog_entry"
       ],
       "required_check_families": [
-        "structural",
-        "computational_when_applicable",
-        "provenance_boundary",
-        "rendered_readability_when_applicable",
-        "metadata_and_leakage",
-        "realism",
-        "cross_file_when_applicable"
+        "canonical_repository_validation",
+        "catalog_descriptor_and_native_asset_binding",
+        "blueprint_binding",
+        "release_record_and_typed_evidence_binding",
+        "render_evidence_binding_when_required"
       ],
-      "returns": "evidence_records_and_verdict",
-      "implementation": "canonical_repository_validation_plus_exact_release_binding",
+      "returns": "exact_release_identity_bound_hashes_evidence_records_and_verdict",
+      "implementation": "release_only_canonical_repository_validation_plus_exact_release_binding",
       "verdicts": [
         "pass",
-        "fix_first",
         "reject"
       ],
+      "candidate_artifact_validation": "owned_by_consumer_package_review_workflow",
       "side_effects": false
     }
   },

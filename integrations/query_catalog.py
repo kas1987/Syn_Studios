@@ -46,6 +46,22 @@ RELEASED_REQUIRED_FIELDS = {
     "release_status",
     "release_record",
 }
+EXPECTED_INTERFACE_OPERATIONS = ("discover", "select", "instantiate", "validate")
+EXPECTED_CONSUMER_MODES = {
+    "anna": EXPECTED_INTERFACE_OPERATIONS,
+    "holodeck-file-generation": EXPECTED_INTERFACE_OPERATIONS
+    + (
+        "plan",
+        "create",
+        "review",
+        "quick_orientation",
+        "deep_world_brief",
+        "artifact_map",
+        "reuse_scan",
+        "leakage_audit",
+    ),
+    "human-artifact-realism": ("plan", "create", "audit"),
+}
 class CatalogQueryError(ValueError):
     """A deterministic catalog input or query failure."""
 
@@ -75,6 +91,17 @@ def _canonical_validate_repository(root: Path) -> None:
 def _canonical_consumer_ids(root: Path) -> set[str]:
     profile_path = root.resolve() / "integrations" / "consumer-profile.v1.json"
     profile = _load_object(profile_path, "consumer profile")
+    interface = profile.get("interface")
+    if (
+        profile.get("schema_version") != "1.0.0"
+        or profile.get("profile_id") != "syn-studios-consumer"
+        or profile.get("status") != "stable"
+        or not isinstance(interface, dict)
+        or interface.get("operations") != list(EXPECTED_INTERFACE_OPERATIONS)
+        or interface.get("resolver_modes") != list(EXPECTED_INTERFACE_OPERATIONS)
+        or interface.get("resolver") != "integrations/query_catalog.py"
+    ):
+        raise CatalogQueryError("consumer profile interface does not match the canonical resolver contract")
     consumers = profile.get("consumers")
     if not isinstance(consumers, list):
         raise CatalogQueryError("consumer profile consumers must be an array")
@@ -85,6 +112,12 @@ def _canonical_consumer_ids(root: Path) -> set[str]:
     }
     if len(identifiers) != len(consumers) or not identifiers:
         raise CatalogQueryError("consumer profile must declare unique canonical consumer IDs")
+    declared_modes = {
+        item["consumer_id"]: tuple(item.get("modes", ()))
+        for item in consumers
+    }
+    if declared_modes != EXPECTED_CONSUMER_MODES:
+        raise CatalogQueryError("consumer profile modes do not match the canonical consumer contracts")
     return identifiers
 
 
