@@ -14,5 +14,6 @@ proof remain in machine-readable release records.
 - Replace declarative technical proof stubs with 24 category-specific machine results produced by a deterministic runner and independently enforced by both the assembler and canonical validator.
 - Add a 360-row irregular XLSX/CSV expansion arm with multi-carrier reconciliation, vertical pagination, repeated headers, and a 17-page render.
 - Add a downstream populated-tabular conformance audit for unresolved tokens, formula loss, hidden surfaces, cross-file mismatches, and realistic exception lifecycles.
+- Add a deterministic Office-surface inventory with sabotage coverage for hidden answer notes, external links, stale/custom metadata, formula errors, and cross-sheet layout convergence.
 
 Public GitHub publication, repository-rule configuration, downstream ANNA integration, and local skill installation are not part of this unreleased repository change.

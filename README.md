@@ -19,6 +19,7 @@ The repository is not a warehouse of old submissions. Prior artifacts enter firs
 - `scripts/validate_library.py` — canonical fail-closed validator for cards, blueprints, templates, evidence, releases, and catalog bindings.
 - `scripts/run_template_technical_validation.py` — deterministic category-specific release checks; the assembler cannot manufacture a passing result.
 - `scripts/audit_tabular_package.py` — downstream XLSX/CSV conformance audit for populated package artifacts; it reports evidence and never grants acceptance.
+- `scripts/inspect_office_surfaces.py` — read-only, hash-bound XLSX/DOCX inventory for hidden content, links, metadata, formulas, styles, widths, and layout convergence.
 
 ## Current library state
 
