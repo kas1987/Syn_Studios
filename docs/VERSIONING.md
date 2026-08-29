@@ -6,7 +6,7 @@ defines how reusable library records change after publication.
 ## Identities and versions
 
 - Foundation IDs (`FOUND-*`), blueprint IDs (`BP-*`), and template IDs
-  (`TPL-*`) are permanent and are never reassigned.
+  (`TMPL-*`) are permanent and are never reassigned.
 - Published template versions use semantic versioning. A breaking slot,
   authority-boundary, file-format, or consumer-contract change increments the
   major version. Backward-compatible capability additions increment the minor
@@ -43,4 +43,3 @@ The machine-readable release record is authoritative for a published version.
 It binds exact native-file hashes, blueprint and foundation lineage, review
 verdicts, and proof artifacts. `CHANGELOG.md` is the human-readable index and
 does not replace that evidence.
-

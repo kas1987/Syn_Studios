@@ -10,8 +10,8 @@ the baseline and has no predecessor.
 ## Entry template
 
 ```text
-From: TPL-XXXX@x.y.z
-To: TPL-XXXX@a.b.c
+From: TMPL-XXXX@x.y.z
+To: TMPL-XXXX@a.b.c
 Reason:
 Affected slots:
 Affected consumers:
@@ -19,4 +19,3 @@ Regeneration required: yes/no
 Validation:
 Replacement deadline:
 ```
-
