@@ -24,6 +24,8 @@ python scripts/validate_library.py
 
 These are the same substantive checks run on Linux and Windows in CI.
 
+Changes that generate, convert, render, or release binary artifacts also require the local document-stack proof in `docs/DOCUMENT_STACK.md`. That proof is intentionally local because Office, LibreOffice, Poppler, and the managed Node artifact library are not portable CI dependencies.
+
 ## Integrity boundary
 
 - Work only with authorized synthetic or fictional materials.

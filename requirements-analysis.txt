@@ -1,0 +1,12 @@
+# Optional analysis and rendering fallbacks. These packages inspect or verify
+# artifacts; they do not replace the native/managed generation path.
+openpyxl==3.1.5
+pypdf==6.10.0
+pdfplumber==0.11.9
+pandas==3.0.1
+python-docx==1.2.0
+reportlab==4.4.9
+XlsxWriter==3.2.9
+Pillow==12.3.0
+python-pptx==1.0.2
+pypdfium2==5.13.0

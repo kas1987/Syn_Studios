@@ -35,3 +35,15 @@ python scripts/validate_library.py
 ```
 
 GitHub runs the substantive contract on Linux and Windows. See [CONTRIBUTING.md](CONTRIBUTING.md) for the review flow and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
+
+## Local document stack
+
+Binary generation and rendered QA use an isolated local environment plus externally managed applications; no Office, LibreOffice, Poppler, or private Node package is vendored here.
+
+```powershell
+.\scripts\bootstrap_document_stack.ps1 -InstallOfficeComFallback
+. .\scripts\activate_document_stack.ps1
+& $env:SYN_STUDIOS_PYTHON .\scripts\check_document_stack.py --profile all --json
+```
+
+The activation script prefers the Codex managed runtime and discovers installed Microsoft Office and LibreOffice fallbacks. See [docs/DOCUMENT_STACK.md](docs/DOCUMENT_STACK.md) for capability boundaries and render validation.
