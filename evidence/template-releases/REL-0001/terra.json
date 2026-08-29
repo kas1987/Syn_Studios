@@ -29,7 +29,7 @@
     },
     {
       "path": "evidence/template-releases/REL-0001/terra-proof.txt",
-      "sha256": "f631d4d62b95cb142adbeb72b58820b1b94b25cdcc87d64e1345107d9f40ae1b",
+      "sha256": "75cf521dbdd8d6f1e10394f7907c7f2ab8cb208bb4730d65946fca1d40675576",
       "media_type": "text/plain",
       "category": "computational"
     }
