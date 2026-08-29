@@ -18,7 +18,7 @@ Build business-complete artifacts whose complexity comes from their producer and
 
 ### Design
 
-Use for a new artifact or package. Read [references/artifact-archetypes.md](references/artifact-archetypes.md) and, for mixed packages, [references/package-composition.md](references/package-composition.md). Define producer, purpose, medium, lifecycle, authority, substantive footprint, and handling history before generation.
+Use for a new artifact or package. Read [references/artifact-archetypes.md](references/artifact-archetypes.md), [references/spreadsheet-data-diversity.md](references/spreadsheet-data-diversity.md) for XLSX, Excel, CSV, or other row-carrier work, and [references/package-composition.md](references/package-composition.md) for mixed packages. Define producer, purpose, medium, lifecycle, authority, substantive footprint, and handling history before generation.
 
 ### Audit
 

@@ -17,6 +17,11 @@ class RepositoryContractTests(unittest.TestCase):
         self.assertTrue(text.startswith("---\nname: synthetic-studio\n"))
         self.assertIn("\ndescription:", text.split("---", 2)[1])
 
+    def test_skill_routes_tabular_design_to_diversity_contract(self):
+        text = (ROOT / "skill/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("references/spreadsheet-data-diversity.md", text)
+        self.assertTrue((ROOT / "skill/references/spreadsheet-data-diversity.md").is_file())
+
     def test_foundation_schema_is_json(self):
         data = json.loads((ROOT / "schemas/foundation-card.schema.json").read_text(encoding="utf-8"))
         self.assertEqual(data["properties"]["card_id"]["pattern"], "^FOUND-[0-9]{4}$")
