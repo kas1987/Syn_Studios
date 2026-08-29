@@ -1,52 +1,124 @@
 {
   "schema_version": "1.0.0",
   "catalog_id": "syn-studios-artifact-library",
-  "discovery_fields": ["artifact_type", "authority", "lifecycle", "capabilities", "supported_consumers", "blueprint_id", "release_status"],
+  "discovery_fields": [
+    "artifact_type",
+    "authority",
+    "lifecycle",
+    "capabilities",
+    "supported_consumers",
+    "blueprint_id",
+    "release_status"
+  ],
   "templates": [
     {
       "kind": "artifact_template",
       "template_id": "TMPL-0001",
       "version": "1.0.0",
       "name": "Internal close and reconciliation workbook",
-      "release_status": "candidate",
+      "release_status": "released",
       "artifact_type": "xlsx",
       "authority": "supporting",
       "lifecycle": "internal working copy through reviewed close file",
       "blueprint_id": "BP-0001",
       "descriptor": "library/templates/TMPL-0001/1.0.0/template.json",
-      "native_assets": ["library/templates/TMPL-0001/1.0.0/internal-close-reconciliation.xlsx"],
-      "supported_consumers": ["anna", "holodeck-file-generation", "human-artifact-realism"],
-      "capabilities": ["native_xlsx", "transaction_population", "variable_row_counts", "csv_import_compatible", "rebuildable_capacity", "account_mapping", "formula_reconciliation", "proposed_entries", "prior_period_context", "exception_log", "control_checks", "renderable"]
+      "native_assets": [
+        "library/templates/TMPL-0001/1.0.0/internal-close-reconciliation.xlsx"
+      ],
+      "supported_consumers": [
+        "anna",
+        "holodeck-file-generation",
+        "human-artifact-realism"
+      ],
+      "capabilities": [
+        "native_xlsx",
+        "transaction_population",
+        "variable_row_counts",
+        "csv_import_compatible",
+        "rebuildable_capacity",
+        "account_mapping",
+        "formula_reconciliation",
+        "proposed_entries",
+        "prior_period_context",
+        "exception_log",
+        "control_checks",
+        "renderable"
+      ],
+      "release_record": {
+        "path": "library/releases/REL-0001.template.json",
+        "sha256": "ee95a8fc667c0d06f7fbb134fcc4a82aba0ef373d2aaae3393a8a7b433f0ae9e"
+      }
     },
     {
       "kind": "artifact_template",
       "template_id": "TMPL-0002",
       "version": "1.0.0",
       "name": "Internal controller decision memorandum",
-      "release_status": "candidate",
+      "release_status": "released",
       "artifact_type": "docx",
       "authority": "supporting",
       "lifecycle": "reviewed internal working copy before approval",
       "blueprint_id": "BP-0002",
       "descriptor": "library/templates/TMPL-0002/1.0.0/template.json",
-      "native_assets": ["library/templates/TMPL-0002/1.0.0/internal-controller-memo.docx"],
-      "supported_consumers": ["anna", "holodeck-file-generation", "human-artifact-realism"],
-      "capabilities": ["native_docx", "five_page_memo", "decision_summary", "source_matrix", "issue_analysis", "alternatives_matrix", "risk_and_sensitivity", "open_items", "appendix_index", "renderable"]
+      "native_assets": [
+        "library/templates/TMPL-0002/1.0.0/internal-controller-memo.docx"
+      ],
+      "supported_consumers": [
+        "anna",
+        "holodeck-file-generation",
+        "human-artifact-realism"
+      ],
+      "capabilities": [
+        "native_docx",
+        "five_page_memo",
+        "decision_summary",
+        "source_matrix",
+        "issue_analysis",
+        "alternatives_matrix",
+        "risk_and_sensitivity",
+        "open_items",
+        "appendix_index",
+        "renderable"
+      ],
+      "release_record": {
+        "path": "library/releases/REL-0002.template.json",
+        "sha256": "3f6027d46d7ca962fad8d854ab00dcf78b91ec4f50b1f7157b033c530bee3b34"
+      }
     },
     {
       "kind": "artifact_template",
       "template_id": "TMPL-0003",
       "version": "1.0.0",
       "name": "Operational correction email chain",
-      "release_status": "candidate",
+      "release_status": "released",
       "artifact_type": "eml",
       "authority": "contextual",
       "lifecycle": "sent and received thread retained in an internal project file",
       "blueprint_id": "BP-0003",
       "descriptor": "library/templates/TMPL-0003/1.0.0/template.json",
-      "native_assets": ["library/templates/TMPL-0003/1.0.0/operational-correction-thread.eml"],
-      "supported_consumers": ["anna", "holodeck-file-generation", "human-artifact-realism"],
-      "capabilities": ["native_eml", "multipart_mime", "quoted_thread", "role_specific_voice", "attachment_correction", "embedded_csv_attachment", "embedded_text_attachment", "bounded_open_item", "machine_parseable"]
+      "native_assets": [
+        "library/templates/TMPL-0003/1.0.0/operational-correction-thread.eml"
+      ],
+      "supported_consumers": [
+        "anna",
+        "holodeck-file-generation",
+        "human-artifact-realism"
+      ],
+      "capabilities": [
+        "native_eml",
+        "multipart_mime",
+        "quoted_thread",
+        "role_specific_voice",
+        "attachment_correction",
+        "embedded_csv_attachment",
+        "embedded_text_attachment",
+        "bounded_open_item",
+        "machine_parseable"
+      ],
+      "release_record": {
+        "path": "library/releases/REL-0003.template.json",
+        "sha256": "25ecb15be935c0d06a273e75335801e77b388515482071fac2346a808f07c16a"
+      }
     }
   ]
 }

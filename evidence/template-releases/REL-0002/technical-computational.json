@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0.0",
+  "record_id": "EVID-REL-0002-TECH-COMPUTATIONAL",
+  "record_type": "technical_validation",
+  "release_id": "REL-0002",
+  "template_id": "TMPL-0002",
+  "version": "1.0.0",
+  "descriptor_sha256": "2d44a466e4c4a5da4bf0203b89ce6af3fcffe8a2e7e61ac6324f12bc7882472b",
+  "native_asset_sha256s": [
+    "1a922e87a29682bdea8a04734084f9f9fe1631bf785139b95b2b0f74c238818f"
+  ],
+  "verdict": "VALIDATION_NOT_APPLICABLE",
+  "actor_id": "syn-validation-runner-2026-08-29",
+  "actor": "Syn Studios validation runner",
+  "observations": [
+    "The blueprint computational gate was confirmed not applicable for the frozen artifact set."
+  ],
+  "artifacts": [
+    {
+      "path": "evidence/template-releases/REL-0002/proofs/technical-computational.txt",
+      "sha256": "d92f3a1e21b2df952a9764c2cc551ed840329f7e41d5c3714df2fabe468cc0a8",
+      "media_type": "text/plain",
+      "category": "computational"
+    }
+  ],
+  "summary": "Technical validation result for the computational release gate.",
+  "categories": [
+    "computational"
+  ],
+  "procedures": {
+    "computational": "Confirm no material calculations are delegated to this narrative template."
+  }
+}

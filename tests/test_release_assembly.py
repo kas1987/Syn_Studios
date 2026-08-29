@@ -39,8 +39,18 @@ class ReleaseAssemblyTests(unittest.TestCase):
             source = ROOT / relative
             if source.exists():
                 shutil.copytree(source, root / relative)
+        shutil.rmtree(root / "library/releases", ignore_errors=True)
+        evidence_root = root / "evidence/template-releases"
+        if evidence_root.is_dir():
+            for release_root in evidence_root.glob("REL-*"):
+                for path in release_root.iterdir():
+                    if path.name in {"render", "render-manifest.json"}:
+                        continue
+                    shutil.rmtree(path) if path.is_dir() else path.unlink()
         catalog = json.loads((root / "library/catalog.json").read_text(encoding="utf-8"))
         for index, entry in enumerate(catalog["templates"], 1):
+            entry["release_status"] = "candidate"
+            entry.pop("release_record", None)
             descriptor_path = root / entry["descriptor"]
             descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
             descriptor["release_status"] = "released"
@@ -80,6 +90,7 @@ class ReleaseAssemblyTests(unittest.TestCase):
                 })
             else:
                 write_json(descriptor_path, descriptor)
+        write_json(root / "library/catalog.json", catalog)
         return root
 
     def add_reviews(self, root, *, terra_actor="reviewer:terra", sol_actor="reviewer:sol"):

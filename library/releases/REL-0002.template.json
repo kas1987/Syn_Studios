@@ -1,0 +1,83 @@
+{
+  "schema_version": "3.0.0",
+  "release_id": "REL-0002",
+  "template_id": "TMPL-0002",
+  "version": "1.0.0",
+  "status": "released",
+  "descriptor": {
+    "path": "library/templates/TMPL-0002/1.0.0/template.json",
+    "sha256": "2d44a466e4c4a5da4bf0203b89ce6af3fcffe8a2e7e61ac6324f12bc7882472b"
+  },
+  "native_assets": [
+    {
+      "path": "library/templates/TMPL-0002/1.0.0/internal-controller-memo.docx",
+      "sha256": "1a922e87a29682bdea8a04734084f9f9fe1631bf785139b95b2b0f74c238818f"
+    }
+  ],
+  "blueprint": {
+    "blueprint_id": "BP-0002",
+    "path": "examples/blueprints/BP-0002.internal-controller-memo.json",
+    "sha256": "ec30980909cc04f55b7fb1e564f0eae438c63729c1497a0a56e928a27af78e21"
+  },
+  "build": {
+    "record_path": "evidence/template-releases/REL-0002/build.json",
+    "record_sha256": "438a809bf12222547780394bcd1693cb5b6a20bb567f189a5980c0f704552718"
+  },
+  "sanitization": {
+    "evidence": {
+      "record_path": "evidence/template-releases/REL-0002/sanitization.json",
+      "record_sha256": "4c44e48bb6965d28a272946def2171c04481b0d33f4c936d32d1d0f4661d91b0"
+    },
+    "foundation_card_ids": [
+      "FOUND-0005"
+    ]
+  },
+  "reviews": {
+    "terra": {
+      "record_path": "evidence/template-releases/REL-0002/terra.json",
+      "record_sha256": "e264809d47e085159add04589933d0668f9af98a3f9cc8ae62a649c828cd42ca"
+    },
+    "sol": {
+      "record_path": "evidence/template-releases/REL-0002/sol.json",
+      "record_sha256": "c6614b11f3dd582fe8b3d61364c417bd710f203c873b8643f89c9da70371ede9"
+    }
+  },
+  "conductor_approval": {
+    "record_path": "evidence/template-releases/REL-0002/conductor.json",
+    "record_sha256": "a26db19027193e2b232b6ecc91513c94a5f7a9e7078769981e9f3c029884d5d8"
+  },
+  "evidence": {
+    "core_integrity": {
+      "record_path": "evidence/template-releases/REL-0002/technical-core_integrity.json",
+      "record_sha256": "1ea8af012f76169d25711c8317c849b7225dbc617f0ccd3856fa7c946be144c3"
+    },
+    "render": {
+      "record_path": "evidence/template-releases/REL-0002/technical-render.json",
+      "record_sha256": "bed0c2ef3078d72bd9e226a6e416af38dba08f972e11a26baeb250a9cd501f41"
+    },
+    "metadata": {
+      "record_path": "evidence/template-releases/REL-0002/technical-metadata.json",
+      "record_sha256": "fc92bd70c761a637e44291f9f00adffdc5f5fdfd5541fe85495ae3344e3e3951"
+    },
+    "computational": {
+      "record_path": "evidence/template-releases/REL-0002/technical-computational.json",
+      "record_sha256": "8451082d08c3fe82155fc7aaf6b927af99888f77ca616dcd9433a2f8a7060e59"
+    },
+    "provenance": {
+      "record_path": "evidence/template-releases/REL-0002/technical-provenance.json",
+      "record_sha256": "c4cc295785817f653d7613b1a06fde49cbae440e06c9a12745ebeaae73939203"
+    },
+    "leakage": {
+      "record_path": "evidence/template-releases/REL-0002/technical-leakage.json",
+      "record_sha256": "95efcb04628c59d17ce4b93d1bd4c5aff6e928632e769197514715f9a45dd914"
+    },
+    "authority_separation": {
+      "record_path": "evidence/template-releases/REL-0002/technical-authority_separation.json",
+      "record_sha256": "f8f23a88eccfcd5012e22f193a8f5cfb237f96a6359abe34e9b82424bf95599d"
+    },
+    "anti_filler": {
+      "record_path": "evidence/template-releases/REL-0002/technical-anti_filler.json",
+      "record_sha256": "ea9b8803157a17725449afa876fdfadbc7e00da372159926e9cee5d62dbac5af"
+    }
+  }
+}
