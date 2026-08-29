@@ -11,5 +11,8 @@ proof remain in machine-readable release records.
 - Add fail-closed ANNA, Holodeck, world-exploration, and realism consumer contracts without publishing or merging a downstream adapter.
 - Add template versioning, deprecation, withdrawal, and migration policy, including immutable released native bytes.
 - Require final validation from a fresh clean checkout so line-ending and other checkout transformations cannot invalidate recorded evidence hashes.
+- Replace declarative technical proof stubs with 24 category-specific machine results produced by a deterministic runner and independently enforced by both the assembler and canonical validator.
+- Add a 360-row irregular XLSX/CSV expansion arm with multi-carrier reconciliation, vertical pagination, repeated headers, and a 17-page render.
+- Add a downstream populated-tabular conformance audit for unresolved tokens, formula loss, hidden surfaces, cross-file mismatches, and realistic exception lifecycles.
 
 Public GitHub publication, repository-rule configuration, downstream ANNA integration, and local skill installation are not part of this unreleased repository change.

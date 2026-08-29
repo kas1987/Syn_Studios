@@ -3,9 +3,9 @@
 ## Current checkpoint — 2026-08-29
 
 - Phase 1 is complete.
-- Phase 2 has three implemented vertical slices (close workbook, controller memo, and operational email), but the full archetype list and positive/anti-pattern fixture coverage remain open.
+- Phase 2 contract coverage is complete: nine production blueprints each have one positive and one anti-pattern fixture. Native release breadth currently covers the workbook, memo, and email vertical slices.
 - Phase 3 has three hash-bound `1.0.0` releases: `REL-0001`, `REL-0002`, and `REL-0003`.
-- Phase 4 release-specific Terra and Sol lanes passed for those exact descriptor and native-asset hashes; broader behavior validation is still open.
+- Phase 4 baseline is complete: release-specific Terra and Sol lanes, executable category results, consumer trajectories, and populated tabular conformance arms pass. Candidate-package acceptance remains outside the library.
 - Phase 5 has not been performed by this repository closeout. Sub-006 remains frozen.
 
 Repository release does not imply public publication or downstream installation. Before any release claim is handed off, the integrated commit must pass the canonical validator and full test suite from a fresh clean checkout so checkout-time transformations are included in the proof.
