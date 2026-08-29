@@ -604,6 +604,95 @@ def validate_release_render_evidence(root: Path, descriptor: dict[str, Any], rec
     validate_render_outputs(root, descriptor, render_artifacts, f"{label}:artifacts", findings)
 
 
+def validate_technical_result_binding(
+    root: Path,
+    release: dict[str, Any],
+    descriptor: dict[str, Any],
+    record: dict[str, Any],
+    category: str,
+    gate: dict[str, Any],
+    descriptor_hash: object,
+    asset_hashes: set[str],
+    label: str,
+    findings: list[str],
+) -> None:
+    release_id = release.get("release_id")
+    if not isinstance(release_id, str):
+        return
+    expected_relative = (EVIDENCE_ROOT / release_id / "technical-results" / f"{category}.json").as_posix()
+    result_artifacts = [
+        artifact for artifact in as_list(record.get("artifacts"))
+        if isinstance(artifact, dict) and artifact.get("path") == expected_relative
+    ]
+    if len(result_artifacts) != 1:
+        findings.append(f"{label}: must bind exactly one pre-existing {expected_relative} machine result")
+        return
+    artifact = result_artifacts[0]
+    render_required = category == "render" and as_dict(descriptor.get("render_contract")).get("required") is True
+    expected_artifact_category = "provenance" if render_required else category
+    if artifact.get("media_type") != "application/json" or artifact.get("category") != expected_artifact_category:
+        findings.append(f"{label}: technical result artifact media type or category does not match")
+    result_path = root / expected_relative
+    result = load_json(result_path, root, findings)
+    if result is None:
+        return
+    required_fields = {
+        "schema_version", "result_type", "result_id", "release_id", "template_id", "version",
+        "category", "result_artifact_category", "descriptor_sha256", "native_asset_sha256s",
+        "applicable", "verdict", "procedure", "actor_id", "actor", "checks",
+        "rendered_outputs", "observations", "summary",
+    }
+    if set(result) != required_fields:
+        findings.append(f"{label}: technical result fields are incomplete or unexpected")
+    applicable = gate.get("applicable") is True
+    expected = {
+        "schema_version": "1.0.0",
+        "result_type": "template_technical_validation_result",
+        "result_id": f"TECHRES-{release_id}-{category.replace('_', '-').upper()}",
+        "release_id": release_id,
+        "template_id": release.get("template_id"),
+        "version": release.get("version"),
+        "category": category,
+        "result_artifact_category": expected_artifact_category,
+        "descriptor_sha256": descriptor_hash,
+        "applicable": applicable,
+        "verdict": "VALIDATION_PASS" if applicable else "VALIDATION_NOT_APPLICABLE",
+        "procedure": gate.get("procedure"),
+        "actor_id": record.get("actor_id"),
+        "actor": record.get("actor"),
+        "observations": record.get("observations"),
+        "summary": record.get("summary"),
+    }
+    for field, value in expected.items():
+        if result.get(field) != value:
+            findings.append(f"{label}: technical result {field} does not agree with release, record, or blueprint")
+    result_hashes = {value for value in as_list(result.get("native_asset_sha256s")) if isinstance(value, str)}
+    if result_hashes != asset_hashes or len(as_list(result.get("native_asset_sha256s"))) != len(result_hashes):
+        findings.append(f"{label}: technical result native_asset_sha256s do not agree with the release")
+    checks = result.get("checks")
+    expected_status = "PASS" if applicable else "NOT_APPLICABLE"
+    if not isinstance(checks, list) or not checks:
+        findings.append(f"{label}: technical result has no structured checks")
+    else:
+        for index, check in enumerate(checks):
+            if not isinstance(check, dict) or set(check) != {"id", "status", "detail"}:
+                findings.append(f"{label}: technical result check {index} is malformed")
+                continue
+            check_id, status, detail = check.get("id"), check.get("status"), check.get("detail")
+            if not isinstance(check_id, str) or not check_id.startswith(f"{category}:"):
+                findings.append(f"{label}: technical result check {index} is not category-specific")
+            if status != expected_status or not isinstance(detail, str) or len(detail.strip()) < 12:
+                findings.append(f"{label}: technical result check {index} is not substantive or has the wrong status")
+    expected_rendered_outputs = []
+    if render_required:
+        expected_rendered_outputs = [
+            artifact for artifact in as_list(record.get("artifacts"))
+            if isinstance(artifact, dict) and artifact.get("category") == "render"
+        ]
+    if result.get("rendered_outputs") != expected_rendered_outputs:
+        findings.append(f"{label}: technical result rendered_outputs do not agree with the technical record")
+
+
 def apply_fixture(base: dict[str, Any], fixture: dict[str, Any]) -> dict[str, Any]:
     result = copy.deepcopy(base)
     for mutation in as_list(fixture.get("mutations")):
@@ -957,6 +1046,11 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
                 findings.append(f"{label}:evidence.render.render_contract_sha256: must exactly bind the descriptor render contract")
             if category == "render" and record and descriptor is not None:
                 validate_release_render_evidence(root, descriptor, record, f"{label}:evidence.render", findings)
+            if record and descriptor is not None:
+                validate_technical_result_binding(
+                    root, data, descriptor, record, category, as_dict(blueprint_gates.get(category)),
+                    descriptor_hash, asset_hashes, f"{label}:evidence.{category}", findings,
+                )
 
     fixture_pairs: dict[str, list[tuple[str, str]]] = {}
     for path in fixture_paths:

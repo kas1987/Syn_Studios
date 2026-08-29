@@ -173,8 +173,74 @@ class LibraryControlPlaneTests(unittest.TestCase):
         terra = evidence("terra", "terra_review", "USABILITY_PASS", "reviewer:terra", "Terra reviewer")
         sol = evidence("sol", "sol_review", "INTEGRITY_PASS", "reviewer:sol", "Sol reviewer")
         conductor = evidence("conductor", "conductor_approval", "APPROVED", "reviewer:conductor", "Conductor")
-        procedures = {gate["category"]: gate["procedure"] for gate in blueprint["proof_gates"]}
-        technical = evidence("technical", "technical_validation", "VALIDATION_PASS", "runner:validation", "Validation runner", sorted(procedures), procedures)
+        technical = {}
+        for gate in blueprint["proof_gates"]:
+            category = gate["category"]
+            applicable = gate["applicable"] is True
+            rendered_outputs = []
+            if category == "render" and descriptor["render_contract"]["required"]:
+                rendered_outputs = [
+                    {**item, "media_type": "application/pdf" if output_index == 0 else "image/png", "category": "render"}
+                    for output_index, item in enumerate(render_outputs)
+                ]
+            result_artifact_category = "provenance" if rendered_outputs else category
+            observations = [f"Observed category-specific machine output for the {category} gate."]
+            summary = f"Machine-readable result for the {category} release gate."
+            result_path = root / f"evidence/template-releases/REL-0001/technical-results/{category}.json"
+            write_json(result_path, {
+                "schema_version": "1.0.0",
+                "result_type": "template_technical_validation_result",
+                "result_id": f"TECHRES-REL-0001-{category.replace('_', '-').upper()}",
+                "release_id": "REL-0001",
+                "template_id": "TMPL-0001",
+                "version": "1.0.0",
+                "category": category,
+                "result_artifact_category": result_artifact_category,
+                "descriptor_sha256": descriptor_binding["sha256"],
+                "native_asset_sha256s": [asset_binding["sha256"]],
+                "applicable": applicable,
+                "verdict": "VALIDATION_PASS" if applicable else "VALIDATION_NOT_APPLICABLE",
+                "procedure": gate["procedure"],
+                "actor_id": "runner:validation",
+                "actor": "Validation runner",
+                "checks": [{
+                    "id": f"{category}:fixture-result",
+                    "status": "PASS" if applicable else "NOT_APPLICABLE",
+                    "detail": f"Fixture runner recorded category-specific {category} output against the frozen hashes.",
+                }],
+                "rendered_outputs": rendered_outputs,
+                "observations": observations,
+                "summary": summary,
+            })
+            result_artifact = {
+                "path": result_path.relative_to(root).as_posix(),
+                "sha256": file_hash(result_path),
+                "media_type": "application/json",
+                "category": result_artifact_category,
+            }
+            technical_record = {
+                "schema_version": "1.0.0",
+                "record_id": f"EVID-RECORD-TECH-{category.replace('_', '-').upper()}",
+                "record_type": "technical_validation",
+                "release_id": "REL-0001",
+                "template_id": "TMPL-0001",
+                "version": "1.0.0",
+                "descriptor_sha256": descriptor_binding["sha256"],
+                "native_asset_sha256s": [asset_binding["sha256"]],
+                "verdict": "VALIDATION_PASS" if applicable else "VALIDATION_NOT_APPLICABLE",
+                "actor_id": "runner:validation",
+                "actor": "Validation runner",
+                "observations": observations,
+                "artifacts": [result_artifact, *rendered_outputs],
+                "categories": [category],
+                "procedures": {category: gate["procedure"]},
+                "summary": summary,
+            }
+            if category == "render":
+                technical_record["render_contract_sha256"] = canonical_json_sha256(descriptor["render_contract"])
+            technical_path = root / f"evidence/template-releases/REL-0001/technical-{category}.json"
+            write_json(technical_path, technical_record)
+            technical[category] = {"record_path": technical_path.relative_to(root).as_posix(), "record_sha256": file_hash(technical_path)}
         release = {
             "schema_version": "3.0.0",
             "release_id": "REL-0001",
@@ -188,7 +254,7 @@ class LibraryControlPlaneTests(unittest.TestCase):
             "sanitization": {"evidence": sanitization, "foundation_card_ids": ["FOUND-0001"]},
             "reviews": {"terra": terra, "sol": sol},
             "conductor_approval": conductor,
-            "evidence": {category: technical for category in sorted(g["category"] for g in blueprint["proof_gates"])},
+            "evidence": {category: technical[category] for category in sorted(technical)},
         }
         release_path = root / "library/releases/REL-0001.template.json"
         write_json(release_path, release)
@@ -253,6 +319,21 @@ class LibraryControlPlaneTests(unittest.TestCase):
             write_json(evidence_path, record)
         for reference in evidence_references:
             reference["record_sha256"] = file_hash(root / reference["record_path"])
+        write_json(release_path, release)
+
+    def mutate_technical_result(self, root, release_path, release, category, mutation):
+        reference = release["evidence"][category]
+        technical_path = root / reference["record_path"]
+        technical = json.loads(technical_path.read_text(encoding="utf-8"))
+        expected = f"evidence/template-releases/REL-0001/technical-results/{category}.json"
+        artifact = next(item for item in technical["artifacts"] if item["path"] == expected)
+        result_path = root / artifact["path"]
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        mutation(result)
+        write_json(result_path, result)
+        artifact["sha256"] = file_hash(result_path)
+        write_json(technical_path, technical)
+        reference["record_sha256"] = file_hash(technical_path)
         write_json(release_path, release)
 
     def test_updated_repository_records_and_fixtures_pass(self):
@@ -330,6 +411,43 @@ class LibraryControlPlaneTests(unittest.TestCase):
             release_path, release, _, descriptor = self.make_release(root, blueprint_path)
             self.make_catalog(root, release_path, release, descriptor)
             self.assertEqual(validate_repository(root)[0], [])
+
+    def test_manual_release_cannot_omit_technical_result(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, _, descriptor = self.make_release(root, blueprint_path)
+            result_path = root / "evidence/template-releases/REL-0001/technical-results/metadata.json"
+            result_path.unlink()
+            self.make_catalog(root, release_path, release, descriptor)
+            self.assert_finding(root, "technical-results/metadata.json:<root>: cannot read JSON")
+
+    def test_manual_release_cannot_bind_generic_technical_statement(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, _, descriptor = self.make_release(root, blueprint_path)
+            self.mutate_technical_result(root, release_path, release, "core_integrity", lambda result: result.update({
+                "checks": [],
+                "observations": ["Technical validation passed."],
+                "summary": "Generic PASS statement without category-specific machine output.",
+            }))
+            self.make_catalog(root, release_path, release, descriptor)
+            self.assert_finding(root, "technical result has no structured checks")
+
+    def test_manual_release_cannot_bind_stale_technical_result(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, _, descriptor = self.make_release(root, blueprint_path)
+            self.mutate_technical_result(root, release_path, release, "leakage", lambda result: result.update({"descriptor_sha256": "0" * 64}))
+            self.make_catalog(root, release_path, release, descriptor)
+            self.assert_finding(root, "technical result descriptor_sha256 does not agree")
+
+    def test_manual_release_cannot_bind_forged_technical_procedure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, _, descriptor = self.make_release(root, blueprint_path)
+            self.mutate_technical_result(root, release_path, release, "authority_separation", lambda result: result.update({"procedure": "Trust a generic release statement."}))
+            self.make_catalog(root, release_path, release, descriptor)
+            self.assert_finding(root, "technical result procedure does not agree")
 
     def test_released_required_render_workbook_cannot_be_cell_empty(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -622,6 +740,7 @@ class LibraryControlPlaneTests(unittest.TestCase):
                 if evidence_path.name != "render-manifest.json":
                     evidence_path.unlink()
             shutil.rmtree(evidence_root / "proofs")
+            shutil.rmtree(evidence_root / "technical-results")
             entry = catalog["templates"][0]
             entry["release_status"] = "candidate"
             entry.pop("release_record")
@@ -764,16 +883,14 @@ class LibraryControlPlaneTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root, _, blueprint_path = self.make_minimal_root(temporary)
             release_path, release, _, descriptor = self.make_release(root, blueprint_path)
-            technical_reference = release["evidence"]["render"]
-            technical_path = root / technical_reference["record_path"]
-            technical = json.loads(technical_path.read_text(encoding="utf-8"))
-            proof_path = root / technical["artifacts"][0]["path"]
+            build_reference = release["build"]
+            build_path = root / build_reference["record_path"]
+            build = json.loads(build_path.read_text(encoding="utf-8"))
+            proof_path = root / build["artifacts"][0]["path"]
             proof_path.write_text("Generic evidence output with no release, template, category, or asset binding. " * 3, encoding="utf-8")
-            technical["artifacts"][0]["sha256"] = file_hash(proof_path)
-            write_json(technical_path, technical)
-            technical_hash = file_hash(technical_path)
-            for reference in release["evidence"].values():
-                reference["record_sha256"] = technical_hash
+            build["artifacts"][0]["sha256"] = file_hash(proof_path)
+            write_json(build_path, build)
+            build_reference["record_sha256"] = file_hash(build_path)
             write_json(release_path, release)
             self.make_catalog(root, release_path, release, descriptor)
             self.assert_finding(root, "text proof does not bind REL-0001")
