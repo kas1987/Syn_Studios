@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import copy
 import csv
-import fnmatch
 import hashlib
 import json
 import posixpath
@@ -114,7 +113,119 @@ def validate_descriptor_data(data: dict[str, Any], schema: dict[str, Any], label
         minimum_rows, maximum_rows = table.get("minimum_rows"), table.get("maximum_rows")
         if isinstance(minimum_rows, int) and isinstance(maximum_rows, int) and minimum_rows > maximum_rows:
             findings.append(f"{label}:population_contract.tables.{index}: minimum_rows must not exceed maximum_rows")
+    table_columns = {item.get("name"): set(as_dict(item.get("columns"))) for item in tables if isinstance(item.get("name"), str)}
+    carrier_kinds: list[str] = []
+    for index, carrier in enumerate(as_list(as_dict(data.get("population_contract")).get("source_carriers"))):
+        if not isinstance(carrier, dict):
+            continue
+        kind, target = carrier.get("kind"), carrier.get("target_table")
+        if isinstance(kind, str):
+            carrier_kinds.append(kind)
+        target_known = isinstance(target, str) and target in table_columns
+        if not target_known:
+            findings.append(f"{label}:population_contract.source_carriers.{index}.target_table: unknown population table")
+        if kind == "csv_import" and target_known:
+            required_columns = {value for value in as_list(carrier.get("required_target_columns")) if isinstance(value, str)}
+            if required_columns != table_columns[target]:
+                findings.append(f"{label}:population_contract.source_carriers.{index}.required_target_columns: must exactly match target table columns")
+    if len(carrier_kinds) != len(set(carrier_kinds)):
+        findings.append(f"{label}:population_contract.source_carriers: carrier kinds must be unique")
     return findings
+
+
+def column_number(value: str) -> int | None:
+    match = re.fullmatch(r"([A-Z]+)[1-9][0-9]*", value.replace("$", ""))
+    if match is None:
+        return None
+    result = 0
+    for character in match.group(1):
+        result = result * 26 + ord(character) - ord("A") + 1
+    return result
+
+
+def range_shape(value: object) -> tuple[int, int] | None:
+    if not isinstance(value, str) or ":" not in value:
+        return None
+    first, last = (part.replace("$", "") for part in value.upper().split(":", 1))
+    first_column, last_column = column_number(first), column_number(last)
+    first_row_match, last_row_match = re.search(r"[0-9]+$", first), re.search(r"[0-9]+$", last)
+    if first_column is None or last_column is None or first_row_match is None or last_row_match is None:
+        return None
+    return last_column - first_column + 1, int(last_row_match.group()) - int(first_row_match.group())
+
+
+def inspect_xlsx_contract(path: Path, descriptor: dict[str, Any], label: str, findings: list[str]) -> None:
+    """Bind declared sheets, tables, ranges, columns, and capacities to native OOXML."""
+    try:
+        with zipfile.ZipFile(path) as package:
+            workbook = ElementTree.fromstring(package.read("xl/workbook.xml"))
+            relationships = ElementTree.fromstring(package.read("xl/_rels/workbook.xml.rels"))
+            by_id = {item.get("Id"): item for item in relationships.findall(f"{{{PACKAGE_REL_NS}}}Relationship") if item.get("Id")}
+            sheets: list[str] = []
+            sheet_members: dict[str, str] = {}
+            for sheet in workbook.findall(f"{{{SPREADSHEET_NS}}}sheets/{{{SPREADSHEET_NS}}}sheet"):
+                name, relationship_id = sheet.get("name"), sheet.get(f"{{{OFFICE_REL_NS}}}id")
+                relationship = by_id.get(relationship_id)
+                target = relationship.get("Target") if relationship is not None else None
+                if not name or not target:
+                    continue
+                sheets.append(name)
+                sheet_members[name] = target.lstrip("/") if target.startswith("/") else posixpath.normpath(posixpath.join("xl", target))
+
+            expected_sheets = as_list(as_dict(descriptor.get("render_contract")).get("expected_sheet_names"))
+            if expected_sheets != sheets:
+                findings.append(f"{label}:render_contract.expected_sheet_names: must exactly match native workbook sheet order")
+
+            native_tables: dict[str, tuple[str, str, list[str]]] = {}
+            for sheet_name, sheet_member in sheet_members.items():
+                relationship_member = posixpath.join(posixpath.dirname(sheet_member), "_rels", posixpath.basename(sheet_member) + ".rels")
+                if relationship_member not in package.namelist():
+                    continue
+                sheet_relationships = ElementTree.fromstring(package.read(relationship_member))
+                for relationship in sheet_relationships.findall(f"{{{PACKAGE_REL_NS}}}Relationship"):
+                    if not str(relationship.get("Type", "")).endswith("/table") or not relationship.get("Target"):
+                        continue
+                    target = str(relationship.get("Target"))
+                    table_member = target.lstrip("/") if target.startswith("/") else posixpath.normpath(posixpath.join(posixpath.dirname(sheet_member), target))
+                    table = ElementTree.fromstring(package.read(table_member))
+                    name, reference = table.get("name") or table.get("displayName"), table.get("ref")
+                    columns = [item.get("name", "") for item in table.findall(f"{{{SPREADSHEET_NS}}}tableColumns/{{{SPREADSHEET_NS}}}tableColumn")]
+                    if not name or not reference:
+                        continue
+                    if name in native_tables:
+                        findings.append(f"{label}:population_contract.tables: duplicate native table identity {name}")
+                    native_tables[name] = (sheet_name, reference.replace("$", ""), columns)
+
+            declared_tables = [item for item in as_list(as_dict(descriptor.get("population_contract")).get("tables")) if isinstance(item, dict)]
+            for index, declared in enumerate(declared_tables):
+                prefix = f"{label}:population_contract.tables.{index}"
+                name = declared.get("name")
+                native = native_tables.get(name) if isinstance(name, str) else None
+                if native is None:
+                    findings.append(f"{prefix}.name: does not resolve to a native workbook table")
+                    continue
+                native_sheet, native_range, native_columns = native
+                declared_range = str(declared.get("range", "")).replace("$", "")
+                if declared.get("sheet") != native_sheet:
+                    findings.append(f"{prefix}.sheet: does not match native table worksheet")
+                if declared_range != native_range:
+                    findings.append(f"{prefix}.range: does not match native table range")
+                shape = range_shape(declared_range)
+                declared_columns = list(as_dict(declared.get("columns")))
+                if shape is not None:
+                    width, capacity = shape
+                    if width != len(declared_columns) or width != len(native_columns):
+                        findings.append(f"{prefix}.columns: count does not match native table width")
+                    if declared.get("maximum_rows") != capacity:
+                        findings.append(f"{prefix}.maximum_rows: must equal native table data capacity")
+                if declared_columns != native_columns:
+                    findings.append(f"{prefix}.columns: names and order must exactly match native table columns")
+    except (OSError, KeyError, zipfile.BadZipFile, ElementTree.ParseError) as error:
+        findings.append(f"{label}: cannot validate workbook contract: {error}")
+
+
+def pdf_page_count(payload: bytes) -> int:
+    return len(re.findall(rb"/Type\s*/Page\b", payload))
 
 
 def validate_blueprint_data(data: dict[str, Any], schema: dict[str, Any], label: str) -> list[str]:
@@ -379,6 +490,91 @@ def validate_proof_artifact(
         validate_pdf_shape(payload, f"{label}.path", findings)
 
 
+def expected_render_paths(descriptor: dict[str, Any]) -> list[str]:
+    contract = as_dict(descriptor.get("render_contract"))
+    page_count, pdf_path, image_pattern = contract.get("expected_page_count"), contract.get("expected_pdf_path"), contract.get("expected_page_image_pattern")
+    if contract.get("required") is not True or not isinstance(page_count, int) or not isinstance(pdf_path, str) or not isinstance(image_pattern, str):
+        return []
+    try:
+        return [pdf_path, *(image_pattern.format(page=page) for page in range(1, page_count + 1))]
+    except (IndexError, KeyError, ValueError):
+        return []
+
+
+def validate_render_outputs(root: Path, descriptor: dict[str, Any], outputs: object, label: str, findings: list[str]) -> None:
+    expected = expected_render_paths(descriptor)
+    records = [item for item in as_list(outputs) if isinstance(item, dict)]
+    paths = [item.get("path") for item in records]
+    hashes = [item.get("sha256") for item in records]
+    if paths != expected:
+        findings.append(f"{label}: render outputs must exactly match ordered descriptor PDF and page-image paths")
+        return
+    if len(paths) != len(set(paths)) or len(hashes) != len(set(hashes)):
+        findings.append(f"{label}: render output paths and hashes must be unique")
+    page_count = as_dict(descriptor.get("render_contract")).get("expected_page_count")
+    for index, record in enumerate(records):
+        media_type = "application/pdf" if index == 0 else "image/png"
+        artifact = {"path": record.get("path"), "sha256": record.get("sha256"), "media_type": media_type, "category": "render"}
+        path = check_bound_file(root, artifact, "path", "sha256", f"{label}.{index}", findings)
+        if path is None:
+            continue
+        validate_proof_artifact(path, artifact, {}, set(), f"{label}.{index}", findings)
+        if index == 0:
+            try:
+                observed_pages = pdf_page_count(path.read_bytes())
+            except OSError:
+                continue
+            if observed_pages != page_count:
+                findings.append(f"{label}.0: PDF page count {observed_pages} does not match render contract {page_count}")
+
+
+def validate_descriptor_render_manifest(root: Path, descriptor: dict[str, Any], label: str, findings: list[str], bound_files: set[Path] | None = None) -> None:
+    contract = as_dict(descriptor.get("render_contract"))
+    if contract.get("required") is not True:
+        return
+    manifest_path = resolve_bound_path(root, contract.get("evidence_manifest"), f"{label}:render_contract.evidence_manifest", findings, Path("evidence"))
+    if manifest_path is None:
+        return
+    if bound_files is not None:
+        bound_files.add(manifest_path)
+    manifest = load_json(manifest_path, root, findings)
+    if manifest is None:
+        return
+    template_id = descriptor.get("template_id")
+    record = as_dict(as_dict(manifest.get("templates")).get(template_id)) if isinstance(template_id, str) else {}
+    assets = bound_pairs(descriptor.get("native_assets"))
+    if len(assets) != 1:
+        findings.append(f"{label}:render_contract: rendered descriptors must bind exactly one native asset")
+        return
+    asset_path, asset_hash = assets[0]
+    comparisons = {
+        "asset_path": asset_path,
+        "asset_sha256": asset_hash,
+        "page_count": contract.get("expected_page_count"),
+        "sheet_names": contract.get("expected_sheet_names"),
+    }
+    for field, expected in comparisons.items():
+        if record.get(field) != expected:
+            findings.append(f"{label}:render_contract.evidence_manifest.{field}: does not match descriptor")
+    validate_render_outputs(root, descriptor, record.get("rendered_outputs"), f"{label}:render_contract.evidence_manifest.rendered_outputs", findings)
+
+
+def validate_release_render_evidence(root: Path, descriptor: dict[str, Any], record: dict[str, Any], label: str, findings: list[str]) -> None:
+    if as_dict(descriptor.get("render_contract")).get("required") is not True:
+        return
+    render_artifacts = [item for item in as_list(record.get("artifacts")) if isinstance(item, dict) and item.get("category") == "render"]
+    expected = expected_render_paths(descriptor)
+    observed = [item.get("path") for item in render_artifacts]
+    if observed != expected:
+        findings.append(f"{label}: render evidence must contain the exact ordered descriptor PDF and page images; text-only proof is not sufficient")
+        return
+    for index, artifact in enumerate(render_artifacts):
+        expected_media_type = "application/pdf" if index == 0 else "image/png"
+        if artifact.get("media_type") != expected_media_type:
+            findings.append(f"{label}:artifacts.{index}.media_type: expected {expected_media_type}")
+    validate_render_outputs(root, descriptor, render_artifacts, f"{label}:artifacts", findings)
+
+
 def apply_fixture(base: dict[str, Any], fixture: dict[str, Any]) -> dict[str, Any]:
     result = copy.deepcopy(base)
     for mutation in as_list(fixture.get("mutations")):
@@ -416,18 +612,30 @@ def load_typed_evidence(
     evidence_ids: dict[str, Path],
     bound_evidence_files: set[Path],
     category: str | None = None,
+    actor_names: dict[str, str] | None = None,
 ) -> tuple[Path | None, dict[str, Any]]:
     release_id = release.get("release_id")
     release_evidence_root = EVIDENCE_ROOT / release_id if isinstance(release_id, str) else EVIDENCE_ROOT
     path = check_bound_file(root, reference, "record_path", "record_sha256", label, findings, release_evidence_root)
     if path is None:
         return None, {}
+    expected_parent = (root / release_evidence_root).resolve()
+    if path.parent != expected_parent or path.suffix != ".json":
+        findings.append(f"{label}.record_path: evidence records must be direct lowercase .json children of the release evidence directory")
     bound_evidence_files.add(path)
     record = load_json(path, root, findings)
     if record is None:
         return path, {}
     record_label = display_path(path, root)
     findings.extend(schema_findings(record, schema, record_label))
+    actor_id, actor = record.get("actor_id"), record.get("actor")
+    if actor_names is not None and isinstance(actor_id, str) and isinstance(actor, str):
+        stable_id = unicodedata.normalize("NFKC", actor_id).strip().casefold()
+        stable_name = unicodedata.normalize("NFKC", actor).strip().casefold()
+        previous_name = actor_names.get(stable_id)
+        if previous_name is not None and previous_name != stable_name:
+            findings.append(f"{label}:actor: actor_id must map to one stable actor name")
+        actor_names[stable_id] = stable_name
     record_id = record.get("record_id")
     if isinstance(record_id, str):
         prior = evidence_ids.get(record_id)
@@ -489,10 +697,19 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
     release_descriptors: dict[Path, dict[str, Any]] = {}
     release_version_files: dict[Path, set[Path]] = {}
     evidence_ids: dict[str, Path] = {}
+    actor_names: dict[str, str] = {}
     bound_evidence_files: set[Path] = set()
     count = 0
 
-    for path in sorted((root / "library/foundations").glob("FOUND-*.json")):
+    foundation_root = root / "library/foundations"
+    foundation_paths: list[Path] = []
+    if foundation_root.is_dir():
+        for path in sorted((item for item in foundation_root.rglob("*") if item.is_file() and item.suffix.casefold() == ".json"), key=str):
+            if path.parent != foundation_root or re.fullmatch(r"FOUND-[0-9]{4}\.json", path.name) is None:
+                findings.append(f"{display_path(path, root)}:<root>: unexpected foundation JSON filename or location")
+                continue
+            foundation_paths.append(path)
+    for path in foundation_paths:
         data = load_json(path, root, findings)
         if data is None:
             continue
@@ -508,7 +725,19 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
             else:
                 cards[card_id] = (path, data)
 
-    for path in sorted((root / "examples/blueprints").glob("BP-*.json")):
+    blueprint_root = root / "examples/blueprints"
+    blueprint_paths: list[Path] = []
+    fixture_paths: list[Path] = []
+    if blueprint_root.is_dir():
+        fixture_root = blueprint_root / "fixtures"
+        for path in sorted((item for item in blueprint_root.rglob("*") if item.is_file() and item.suffix.casefold() == ".json"), key=str):
+            if path.parent == blueprint_root and re.fullmatch(r"BP-[0-9]{4}\.[a-z0-9-]+\.json", path.name):
+                blueprint_paths.append(path)
+            elif path.parent == fixture_root and re.fullmatch(r"[a-z0-9-]+\.(positive|anti)\.json", path.name):
+                fixture_paths.append(path)
+            else:
+                findings.append(f"{display_path(path, root)}:<root>: unexpected blueprint or fixture JSON filename or location")
+    for path in blueprint_paths:
         data = load_json(path, root, findings)
         if data is None:
             continue
@@ -574,7 +803,7 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
     release_paths: list[Path] = []
     if release_root.is_dir():
         for path in sorted((item for item in release_root.rglob("*") if item.is_file() and item.suffix.casefold() == ".json"), key=str):
-            if path.parent != release_root or not fnmatch.fnmatchcase(path.name, "REL-*.json"):
+            if path.parent != release_root or re.fullmatch(r"REL-[0-9]{4}\.[a-z0-9-]+\.json", path.name) is None:
                 findings.append(f"{display_path(path, root)}:<root>: unexpected release JSON filename or location")
                 continue
             release_paths.append(path)
@@ -612,6 +841,8 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
         if descriptor_path is not None and version_root is not None:
             if descriptor_path.parent != version_root:
                 findings.append(f"{label}:descriptor.path: must be directly under its template version directory")
+            if descriptor_path.name != "template.json":
+                findings.append(f"{label}:descriptor.path: descriptor filename must be template.json")
             release_version_files[version_root].add(descriptor_path)
         descriptor_hash = descriptor_ref.get("sha256")
         descriptor = load_json(descriptor_path, root, findings) if descriptor_path is not None else None
@@ -631,7 +862,11 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
                         findings.append(f"{label}:native_assets.{index}.path: must be under its template version directory")
                     release_version_files[version_root].add(asset_path)
                     validate_native_asset_shape(asset_path, descriptor.get("artifact_type") if descriptor else None, f"{label}:native_assets.{index}", findings)
+                    if descriptor and (descriptor.get("artifact_type") == "xlsx" or (descriptor.get("artifact_type") == "mixed_package" and asset_path.suffix.casefold() == ".xlsx")):
+                        inspect_xlsx_contract(asset_path, descriptor, display_path(descriptor_path, root) if descriptor_path else label, findings)
         asset_hashes = {hash_value for _, hash_value in asset_pairs}
+        if descriptor is not None:
+            validate_descriptor_render_manifest(root, descriptor, display_path(descriptor_path, root) if descriptor_path else label, findings, bound_evidence_files)
 
         blueprint_ref = as_dict(data.get("blueprint"))
         blueprint_path = check_bound_file(root, blueprint_ref, "path", "sha256", f"{label}:blueprint", findings, Path("examples/blueprints"))
@@ -665,23 +900,24 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
                 findings.append(f"{label}:sanitization.foundation_card_ids: must exactly match blueprint lineage")
 
         typed: dict[str, tuple[Path | None, dict[str, Any]]] = {}
-        typed["sanitization"] = load_typed_evidence(root, as_dict(as_dict(data.get("sanitization")).get("evidence")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "sanitization", f"{label}:sanitization.evidence", findings, evidence_ids, bound_evidence_files)
+        typed["build"] = load_typed_evidence(root, as_dict(data.get("build")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "build_attestation", f"{label}:build", findings, evidence_ids, bound_evidence_files, actor_names=actor_names)
+        typed["sanitization"] = load_typed_evidence(root, as_dict(as_dict(data.get("sanitization")).get("evidence")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "sanitization", f"{label}:sanitization.evidence", findings, evidence_ids, bound_evidence_files, actor_names=actor_names)
         reviews = as_dict(data.get("reviews"))
-        typed["terra"] = load_typed_evidence(root, as_dict(reviews.get("terra")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "terra_review", f"{label}:reviews.terra", findings, evidence_ids, bound_evidence_files)
-        typed["sol"] = load_typed_evidence(root, as_dict(reviews.get("sol")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "sol_review", f"{label}:reviews.sol", findings, evidence_ids, bound_evidence_files)
-        typed["conductor"] = load_typed_evidence(root, as_dict(data.get("conductor_approval")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "conductor_approval", f"{label}:conductor_approval", findings, evidence_ids, bound_evidence_files)
-        review_paths = [typed[name][0] for name in ("terra", "sol", "conductor") if typed[name][0] is not None]
+        typed["terra"] = load_typed_evidence(root, as_dict(reviews.get("terra")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "terra_review", f"{label}:reviews.terra", findings, evidence_ids, bound_evidence_files, actor_names=actor_names)
+        typed["sol"] = load_typed_evidence(root, as_dict(reviews.get("sol")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "sol_review", f"{label}:reviews.sol", findings, evidence_ids, bound_evidence_files, actor_names=actor_names)
+        typed["conductor"] = load_typed_evidence(root, as_dict(data.get("conductor_approval")), schemas["release-evidence"], data, descriptor_hash, asset_hashes, "conductor_approval", f"{label}:conductor_approval", findings, evidence_ids, bound_evidence_files, actor_names=actor_names)
+        independent_lanes = ("build", "sanitization", "terra", "sol", "conductor")
+        review_paths = [typed[name][0] for name in independent_lanes if typed[name][0] is not None]
         if len(review_paths) != len(set(review_paths)):
-            findings.append(f"{label}:reviews: Terra, Sol, and conductor record paths must be distinct")
-        actor_ids = [typed[name][1].get("actor_id") for name in ("terra", "sol", "conductor") if isinstance(typed[name][1].get("actor_id"), str)]
+            findings.append(f"{label}:reviews: build, sanitization, Terra, Sol, and conductor record paths must be distinct")
+        actor_ids = [typed[name][1].get("actor_id") for name in independent_lanes if isinstance(typed[name][1].get("actor_id"), str)]
         normalized_actor_ids = [unicodedata.normalize("NFKC", actor_id).strip().casefold() for actor_id in actor_ids]
-        if len(actor_ids) != 3 or len(normalized_actor_ids) != len(set(normalized_actor_ids)):
-            findings.append(f"{label}:reviews: Terra, Sol, and conductor identities must be independent")
-
+        if len(actor_ids) != len(independent_lanes) or len(normalized_actor_ids) != len(set(normalized_actor_ids)):
+            findings.append(f"{label}:reviews: build, sanitization, Terra, Sol, and conductor identities must be independent")
         blueprint_gates = {gate.get("category"): gate for gate in as_list(blueprint_entry[1].get("proof_gates")) if blueprint_entry and isinstance(gate, dict) and isinstance(gate.get("category"), str)} if blueprint_entry else {}
         for category in PROOF_CATEGORIES:
             reference = as_dict(as_dict(data.get("evidence")).get(category))
-            _, record = load_typed_evidence(root, reference, schemas["release-evidence"], data, descriptor_hash, asset_hashes, "technical_validation", f"{label}:evidence.{category}", findings, evidence_ids, bound_evidence_files, category)
+            _, record = load_typed_evidence(root, reference, schemas["release-evidence"], data, descriptor_hash, asset_hashes, "technical_validation", f"{label}:evidence.{category}", findings, evidence_ids, bound_evidence_files, category, actor_names)
             expected_verdict = "VALIDATION_PASS" if as_dict(blueprint_gates.get(category)).get("applicable") is True else "VALIDATION_NOT_APPLICABLE"
             if record and record.get("verdict") != expected_verdict:
                 findings.append(f"{label}:evidence.{category}.verdict: must align with blueprint applicability")
@@ -690,9 +926,11 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
                 findings.append(f"{label}:evidence.{category}.procedures: must exactly match the blueprint proof gate")
             if category == "render" and record and record.get("render_contract_sha256") != render_contract_hash:
                 findings.append(f"{label}:evidence.render.render_contract_sha256: must exactly bind the descriptor render contract")
+            if category == "render" and record and descriptor is not None:
+                validate_release_render_evidence(root, descriptor, record, f"{label}:evidence.render", findings)
 
     fixture_pairs: dict[str, list[tuple[str, str]]] = {}
-    for path in sorted((root / "examples/blueprints/fixtures").glob("*.json")):
+    for path in fixture_paths:
         fixture = load_json(path, root, findings)
         if fixture is None:
             continue
@@ -758,6 +996,8 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
                 if descriptor_path is not None and version_root is not None:
                     if descriptor_path.parent != version_root:
                         findings.append(f"{prefix}.descriptor: must be directly under its template version directory")
+                    if descriptor_path.name != "template.json":
+                        findings.append(f"{prefix}.descriptor: descriptor filename must be template.json")
                     catalog_version_files[version_root].add(descriptor_path)
                 if descriptor_data is not None:
                     findings.extend(validate_descriptor_data(descriptor_data, schemas["template-descriptor"], display_path(descriptor_path, root)))
@@ -782,6 +1022,10 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
                         if sha256_file(asset_path) != asset_hash:
                             findings.append(f"{prefix}.descriptor.native_assets.{asset_index}.sha256: hash does not match {asset_value}")
                         validate_native_asset_shape(asset_path, as_dict(descriptor_data).get("artifact_type"), f"{prefix}.descriptor.native_assets.{asset_index}", findings)
+                        if as_dict(descriptor_data).get("artifact_type") == "xlsx" or (as_dict(descriptor_data).get("artifact_type") == "mixed_package" and asset_path.suffix.casefold() == ".xlsx"):
+                            inspect_xlsx_contract(asset_path, as_dict(descriptor_data), display_path(descriptor_path, root) if descriptor_path else prefix, findings)
+                if descriptor_data is not None:
+                    validate_descriptor_render_manifest(root, descriptor_data, display_path(descriptor_path, root) if descriptor_path else prefix, findings, bound_evidence_files)
 
                 blueprint_id = as_dict(descriptor_data).get("blueprint_id")
                 bound_blueprint = blueprints.get(blueprint_id) if isinstance(blueprint_id, str) else None

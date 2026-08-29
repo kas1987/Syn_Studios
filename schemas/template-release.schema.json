@@ -4,7 +4,7 @@
   "title": "Syn Studios template release record",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "release_id", "template_id", "version", "status", "descriptor", "native_assets", "blueprint", "sanitization", "reviews", "conductor_approval", "evidence"],
+  "required": ["schema_version", "release_id", "template_id", "version", "status", "descriptor", "native_assets", "blueprint", "build", "sanitization", "reviews", "conductor_approval", "evidence"],
   "$defs": {
     "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "boundPath": {
@@ -17,7 +17,7 @@
     }
   },
   "properties": {
-    "schema_version": {"const": "2.0.0"},
+    "schema_version": {"const": "3.0.0"},
     "release_id": {"type": "string", "pattern": "^REL-[0-9]{4}$"},
     "template_id": {"type": "string", "pattern": "^TMPL-[0-9]{4}$"},
     "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
@@ -28,6 +28,7 @@
       "type": "object", "additionalProperties": false, "required": ["blueprint_id", "path", "sha256"],
       "properties": {"blueprint_id": {"type": "string", "pattern": "^BP-[0-9]{4}$"}, "path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}
     },
+    "build": {"$ref": "#/$defs/evidenceReference"},
     "sanitization": {
       "type": "object", "additionalProperties": false, "required": ["evidence", "foundation_card_ids"],
       "properties": {

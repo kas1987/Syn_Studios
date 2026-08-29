@@ -2,10 +2,12 @@ import hashlib
 import json
 import re
 import shutil
+import struct
 import tempfile
 import unittest
 import unicodedata
 import zipfile
+import zlib
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
@@ -23,6 +25,26 @@ def write_json(path, data):
 
 def file_hash(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def write_render_pdf(path, pages=1):
+    page_objects = b"\n".join(
+        f"{index} 0 obj <</Type /Page /MediaBox [0 0 612 792] /Contents 99 0 R>> endobj".encode()
+        for index in range(1, pages + 1)
+    )
+    payload = b"%PDF-1.7\n" + page_objects + b"\n99 0 obj <</Length 18>> stream\nBT (proof) Tj ET\nendstream endobj\n%%EOF\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+
+
+def write_render_png(path, marker=0):
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    raw = b"".join(b"\x00" + bytes([(row + marker) % 256] * 16) for row in range(16))
+    payload = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 0, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
 
 
 class LibraryControlPlaneTests(unittest.TestCase):
@@ -88,11 +110,29 @@ class LibraryControlPlaneTests(unittest.TestCase):
         descriptor_path = asset.parent / "template.json"
         write_json(descriptor_path, descriptor)
         descriptor_binding = {"path": descriptor_path.relative_to(root).as_posix(), "sha256": file_hash(descriptor_path)}
+        render_pdf = root / descriptor["render_contract"]["expected_pdf_path"]
+        render_png = root / descriptor["render_contract"]["expected_page_image_pattern"].format(page=1)
+        write_render_pdf(render_pdf)
+        write_render_png(render_png)
+        render_outputs = [
+            {"path": render_pdf.relative_to(root).as_posix(), "sha256": file_hash(render_pdf)},
+            {"path": render_png.relative_to(root).as_posix(), "sha256": file_hash(render_png)},
+        ]
+        write_json(root / descriptor["render_contract"]["evidence_manifest"], {
+            "schema_version": "1.0.0",
+            "templates": {"TMPL-0001": {
+                "asset_path": asset_binding["path"], "asset_sha256": asset_binding["sha256"],
+                "page_count": 1, "sheet_names": ["Sheet1"], "rendered_outputs": render_outputs,
+            }},
+        })
 
         def evidence(name, record_type, verdict, actor_id, actor, categories=None, procedures=None):
             artifact_categories = categories or ["provenance"]
             artifacts = []
             for category in artifact_categories:
+                if category == "render":
+                    artifacts.extend({**item, "media_type": "application/pdf" if index == 0 else "image/png", "category": "render"} for index, item in enumerate(render_outputs))
+                    continue
                 proof = root / "evidence/template-releases/REL-0001/proofs" / f"{name}-{category}.txt"
                 proof.parent.mkdir(parents=True, exist_ok=True)
                 proof.write_text(
@@ -127,6 +167,7 @@ class LibraryControlPlaneTests(unittest.TestCase):
             write_json(path, record)
             return {"record_path": path.relative_to(root).as_posix(), "record_sha256": file_hash(path)}
 
+        build = evidence("build", "build_attestation", "BUILD_COMPLETE", "builder:template", "Template builder")
         sanitization = evidence("sanitization", "sanitization", "SANITIZATION_PASS", "reviewer:sanitization", "Sanitization reviewer")
         terra = evidence("terra", "terra_review", "USABILITY_PASS", "reviewer:terra", "Terra reviewer")
         sol = evidence("sol", "sol_review", "INTEGRITY_PASS", "reviewer:sol", "Sol reviewer")
@@ -134,7 +175,7 @@ class LibraryControlPlaneTests(unittest.TestCase):
         procedures = {gate["category"]: gate["procedure"] for gate in blueprint["proof_gates"]}
         technical = evidence("technical", "technical_validation", "VALIDATION_PASS", "runner:validation", "Validation runner", sorted(procedures), procedures)
         release = {
-            "schema_version": "2.0.0",
+            "schema_version": "3.0.0",
             "release_id": "REL-0001",
             "template_id": "TMPL-0001",
             "version": "1.0.0",
@@ -142,6 +183,7 @@ class LibraryControlPlaneTests(unittest.TestCase):
             "descriptor": descriptor_binding,
             "native_assets": [asset_binding],
             "blueprint": {"blueprint_id": "BP-0001", "path": blueprint_path.relative_to(root).as_posix(), "sha256": file_hash(blueprint_path)},
+            "build": build,
             "sanitization": {"evidence": sanitization, "foundation_card_ids": ["FOUND-0001"]},
             "reviews": {"terra": terra, "sol": sol},
             "conductor_approval": conductor,
@@ -186,7 +228,11 @@ class LibraryControlPlaneTests(unittest.TestCase):
         write_json(descriptor_path, descriptor)
         descriptor_hash = file_hash(descriptor_path)
         release["descriptor"]["sha256"] = descriptor_hash
-        evidence_references = [release["sanitization"]["evidence"], release["reviews"]["terra"], release["reviews"]["sol"], release["conductor_approval"], *release["evidence"].values()]
+        manifest_path = root / descriptor["render_contract"]["evidence_manifest"]
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["templates"][descriptor["template_id"]]["asset_sha256"] = asset_hash
+        write_json(manifest_path, manifest)
+        evidence_references = [release["build"], release["sanitization"]["evidence"], release["reviews"]["terra"], release["reviews"]["sol"], release["conductor_approval"], *release["evidence"].values()]
         seen_paths = set()
         for reference in evidence_references:
             evidence_path = root / reference["record_path"]
@@ -198,9 +244,10 @@ class LibraryControlPlaneTests(unittest.TestCase):
             record["native_asset_sha256s"] = [asset_hash]
             for artifact in record["artifacts"]:
                 proof_path = root / artifact["path"]
-                proof_text = proof_path.read_text(encoding="utf-8")
-                proof_text = re.sub(r"native_asset_sha256=[a-f0-9]{64}", f"native_asset_sha256={asset_hash}", proof_text)
-                proof_path.write_text(proof_text, encoding="utf-8")
+                if artifact.get("media_type", "").startswith("text/"):
+                    proof_text = proof_path.read_text(encoding="utf-8")
+                    proof_text = re.sub(r"native_asset_sha256=[a-f0-9]{64}", f"native_asset_sha256={asset_hash}", proof_text)
+                    proof_path.write_text(proof_text, encoding="utf-8")
                 artifact["sha256"] = file_hash(proof_path)
             write_json(evidence_path, record)
         for reference in evidence_references:
@@ -306,6 +353,11 @@ class LibraryControlPlaneTests(unittest.TestCase):
             errors = list(Draft202012Validator(schema).iter_errors(descriptor))
             rendered = "\n".join(error.message for error in errors)
             self.assertIn("does not match", rendered)
+            descriptor["render_contract"].pop("expected_pdf_path")
+            descriptor["render_contract"].pop("expected_page_image_pattern")
+            rendered = "\n".join(error.message for error in Draft202012Validator(schema).iter_errors(descriptor))
+            self.assertIn("expected_pdf_path", rendered)
+            self.assertIn("expected_page_image_pattern", rendered)
 
     def test_render_evidence_must_bind_descriptor_contract(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -427,6 +479,93 @@ class LibraryControlPlaneTests(unittest.TestCase):
             anonymous.write_text("private,answer\n", encoding="utf-8")
             self.assert_finding(root, "file is not bound by a catalog descriptor/native asset or release")
 
+    def test_nested_shadow_json_in_governed_roots_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, _ = self.make_minimal_root(temporary)
+            shadows = [
+                root / "library/foundations/shadow/FOUND-9999.json",
+                root / "examples/blueprints/shadow/BP-9999.shadow.json",
+                root / "examples/blueprints/fixtures/shadow/close-workbook.positive.json",
+            ]
+            for path in shadows:
+                write_json(path, {})
+            rendered = "\n".join(validate_repository(root)[0])
+            self.assertIn("unexpected foundation JSON filename or location", rendered)
+            self.assertIn("unexpected blueprint or fixture JSON filename or location", rendered)
+
+    def test_xlsx_descriptor_ghost_sheet_range_and_table_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, descriptor_path, descriptor = self.make_release(root, blueprint_path)
+            descriptor["render_contract"]["expected_sheet_names"] = ["GHOST_SHEET"]
+            descriptor["population_contract"] = {
+                "mode": "bounded_native_tables",
+                "capacity_change_policy": "Reject and rebuild with fresh proof before release.",
+                "tables": [{"name": "GhostTable", "sheet": "GHOST_SHEET", "range": "A4:Z29", "minimum_rows": 1, "maximum_rows": 25, "columns": {"ID": "string"}}],
+            }
+            self.rebind_native_asset(root, release_path, release, descriptor_path, descriptor)
+            self.make_catalog(root, release_path, release, descriptor)
+            rendered = "\n".join(validate_repository(root)[0])
+            self.assertIn("must exactly match native workbook sheet order", rendered)
+            self.assertIn("does not resolve to a native workbook table", rendered)
+
+    def test_required_render_rejects_missing_and_text_only_outputs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, _, descriptor = self.make_release(root, blueprint_path)
+            technical_reference = release["evidence"]["render"]
+            technical_path = root / technical_reference["record_path"]
+            technical = json.loads(technical_path.read_text(encoding="utf-8"))
+            technical["artifacts"] = [item for item in technical["artifacts"] if item["category"] != "render"]
+            text_proof = root / "evidence/template-releases/REL-0001/proofs/technical-render.txt"
+            text_proof.write_text(
+                f"release_id=REL-0001\ntemplate_id=TMPL-0001\ncategory=render\nnative_asset_sha256={release['native_assets'][0]['sha256']}\n",
+                encoding="utf-8",
+            )
+            technical["artifacts"].append({"path": text_proof.relative_to(root).as_posix(), "sha256": file_hash(text_proof), "media_type": "text/plain", "category": "render"})
+            write_json(technical_path, technical)
+            technical_hash = file_hash(technical_path)
+            for reference in release["evidence"].values():
+                reference["record_sha256"] = technical_hash
+            for path in (root / descriptor["render_contract"]["expected_pdf_path"], root / descriptor["render_contract"]["expected_page_image_pattern"].format(page=1)):
+                path.unlink()
+            write_json(release_path, release)
+            self.make_catalog(root, release_path, release, descriptor)
+            rendered = "\n".join(validate_repository(root)[0])
+            self.assertIn("text-only proof is not sufficient", rendered)
+            self.assertIn("referenced file does not exist", rendered)
+
+    def test_sanitizer_cannot_alias_terra_reviewer(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, _, descriptor = self.make_release(root, blueprint_path)
+            sanitizer_reference = release["sanitization"]["evidence"]
+            sanitizer_path = root / sanitizer_reference["record_path"]
+            sanitizer = json.loads(sanitizer_path.read_text(encoding="utf-8"))
+            sanitizer["actor_id"] = " REVIEWER:TERRA "
+            write_json(sanitizer_path, sanitizer)
+            sanitizer_reference["record_sha256"] = file_hash(sanitizer_path)
+            write_json(release_path, release)
+            self.make_catalog(root, release_path, release, descriptor)
+            self.assert_finding(root, "build, sanitization, Terra, Sol, and conductor identities must be independent")
+
+    def test_actor_id_has_one_stable_display_identity(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, _, descriptor = self.make_release(root, blueprint_path)
+            technical_reference = release["evidence"]["render"]
+            technical_path = root / technical_reference["record_path"]
+            technical = json.loads(technical_path.read_text(encoding="utf-8"))
+            technical["actor_id"] = " BUILDER:TEMPLATE "
+            technical["actor"] = "Unrelated validation identity"
+            write_json(technical_path, technical)
+            technical_hash = file_hash(technical_path)
+            for reference in release["evidence"].values():
+                reference["record_sha256"] = technical_hash
+            write_json(release_path, release)
+            self.make_catalog(root, release_path, release, descriptor)
+            self.assert_finding(root, "actor_id must map to one stable actor name")
+
     def test_catalog_mismatched_id_descriptor_and_asset_hashes_fail(self):
         with tempfile.TemporaryDirectory() as temporary:
             root, _, blueprint_path = self.make_minimal_root(temporary)
@@ -451,7 +590,11 @@ class LibraryControlPlaneTests(unittest.TestCase):
             write_json(descriptor_path, descriptor)
             catalog_path, catalog = self.make_catalog(root, release_path, release, descriptor)
             release_path.unlink()
-            shutil.rmtree(root / "evidence/template-releases/REL-0001")
+            evidence_root = root / "evidence/template-releases/REL-0001"
+            for evidence_path in evidence_root.glob("*.json"):
+                if evidence_path.name != "render-manifest.json":
+                    evidence_path.unlink()
+            shutil.rmtree(evidence_root / "proofs")
             entry = catalog["templates"][0]
             entry["release_status"] = "candidate"
             entry.pop("release_record")
@@ -510,7 +653,7 @@ class LibraryControlPlaneTests(unittest.TestCase):
             write_json(descriptor_path, descriptor)
             descriptor_hash = file_hash(descriptor_path)
             release["descriptor"]["sha256"] = descriptor_hash
-            evidence_references = [release["sanitization"]["evidence"], release["reviews"]["terra"], release["reviews"]["sol"], release["conductor_approval"], *release["evidence"].values()]
+            evidence_references = [release["build"], release["sanitization"]["evidence"], release["reviews"]["terra"], release["reviews"]["sol"], release["conductor_approval"], *release["evidence"].values()]
             seen_paths = set()
             for reference in evidence_references:
                 evidence_path = root / reference["record_path"]
