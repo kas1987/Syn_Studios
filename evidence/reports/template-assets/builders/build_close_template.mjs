@@ -41,22 +41,32 @@ function header(range) {
   };
 }
 
-const instructions = workbook.worksheets.add("Instructions");
-title(instructions, "Monthly Close & Reconciliation Template", "Fact-free native template. Replace every double-brace build token before an instantiated artifact is released.");
-instructions.getRange("A4:B9").values = [
-  ["Template field", "Build-time slot / instruction"],
+const control = workbook.worksheets.add("Close_Control");
+title(control, "Monthly Close & Reconciliation", "Internal working file | supporting analysis | approval is evidenced separately");
+control.getRange("A4:B9").values = [
+  ["Close file field", "Value"],
   ["Organization", "{{organization_name}}"],
   ["Close period", "{{close_period_end}}"],
   ["Prepared by role", "{{preparer_role}}"],
   ["Reviewed by role", "{{reviewer_role}}"],
-  ["Workflow", "Load source rows, map accounts, resolve exceptions, then confirm Checks is PASS."],
+  ["File status", "Working"],
 ];
-header(instructions.getRange("A4:B4"));
-instructions.getRange("B5:B8").format.fill = input;
-instructions.getRange("A11:A16").values = [["Required build sequence"], ["1. Populate Source_Data with authorized world facts."], ["2. Populate Account_Map before relying on rollups."], ["3. Complete Reconciliation and Proposed_Entries."], ["4. Resolve or explicitly retain every Exceptions row."], ["5. Recalculate and require all Checks to read PASS."]];
-header(instructions.getRange("A11:B11"));
-instructions.getRange("A:B").format.columnWidth = 30;
-instructions.getRange("B:B").format.columnWidth = 68;
+header(control.getRange("A4:B4"));
+control.getRange("B5:B8").format.fill = input;
+control.getRange("A11:C16").values = [
+  ["Close control", "Status", "Evidence reference"],
+  ["Source population loaded", "Not started", null],
+  ["Account mapping reviewed", "Not started", null],
+  ["Reconciliation exceptions dispositioned", "Not started", null],
+  ["Proposed entries balanced", "Not started", null],
+  ["Controller review completed", "Not started", null],
+];
+header(control.getRange("A11:C11"));
+control.getRange("B12:B16").dataValidation = { rule: { type: "list", values: ["Not started", "In progress", "Complete", "Not applicable"] } };
+control.getRange("B12:C16").format.fill = input;
+control.getRange("A:A").format.columnWidth = 34;
+control.getRange("B:B").format.columnWidth = 24;
+control.getRange("C:C").format.columnWidth = 44;
 
 const source = workbook.worksheets.add("Source_Data");
 title(source, "Source Data", "Paste or generate authorized transaction-level rows. Do not place conclusions in this source-system layer.");
@@ -101,6 +111,7 @@ recon.getRange("G5:G24").conditionalFormats.add("containsText", { text: "REVIEW"
 recon.freezePanes.freezeRows(4);
 recon.getRange("A:G").format.columnWidth = 18;
 recon.getRange("H:H").format.columnWidth = 38;
+recon.tables.add("A4:H24", true, "ReconciliationTable").style = "TableStyleMedium2";
 
 const entries = workbook.worksheets.add("Proposed_Entries");
 title(entries, "Proposed Entries", "Build entries only from resolved reconciliation differences and authorized adjustments.");
@@ -113,6 +124,7 @@ entries.getRange("C:C").format.columnWidth = 32;
 entries.getRange("A:B").format.columnWidth = 18;
 entries.getRange("D:H").format.columnWidth = 20;
 entries.freezePanes.freezeRows(4);
+entries.tables.add("A4:H19", true, "ProposedEntriesTable").style = "TableStyleMedium2";
 
 const prior = workbook.worksheets.add("Prior_Period");
 title(prior, "Prior Period Comparison", "Optional comparison layer; prior-period data is contextual and must not override current authority.");
@@ -126,6 +138,7 @@ prior.getRange("B5:D24").format.numberFormat = '$#,##0.00;[Red]($#,##0.00);-';
 prior.getRange("A:D").format.columnWidth = 20;
 prior.getRange("E:E").format.columnWidth = 40;
 prior.freezePanes.freezeRows(4);
+prior.tables.add("A4:E24", true, "PriorPeriodTable").style = "TableStyleMedium2";
 
 const exceptions = workbook.worksheets.add("Exceptions");
 title(exceptions, "Exception Log", "Record only workflow-supported exceptions. Questions do not supply their own resolution.");
@@ -139,20 +152,21 @@ exceptions.getRange("A:B").format.columnWidth = 18;
 exceptions.getRange("C:C").format.columnWidth = 38;
 exceptions.getRange("D:H").format.columnWidth = 20;
 exceptions.freezePanes.freezeRows(4);
+exceptions.tables.add("A4:H19", true, "ExceptionsTable").style = "TableStyleMedium2";
 
 const checks = workbook.worksheets.add("Checks");
 title(checks, "Control Checks", "PASS indicates internal workbook checks only; it is not evidence of approval or release.");
 checks.getRange("A4:D4").values = [["Check", "Result", "Delta / Count", "Where to fix"]];
 header(checks.getRange("A4:D4"));
-checks.getRange("A5:A9").values = [["Source debits equal source credits"], ["Proposed debits equal proposed credits"], ["No reconciliation rows require review"], ["No open exceptions"], ["All required build-time slots replaced"]];
+checks.getRange("A5:A9").values = [["Source debits equal source credits"], ["Proposed debits equal proposed credits"], ["No reconciliation rows require review"], ["No open exceptions"], ["Required close fields populated"]];
 checks.getRange("C5").formulas = [["=SUM('Source_Data'!$F$5:$F$29)-SUM('Source_Data'!$G$5:$G$29)"]];
 checks.getRange("C6").formulas = [["=SUM('Proposed_Entries'!$D$5:$D$19)-SUM('Proposed_Entries'!$E$5:$E$19)"]];
 checks.getRange("C7").formulas = [["=COUNTIF('Reconciliation'!$G$5:$G$24,\"REVIEW\")"]];
 checks.getRange("C8").formulas = [["=COUNTIF('Exceptions'!$G$5:$G$19,\"Open\")"]];
-checks.getRange("C9").formulas = [["=IF(OR('Instructions'!B5=\"{{organization_name}}\",'Instructions'!B6=\"{{close_period_end}}\",'Instructions'!B7=\"{{preparer_role}}\",'Instructions'!B8=\"{{reviewer_role}}\"),1,0)"]];
+checks.getRange("C9").formulas = [["=IF(OR('Close_Control'!B5=\"{{organization_name}}\",'Close_Control'!B6=\"{{close_period_end}}\",'Close_Control'!B7=\"{{preparer_role}}\",'Close_Control'!B8=\"{{reviewer_role}}\"),1,0)"]];
 checks.getRange("B5").formulas = [["=IF(C5=0,\"PASS\",\"FAIL\")"]];
 checks.getRange("B5:B9").fillDown();
-checks.getRange("D5:D9").values = [["Source_Data"], ["Proposed_Entries"], ["Reconciliation"], ["Exceptions"], ["Instructions"]];
+checks.getRange("D5:D9").values = [["Source_Data"], ["Proposed_Entries"], ["Reconciliation"], ["Exceptions"], ["Close_Control"]];
 checks.getRange("B5:B9").conditionalFormats.add("containsText", { text: "PASS", format: { fill: green, font: { color: "#375623", bold: true } } });
 checks.getRange("B5:B9").conditionalFormats.add("containsText", { text: "FAIL", format: { fill: red, font: { color: "#9C0006", bold: true } } });
 checks.getRange("A11:B12").values = [["MODEL STATUS", "Formula"], ["Status", null]];
@@ -161,6 +175,7 @@ checks.getRange("B12").formulas = [["=IF(COUNTIF(B5:B9,\"FAIL\")=0,\"PASS\",\"FA
 checks.getRange("B12").format = { font: { bold: true, size: 14 }, fill: pale };
 checks.getRange("A:A").format.columnWidth = 42;
 checks.getRange("B:D").format.columnWidth = 22;
+checks.freezePanes.freezeRows(4);
 
 for (const sheet of workbook.worksheets.items) {
   const used = sheet.getUsedRange();
@@ -171,9 +186,6 @@ const outputDir = path.dirname(outputPath);
 await fs.mkdir(outputDir, { recursive: true });
 const exported = await SpreadsheetFile.exportXlsx(workbook);
 await exported.save(outputPath);
-
-const inspect = await workbook.inspect({ kind: "sheet,formula", maxChars: 12000, options: { maxResults: 100 } });
-await fs.writeFile(path.join(outputDir, "..", "..", "..", "..", "evidence", "reports", "template-assets", "xlsx-inspect.ndjson"), inspect.ndjson, "utf8");
 
 for (const sheet of workbook.worksheets.items) {
   const preview = await workbook.render({ sheetName: sheet.name, autoCrop: "all", scale: 1, format: "png" });

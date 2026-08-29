@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+import tempfile
+import zipfile
 from pathlib import Path
 
 from docx import Document
@@ -108,21 +110,14 @@ section.header_distance = Inches(0.492)
 section.footer_distance = Inches(0.492)
 configure_styles(doc)
 
-props = doc.core_properties
-props.title = "Internal Controller Decision Memorandum Template"
-props.subject = "Fact-free synthetic artifact template"
-props.author = "Syn Studios"
-props.keywords = "synthetic template, internal memo"
-props.comments = "Built from scratch; contains build-time slots and no approvals."
-
 header = section.header.paragraphs[0]
-header.text = "SYN STUDIOS  |  INTERNAL WORKING MEMORANDUM TEMPLATE"
+header.text = "{{organization_name}}  |  INTERNAL CONTROLLER MEMORANDUM"
 header.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 header.runs[0].font.name = "Arial"
 header.runs[0].font.size = Pt(8)
 header.runs[0].font.color.rgb = RGBColor.from_string("666666")
 footer = section.footer.paragraphs[0]
-footer.text = "Template status: build-time slots unresolved — not approved"
+footer.text = "DRAFT — NOT APPROVED"
 footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
 footer.runs[0].font.name = "Arial"
 footer.runs[0].font.size = Pt(8)
@@ -233,8 +228,25 @@ add_heading(doc, "Required approvals (record only after they occur)", 2)
 doc.add_paragraph("{{approval_record_locator_or_not_yet_obtained}}")
 add_heading(doc, "Appendix index", 2)
 doc.add_paragraph("{{appendix_index}}")
-add_heading(doc, "Instantiation gate", 2)
-doc.add_paragraph("Replace every double-brace build token, verify citations, classify all notes, render every page, and confirm that no approval, signature, identity, private world fact, or generator residue has been introduced.")
-
 OUTPUT.parent.mkdir(parents=True, exist_ok=True)
 doc.save(OUTPUT)
+
+minimal_core = b'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"/>'''
+minimal_app = b'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"/>'''
+with zipfile.ZipFile(OUTPUT, "r") as source:
+    members = [(info, source.read(info.filename)) for info in source.infolist()]
+with tempfile.NamedTemporaryFile(delete=False, suffix=".docx", dir=OUTPUT.parent) as temporary:
+    temporary_path = Path(temporary.name)
+try:
+    with zipfile.ZipFile(temporary_path, "w") as target:
+        for info, payload in members:
+            if info.filename == "docProps/core.xml":
+                payload = minimal_core
+            elif info.filename == "docProps/app.xml":
+                payload = minimal_app
+            target.writestr(info, payload)
+    temporary_path.replace(OUTPUT)
+finally:
+    temporary_path.unlink(missing_ok=True)

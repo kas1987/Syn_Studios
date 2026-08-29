@@ -1,8 +1,8 @@
 # OVERVIEW
-{"kind":"sheet","id":"ws/tdpc6z","name":"Instructions","index":0,"range":"A1:B16","address":"A1:B16"}
-{"kind":"sheet","id":"ws/e85lro","name":"Source_Data","index":1,"range":"A1:H4","address":"A1:H4"}
-{"kind":"sheet","id":"ws/fys8pf","name":"Account_Map","index":2,"range":"A1:E4","address":"A1:E4"}
-{"kind":"sheet","id":"ws/2lu5kg","name":"Reconciliation","index":3,"range":"A1:H24","address":"A1:H24","formulas":60}
+{"kind":"sheet","id":"ws/adrok0","name":"Close_Control","index":0,"range":"A1:C16","address":"A1:C16"}
+{"kind":"sheet","id":"ws/ahqbsr","name":"Source_Data","index":1,"range":"A1:H4","address":"A1:H4"}
+{"kind":"sheet","id":"ws/t42aaq","name":"Account_Map","index":2,"range":"A1:E4","address":"A1:E4"}
+{"kind":"sheet","id":"ws/oitkmd","name":"Reconciliation","index":3,"range":"A1:H24","address":"A1:H24","formulas":60}
 {"kind":"formula","sheet":"Reconciliation","address":"C5","formula":"=SUMIFS('Source_Data'!$F$5:$F$29,'Source_Data'!$C$5:$C$29,A5)-SUMIFS('Source_Data'!$G$5:$G$29,'Source_Data'!$C$5:$C$29,A5)"}
 {"kind":"formula","sheet":"Reconciliation","address":"E5","formula":"=C5-D5"}
 {"kind":"formula","sheet":"Reconciliation","address":"G5","formula":"=IF(ABS(E5)<=F5,\"PASS\",\"REVIEW\")"}
@@ -63,8 +63,8 @@
 {"kind":"formula","sheet":"Reconciliation","address":"C24","formula":"=SUMIFS('Source_Data'!$F$5:$F$29,'Source_Data'!$C$5:$C$29,A24)-SUMIFS('Source_Data'!$G$5:$G$29,'Source_Data'!$C$5:$C$29,A24)"}
 {"kind":"formula","sheet":"Reconciliation","address":"E24","formula":"=C24-D24"}
 {"kind":"formula","sheet":"Reconciliation","address":"G24","formula":"=IF(ABS(E24)<=F24,\"PASS\",\"REVIEW\")"}
-{"kind":"sheet","id":"ws/neks9p","name":"Proposed_Entries","index":4,"range":"A1:H4","address":"A1:H4"}
-{"kind":"sheet","id":"ws/3fq7ez","name":"Prior_Period","index":5,"range":"A1:E24","address":"A1:E24","formulas":20}
+{"kind":"sheet","id":"ws/jrhsba","name":"Proposed_Entries","index":4,"range":"A1:H4","address":"A1:H4"}
+{"kind":"sheet","id":"ws/svsw9w","name":"Prior_Period","index":5,"range":"A1:E24","address":"A1:E24","formulas":20}
 {"kind":"formula","sheet":"Prior_Period","address":"D5","formula":"=B5-C5"}
 {"kind":"formula","sheet":"Prior_Period","address":"D6","formula":"=B6-C6"}
 {"kind":"formula","sheet":"Prior_Period","address":"D7","formula":"=B7-C7"}
@@ -85,8 +85,8 @@
 {"kind":"formula","sheet":"Prior_Period","address":"D22","formula":"=B22-C22"}
 {"kind":"formula","sheet":"Prior_Period","address":"D23","formula":"=B23-C23"}
 {"kind":"formula","sheet":"Prior_Period","address":"D24","formula":"=B24-C24"}
-{"kind":"sheet","id":"ws/ogc5rc","name":"Exceptions","index":6,"range":"A1:H4","address":"A1:H4"}
-{"kind":"sheet","id":"ws/uy6jm6","name":"Checks","index":7,"range":"A1:D12","address":"A1:D12","formulas":11}
+{"kind":"sheet","id":"ws/89jly7","name":"Exceptions","index":6,"range":"A1:H4","address":"A1:H4"}
+{"kind":"sheet","id":"ws/wpjm69","name":"Checks","index":7,"range":"A1:D12","address":"A1:D12","formulas":11}
 {"kind":"formula","sheet":"Checks","address":"B5","formula":"=IF(C5=0,\"PASS\",\"FAIL\")"}
 {"kind":"formula","sheet":"Checks","address":"C5","formula":"=SUM('Source_Data'!$F$5:$F$29)-SUM('Source_Data'!$G$5:$G$29)"}
 {"kind":"formula","sheet":"Checks","address":"B6","formula":"=IF(C6=0,\"PASS\",\"FAIL\")"}
@@ -96,9 +96,9 @@
 {"kind":"formula","sheet":"Checks","address":"B8","formula":"=IF(C8=0,\"PASS\",\"FAIL\")"}
 {"kind":"formula","sheet":"Checks","address":"C8","formula":"=COUNTIF('Exceptions'!$G$5:$G$19,\"Open\")"}
 {"kind":"formula","sheet":"Checks","address":"B9","formula":"=IF(C9=0,\"PASS\",\"FAIL\")"}
-{"kind":"formula","sheet":"Checks","address":"C9","formula":"=IF(OR('Instructions'!B5=\"{{organization_name}}\",'Instructions'!B6=\"{{close_period_end}}\",'Instructions'!B7=\"{{preparer_role}}\",'Instructions'!B8=\"{{reviewer_role}}\"),1,0)"}
+{"kind":"formula","sheet":"Checks","address":"C9","formula":"=IF(OR('Close_Control'!B5=\"{{organization_name}}\",'Close_Control'!B6=\"{{close_period_end}}\",'Close_Control'!B7=\"{{preparer_role}}\",'Close_Control'!B8=\"{{reviewer_role}}\"),1,0)"}
 {"kind":"formula","sheet":"Checks","address":"B12","formula":"=IF(COUNTIF(B5:B9,\"FAIL\")=0,\"PASS\",\"FAIL\")"}
 # FORMULA_ERRORS
 {"kind":"notice","message":"Cell search matched 0 entries."}
 # CHECKS
-{"kind":"table","sheet":"Checks","address":"A1:D12","rows":12,"cols":4,"values":[["Control Checks",null,null,null],["PASS indicates internal workbook checks only; it is not evidence of approval or release.",null,null,null],[null,null,null,null],["Check","Result","Delta / Count","Where to fix"],["Source debits equal source credits","PASS",0,"Source_Data"],["Proposed debits equal proposed credits","PASS",0,"Proposed_Entries"],["No reconciliation rows require review","PASS",0,"Reconciliation"],["No open exceptions","PASS",0,"Exceptions"],["All required build-time slots replaced","FAIL",1,"Instructions"],[null,null,null,null],["MODEL STATUS","Formula",null,null],["Status","FAIL",null,null]]}
+{"kind":"table","sheet":"Checks","address":"A1:D12","rows":12,"cols":4,"values":[["Control Checks",null,null,null],["PASS indicates internal workbook checks only; it is not evidence of approval or release.",null,null,null],[null,null,null,null],["Check","Result","Delta / Count","Where to fix"],["Source debits equal source credits","PASS",0,"Source_Data"],["Proposed debits equal proposed credits","PASS",0,"Proposed_Entries"],["No reconciliation rows require review","PASS",0,"Reconciliation"],["No open exceptions","PASS",0,"Exceptions"],["Required close fields populated","FAIL",1,"Close_Control"],[null,null,null,null],["MODEL STATUS","Formula",null,null],["Status","FAIL",null,null]]}

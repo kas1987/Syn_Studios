@@ -8,13 +8,14 @@
   "lineage": {
     "blueprint_id": "BP-0002",
     "foundation_ids": ["FOUND-0005"],
+    "lineage_source": "examples/blueprints/BP-0002.internal-controller-memo.json#foundation_lineage",
     "method": "Built from scratch using the abstract hierarchy pattern only; no source bytes, facts, names, dates, conclusions, handwriting, or styling were copied."
   },
   "native_assets": [
     {
       "path": "library/templates/TMPL-0002/1.0.0/internal-controller-memo.docx",
       "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "sha256": "af92ae888768c8327f0a1bb8e57d96c8f7fe2606708783812f20bcc9374f7759"
+      "sha256": "8372dc733ba8a49e0a686b13157e80b3fc59ef8b35dc3e64f35bfaf1efc221d5"
     }
   ],
   "producer": {"role": "controller or technical accounting manager", "department": "finance"},

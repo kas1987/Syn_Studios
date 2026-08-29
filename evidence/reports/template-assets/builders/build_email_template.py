@@ -11,11 +11,9 @@ message = EmailMessage(policy=SMTP)
 message["From"] = "{{operations_manager_email}}"
 message["To"] = "{{analyst_email}}, {{counterparty_email}}"
 message["Cc"] = "{{review_owner_email}}"
-message["Date"] = "Thu, 01 Jan 1970 00:00:00 +0000"
-message["Message-ID"] = "<build-slot-message-id@template.invalid>"
+message["Date"] = "{{final_message_date_rfc2822}}"
+message["Message-ID"] = "<{{final_message_id}}>"
 message["Subject"] = "{{case_reference}} | corrected support and remaining item"
-message["X-Syn-Studios-Template"] = "TMPL-0003@1.0.0"
-message["X-Syn-Build-Slots"] = "date,message-id,participants,case-reference,due-date,attachment-facts"
 
 message.set_content("""{{operations_manager_first_name}},
 
@@ -26,6 +24,23 @@ The remaining item is {{open_item_description}}. {{open_item_owner_role}} owns t
 Thanks,
 {{sender_display_name}}
 {{sender_role}}
+
+-----Original Message-----
+From: {{review_owner_display_name}} <{{review_owner_email}}>
+Sent: {{message_5_timestamp}}
+To: {{operations_manager_display_name}} <{{operations_manager_email}}>
+Subject: RE: {{case_reference}} | support request
+
+I moved the check-in to {{meeting_window}}. No decision is needed for that call; it is only to confirm the remaining owner and support location.
+
+-----Original Message-----
+From: {{analyst_display_name}} <{{analyst_email}}>
+Sent: {{message_4_timestamp}}
+To: {{operations_manager_display_name}} <{{operations_manager_email}}>
+Cc: {{review_owner_display_name}} <{{review_owner_email}}>
+Subject: RE: {{case_reference}} | support request
+
+Adding the review owner now. {{distribution_note}} The earlier attachment should remain on hold until the corrected export is circulated.
 
 -----Original Message-----
 From: {{counterparty_display_name}} <{{counterparty_email}}>
@@ -63,7 +78,9 @@ message.add_attachment(
     subtype="plain",
     filename="{{correction_note_name}}",
 )
-message.set_boundary("syn-studios-tmpl-0003-1-0-0")
+message.set_boundary("===============1845263713554174027==")
 
 output.parent.mkdir(parents=True, exist_ok=True)
-output.write_bytes(message.as_bytes())
+payload = message.as_bytes()
+payload = payload.replace(b"Date:\r\n", b"Date: {{final_message_date_rfc2822}}\r\n", 1)
+output.write_bytes(payload)

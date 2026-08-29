@@ -7,14 +7,15 @@
   "artifact_type": "xlsx",
   "lineage": {
     "blueprint_id": "BP-0001",
-    "foundation_ids": ["FOUND-0001", "FOUND-0003", "FOUND-0004"],
-    "method": "Built from scratch from abstract reviewed patterns; no source bytes, facts, formulas, names, values, identifiers, or styling were copied. Rejected FOUND-0004 contributes only the abstract layered-workbook warning and proof expectations."
+    "foundation_ids": ["FOUND-0001"],
+    "lineage_source": "examples/blueprints/BP-0001.internal-close-workbook.json#foundation_lineage",
+    "method": "Built from scratch from the blueprint-authorized abstract pattern; no source bytes, facts, formulas, names, values, identifiers, or styling were copied."
   },
   "native_assets": [
     {
       "path": "library/templates/TMPL-0001/1.0.0/internal-close-reconciliation.xlsx",
       "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "sha256": "fa0d1404c3bb5aecb9949238ffdfcb9fb5600a6fdb5fa345125117379d782762"
+      "sha256": "fdd95ccdf5cd3c8b694a2caa4778768e1fd1d3303ee23d141f7e64a192b42b71"
     }
   ],
   "producer": {"role": "senior accountant", "review_role": "controller", "department": "finance"},
