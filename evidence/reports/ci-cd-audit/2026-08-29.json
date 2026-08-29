@@ -59,5 +59,50 @@
       "owner": "repository owner",
       "status": "open"
     }
-  ]
+  ],
+  "reconciliation": {
+    "reconciled_at": "2026-08-29T20:50:35Z",
+    "audited_head_sha": "9c7367549ae0e673e55c791a7495704e1ab3c61b",
+    "default_branch": "main",
+    "pull_requests_merged": [1, 2],
+    "open_pull_requests": 0,
+    "required_checks": ["contract"],
+    "branch_protection": {
+      "strict_status_checks": true,
+      "enforce_admins": true,
+      "required_linear_history": true,
+      "required_conversation_resolution": true,
+      "allow_force_pushes": false,
+      "allow_deletions": false
+    },
+    "security": {
+      "codeql": "enabled",
+      "dependency_review": "enabled",
+      "dependabot_security_updates": "enabled",
+      "secret_scanning": "enabled",
+      "push_protection": "enabled",
+      "private_vulnerability_reporting": "enabled",
+      "open_code_scanning_alerts": 0,
+      "open_dependabot_alerts": 0,
+      "open_secret_scanning_alerts": 0
+    },
+    "finding_status": {
+      "AUD-001": "fixed",
+      "AUD-002": "fixed",
+      "AUD-003": "fixed",
+      "AUD-004": "fixed"
+    },
+    "grades": {
+      "observability": "A",
+      "transparency": "B",
+      "efficacy": "B",
+      "overall": "B"
+    },
+    "residuals": [
+      "CodeQL and dependency review run on pull requests but are policy-waited rather than required protection contexts.",
+      "GitHub-managed Copilot, Dependabot, and dependency-graph workflows have no local workflow source.",
+      "Secret-scanning non-provider patterns and validity checks are unavailable in current repository settings."
+    ],
+    "next_audit": "monthly while the workflow surface is new"
+  }
 }
