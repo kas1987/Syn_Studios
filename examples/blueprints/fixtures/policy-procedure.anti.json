@@ -1,0 +1,1 @@
+{"fixture_version":"1.0.0","archetype":"policy_procedure","expected":"fail","base_blueprint":"examples/blueprints/BP-0006.policy-procedure.json","mutations":[{"op":"remove","path":"/source_boundary/conflict_resolution"}]}

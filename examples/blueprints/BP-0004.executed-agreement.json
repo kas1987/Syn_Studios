@@ -1,13 +1,20 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "blueprint_id": "BP-0004",
   "name": "Executed commercial or incentive agreement",
   "artifact_type": "pdf",
+  "foundation_lineage": [{
+    "card_id": "FOUND-0008", "card_sha256": "7d6e69556cb4ab76dd9da6ea8acd8797c393f5a57ba19a041d23b8afbb38c304", "reviewed_source_sha256": "9b662db862a533f30c0e789f6c4d6c160e6f19bbff5e067dd18096f86b52ac7e", "use_mode": "reviewed_pattern",
+    "patterns_used": ["Use a controlled two-page form with explicit lifecycle, approvals, implementation, distribution, optional attachments, and retention metadata."],
+    "prohibited_content_acknowledged": true,
+    "transformation_boundary": "Reuse only explicit lifecycle, approval, distribution, attachment, and retention controls; draft all terms, exhibits, parties, facts, execution evidence, and formatting from the authorized new world."
+  }],
   "producer": "Legal, commercial, and governmental or counterparty representatives",
   "purpose": "Record enforceable terms, definitions, conditions, remedies, schedules, and execution evidence.",
   "medium": "Native or assembled executed PDF with exhibits",
   "lifecycle": "Executed final record",
-  "authority": "authoritative",
+  "authority": {"primary_class": "authoritative", "governing_scope": "Controls the fictional parties' enforceable terms within the agreement scope.", "non_governing_scope": "Does not control matters outside its scope or make drafts, summaries, and working notes authoritative."},
+  "source_boundary": {"authorized_inputs": ["Approved fictional-world parties, terms, dates, and execution authority", "Approved schedules, exhibits, and referenced calculations"], "excluded_inputs": ["Real signatures and real-party identifiers", "Unapproved terms or fabricated execution authority"], "conflict_resolution": "The executed agreement and incorporated schedules govern; drafts and summaries remain explicitly non-governing."},
   "footprint": {
     "target": "15-40 pages including schedules and signature pages",
     "natural_depth": [
@@ -16,8 +23,10 @@
       "Notice and amendment mechanics",
       "Schedules, exhibits, and referenced calculations",
       "Execution blocks supported by the approved fictional world"
-    ]
+    ],
+    "source_owned_rationale": "The footprint comes from defined terms, negotiated obligations, boilerplate, schedules, exhibits, and execution mechanics required by the agreement."
   },
+  "handling_history": {"mode": "present", "sequence": ["Terms and schedules drafted from approved world facts", "Authorized fictional parties review final form", "Execution evidence applied within approved authority", "Executed copy assembled, distributed, and retained"]},
   "complexity_layers": [
     {"layer": "core", "features": ["Governing terms", "Effective date", "Scope", "Conditions"]},
     {"layer": "operational_depth", "features": ["Boilerplate", "Definitions", "Schedules", "Notice details"]},
@@ -25,6 +34,14 @@
     {"layer": "handling_history", "features": ["Restrained assembly or scan variation when the execution lifecycle supports it"]}
   ],
   "prohibited": ["Summary masquerading as agreement", "Invented real signature", "Casual internal annotations on the authoritative original", "Missing referenced exhibit that carries a governing fact"],
-  "proof_gates": ["Render every page", "Verify page and exhibit continuity", "Inspect signatures and metadata boundaries", "Cross-check defined terms and governing schedules"]
+  "proof_gates": [
+    {"category": "core_integrity", "applicable": true, "procedure": "Cross-check defined terms, governing clauses, dates, signatures, schedules, and exhibits."},
+    {"category": "render", "applicable": true, "procedure": "Render every page and verify page, signature, schedule, and exhibit continuity."},
+    {"category": "metadata", "applicable": true, "procedure": "Inspect PDF properties, embedded files, annotations, signatures, layers, and producer metadata."},
+    {"category": "computational", "applicable": false, "procedure": "Confirm governing calculations are validated in separately cited schedules.", "not_applicable_rationale": "The PDF template does not execute material formulas; cited schedules own computation."},
+    {"category": "provenance", "applicable": true, "procedure": "Trace parties, terms, dates, authority, and execution evidence to approved world sources."},
+    {"category": "leakage", "applicable": true, "procedure": "Scan visible text, metadata, annotations, attachments, and hidden layers for residue."},
+    {"category": "authority_separation", "applicable": true, "procedure": "Verify executed terms are distinguishable from drafts, summaries, and contextual material."},
+    {"category": "anti_filler", "applicable": true, "procedure": "Map clauses, schedules, exhibits, and boilerplate to a plausible legal purpose."}
+  ]
 }
-

@@ -1,0 +1,1 @@
+{"fixture_version":"1.0.0","archetype":"internal_decision_memo","expected":"fail","base_blueprint":"examples/blueprints/BP-0002.internal-controller-memo.json","mutations":[{"op":"remove","path":"/authority/non_governing_scope"}]}

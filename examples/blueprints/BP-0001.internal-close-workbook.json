@@ -1,13 +1,31 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "blueprint_id": "BP-0001",
   "name": "Internal monthly close and reconciliation workbook",
   "artifact_type": "xlsx",
+  "foundation_lineage": [{
+    "card_id": "FOUND-0001",
+    "card_sha256": "83fe9741e13e1b6e441aab0bd2eb2b08af27c3b228d4ddbbf30b91ce6c7ce82e",
+    "reviewed_source_sha256": "65c876aaafec4168af12446b258f5fe9978df4fc8eabde48a91630e2cda47e4e",
+    "use_mode": "reviewed_pattern",
+    "patterns_used": ["Separate source populations by originating module and retain system-like field order.", "Use a small close-preparation/control tab beside raw export tabs.", "Vary row density by population instead of normalizing every sheet."],
+    "prohibited_content_acknowledged": true,
+    "transformation_boundary": "Reuse only the reviewed abstract workbook organization; rebuild every fact, identifier, value, formula, and style from the authorized new world."
+  }],
   "producer": "Senior accountant with controller review",
   "purpose": "Reconcile source-system activity to the general ledger and prepare supported close entries.",
   "medium": "Native Excel workbook assembled from ERP exports and analyst schedules",
   "lifecycle": "Working copy through reviewed close file",
-  "authority": "supporting",
+  "authority": {
+    "primary_class": "supporting",
+    "governing_scope": "Supports reconciliation and proposed close entries within the stated close period.",
+    "non_governing_scope": "Does not replace the general ledger, approved policy, or executed authorization."
+  },
+  "source_boundary": {
+    "authorized_inputs": ["Approved fictional-world ERP populations", "Approved fictional-world general ledger and close calendar"],
+    "excluded_inputs": ["Prior submission facts and identifiers", "Private grading or generation controls"],
+    "conflict_resolution": "The approved fictional-world ledger governs amounts; unresolved source differences remain explicit exceptions."
+  },
   "footprint": {
     "target": "8-14 tabs with population-dependent rows",
     "natural_depth": [
@@ -16,8 +34,10 @@
       "Prior-period comparison",
       "Reconciliation bridges and proposed entries",
       "Exception log, review checks, and source index"
-    ]
+    ],
+    "source_owned_rationale": "The tab and row ranges arise from separate ERP populations, mapping needs, reconciliation work, and controller review rather than a page quota."
   },
+  "handling_history": {"mode": "present", "sequence": ["ERP populations exported", "Accountant maps and reconciles activity", "Controller reviews checks and proposed entries", "Reviewed close copy retained"]},
   "complexity_layers": [
     {"layer": "core", "features": ["Balanced entry", "Reconciled source and ledger totals", "Explicit close date"]},
     {"layer": "operational_depth", "features": ["Transaction populations", "Mappings", "Status codes", "Prior-period rows"]},
@@ -25,6 +45,14 @@
     {"layer": "working_residue", "features": ["One bounded scratch area", "Reviewer check cells", "Clearly superseded bridge"]}
   ],
   "prohibited": ["Hidden answer key", "Broken or pasted-over formulas", "Every tab sharing one presentation style", "Task-only rows"],
-  "proof_gates": ["Recalculate workbook", "Tie source populations to mapped totals", "Render and inspect every sheet", "Audit hidden content and leakage"]
+  "proof_gates": [
+    {"category": "core_integrity", "applicable": true, "procedure": "Tie source populations, mapped totals, ledger balances, and proposed entries."},
+    {"category": "render", "applicable": true, "procedure": "Render and inspect every populated sheet and print area."},
+    {"category": "metadata", "applicable": true, "procedure": "Inspect properties, hidden content, comments, names, links, and external connections."},
+    {"category": "computational", "applicable": true, "procedure": "Recalculate every formula and verify material totals and error states."},
+    {"category": "provenance", "applicable": true, "procedure": "Trace every input population to the approved fictional-world source manifest."},
+    {"category": "leakage", "applicable": true, "procedure": "Scan visible and hidden content for prior-world, generator, and evaluation residue."},
+    {"category": "authority_separation", "applicable": true, "procedure": "Confirm supporting work is distinct from governing ledger and approvals."},
+    {"category": "anti_filler", "applicable": true, "procedure": "Map every tab and material range to a producer-owned close workflow purpose."}
+  ]
 }
-

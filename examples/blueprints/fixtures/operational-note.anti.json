@@ -1,0 +1,1 @@
+{"fixture_version":"1.0.0","archetype":"operational_note","expected":"fail","base_blueprint":"examples/blueprints/BP-0008.operational-note.json","mutations":[{"op":"replace","path":"/foundation_lineage/0/prohibited_content_acknowledged","value":false}]}

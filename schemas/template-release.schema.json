@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://syn-studios.local/schemas/template-release.schema.json",
+  "title": "Syn Studios template release record",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "release_id", "version", "status", "template", "blueprint", "sanitization", "reviews", "conductor_approval", "evidence"],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "boundEvidence": {
+      "type": "object", "additionalProperties": false, "required": ["status", "template_sha256", "blueprint_procedure"],
+      "properties": {"status": {"enum": ["pass", "not_applicable"]}, "template_sha256": {"$ref": "#/$defs/sha256"}, "blueprint_procedure": {"type": "string", "minLength": 8}, "record_path": {"type": "string", "minLength": 1}, "record_sha256": {"$ref": "#/$defs/sha256"}, "rationale": {"type": "string", "minLength": 8}},
+      "allOf": [{"if": {"properties": {"status": {"const": "pass"}}}, "then": {"required": ["record_path", "record_sha256"], "not": {"required": ["rationale"]}}, "else": {"required": ["rationale"], "not": {"anyOf": [{"required": ["record_path"]}, {"required": ["record_sha256"]}]}}}]
+    },
+    "laneReview": {
+      "type": "object", "additionalProperties": false, "required": ["reviewer", "verdict", "template_sha256", "record_path", "record_sha256"],
+      "properties": {"reviewer": {"type": "string", "minLength": 3}, "verdict": {"const": "pass"}, "template_sha256": {"$ref": "#/$defs/sha256"}, "record_path": {"type": "string", "minLength": 1}, "record_sha256": {"$ref": "#/$defs/sha256"}}
+    }
+  },
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "release_id": {"type": "string", "pattern": "^REL-[0-9]{4}$"},
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "status": {"enum": ["released", "deprecated", "withdrawn"]},
+    "template": {"type": "object", "additionalProperties": false, "required": ["path", "sha256", "artifact_type"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}, "artifact_type": {"enum": ["docx", "xlsx", "pdf", "eml", "csv", "mixed_package"]}}},
+    "blueprint": {"type": "object", "additionalProperties": false, "required": ["blueprint_id", "path", "sha256"], "properties": {"blueprint_id": {"type": "string", "pattern": "^BP-[0-9]{4}$"}, "path": {"type": "string", "minLength": 1}, "sha256": {"$ref": "#/$defs/sha256"}}},
+    "sanitization": {"type": "object", "additionalProperties": false, "required": ["record_path", "record_sha256", "template_sha256", "foundation_card_ids"], "properties": {"record_path": {"type": "string", "minLength": 1}, "record_sha256": {"$ref": "#/$defs/sha256"}, "template_sha256": {"$ref": "#/$defs/sha256"}, "foundation_card_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^FOUND-[0-9]{4}$"}}}},
+    "reviews": {"type": "object", "additionalProperties": false, "required": ["terra", "sol"], "properties": {"terra": {"$ref": "#/$defs/laneReview"}, "sol": {"$ref": "#/$defs/laneReview"}}},
+    "conductor_approval": {"type": "object", "additionalProperties": false, "required": ["approver", "decision", "template_sha256", "record_path", "record_sha256"], "properties": {"approver": {"type": "string", "minLength": 3}, "decision": {"const": "approved"}, "template_sha256": {"$ref": "#/$defs/sha256"}, "record_path": {"type": "string", "minLength": 1}, "record_sha256": {"$ref": "#/$defs/sha256"}}},
+    "evidence": {"type": "object", "additionalProperties": false, "required": ["core_integrity", "render", "metadata", "computational", "provenance", "leakage", "authority_separation", "anti_filler"], "properties": {"core_integrity": {"$ref": "#/$defs/boundEvidence"}, "render": {"$ref": "#/$defs/boundEvidence"}, "metadata": {"$ref": "#/$defs/boundEvidence"}, "computational": {"$ref": "#/$defs/boundEvidence"}, "provenance": {"$ref": "#/$defs/boundEvidence"}, "leakage": {"$ref": "#/$defs/boundEvidence"}, "authority_separation": {"$ref": "#/$defs/boundEvidence"}, "anti_filler": {"$ref": "#/$defs/boundEvidence"}}}
+  }
+}
