@@ -29,16 +29,20 @@ class LibraryControlPlaneTests(unittest.TestCase):
             target = root / "schemas" / f"{name}.schema.json"
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / "schemas" / target.name, target)
-        card_target = root / "library/foundations/FOUND-0001.json"
-        card_target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(ROOT / "library/foundations/FOUND-0001.json", card_target)
-        blueprint_target = root / "examples/blueprints/BP-0001.internal-close-workbook.json"
-        blueprint_target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(ROOT / "examples/blueprints/BP-0001.internal-close-workbook.json", blueprint_target)
+        card_root = root / "library/foundations"
+        card_root.mkdir(parents=True, exist_ok=True)
+        for source in (ROOT / "library/foundations").glob("FOUND-*.json"):
+            shutil.copy2(source, card_root / source.name)
+        card_target = card_root / "FOUND-0001.json"
+        blueprint_root = root / "examples/blueprints"
+        blueprint_root.mkdir(parents=True, exist_ok=True)
+        for source in (ROOT / "examples/blueprints").glob("BP-*.json"):
+            shutil.copy2(source, blueprint_root / source.name)
+        blueprint_target = blueprint_root / "BP-0001.internal-close-workbook.json"
         fixture_root = root / "examples/blueprints/fixtures"
         fixture_root.mkdir(parents=True, exist_ok=True)
-        for name in ("close-workbook.positive.json", "close-workbook.anti.json"):
-            shutil.copy2(ROOT / "examples/blueprints/fixtures" / name, fixture_root / name)
+        for source in (ROOT / "examples/blueprints/fixtures").glob("*.json"):
+            shutil.copy2(source, fixture_root / source.name)
         return root, card_target, blueprint_target
 
     def assert_finding(self, root, fragment):
@@ -66,7 +70,7 @@ class LibraryControlPlaneTests(unittest.TestCase):
         write_json(descriptor_path, descriptor)
         descriptor_binding = {"path": descriptor_path.relative_to(root).as_posix(), "sha256": file_hash(descriptor_path)}
 
-        def evidence(name, record_type, verdict, actor, categories=None, procedures=None):
+        def evidence(name, record_type, verdict, actor_id, actor, categories=None, procedures=None):
             record = {
                 "schema_version": "1.0.0",
                 "record_id": f"EVID-RECORD-{name.upper()}",
@@ -77,6 +81,7 @@ class LibraryControlPlaneTests(unittest.TestCase):
                 "descriptor_sha256": descriptor_binding["sha256"],
                 "native_asset_sha256s": [asset_binding["sha256"]],
                 "verdict": verdict,
+                "actor_id": actor_id,
                 "actor": actor,
                 "summary": f"Typed evidence for the {name} release gate.",
             }
@@ -88,12 +93,12 @@ class LibraryControlPlaneTests(unittest.TestCase):
             write_json(path, record)
             return {"record_path": path.relative_to(root).as_posix(), "record_sha256": file_hash(path)}
 
-        sanitization = evidence("sanitization", "sanitization", "SANITIZATION_PASS", "Sanitization reviewer")
-        terra = evidence("terra", "terra_review", "USABILITY_PASS", "Terra reviewer")
-        sol = evidence("sol", "sol_review", "INTEGRITY_PASS", "Sol reviewer")
-        conductor = evidence("conductor", "conductor_approval", "APPROVED", "Conductor")
+        sanitization = evidence("sanitization", "sanitization", "SANITIZATION_PASS", "reviewer:sanitization", "Sanitization reviewer")
+        terra = evidence("terra", "terra_review", "USABILITY_PASS", "reviewer:terra", "Terra reviewer")
+        sol = evidence("sol", "sol_review", "INTEGRITY_PASS", "reviewer:sol", "Sol reviewer")
+        conductor = evidence("conductor", "conductor_approval", "APPROVED", "reviewer:conductor", "Conductor")
         procedures = {gate["category"]: gate["procedure"] for gate in blueprint["proof_gates"]}
-        technical = evidence("technical", "technical_validation", "VALIDATION_PASS", "Validation runner", sorted(procedures), procedures)
+        technical = evidence("technical", "technical_validation", "VALIDATION_PASS", "runner:validation", "Validation runner", sorted(procedures), procedures)
         release = {
             "schema_version": "2.0.0",
             "release_id": "REL-0001",
@@ -188,6 +193,23 @@ class LibraryControlPlaneTests(unittest.TestCase):
             positive.unlink()
             self.assert_finding(root, "requires exactly one pass and one fail fixture")
 
+    def test_archetype_coverage_rejects_duplicates_and_omissions(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, _ = self.make_minimal_root(temporary)
+            blueprint_path = root / "examples/blueprints/BP-0009.external-notice-approval.json"
+            blueprint = json.loads(blueprint_path.read_text(encoding="utf-8"))
+            blueprint["archetype"] = "operational_note"
+            write_json(blueprint_path, blueprint)
+            for name in ("external-notice.positive.json", "external-notice.anti.json"):
+                fixture_path = root / "examples/blueprints/fixtures" / name
+                fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+                fixture["archetype"] = "operational_note"
+                write_json(fixture_path, fixture)
+            findings, _ = validate_repository(root)
+            rendered = "\n".join(findings)
+            self.assertIn("external_notice_approval: requires exactly one production blueprint; found 0", rendered)
+            self.assertIn("operational_note: requires exactly one production blueprint; found 2", rendered)
+
     def test_typed_release_and_catalog_pass(self):
         with tempfile.TemporaryDirectory() as temporary:
             root, _, blueprint_path = self.make_minimal_root(temporary)
@@ -219,6 +241,25 @@ class LibraryControlPlaneTests(unittest.TestCase):
             release["reviews"]["terra"]["record_sha256"] = file_hash(terra_path)
             write_json(release_path, release)
             self.assert_finding(root, "'USABILITY_PASS' was expected")
+
+    def test_reviewer_independence_uses_normalized_stable_ids(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, _, _ = self.make_release(root, blueprint_path)
+            references = {
+                "terra": release["reviews"]["terra"],
+                "sol": release["reviews"]["sol"],
+                "conductor": release["conductor_approval"],
+            }
+            actor_ids = {"terra": "Reviewer:Same", "sol": "reviewer:same", "conductor": " REVIEWER:SAME "}
+            for lane, reference in references.items():
+                record_path = root / reference["record_path"]
+                record = json.loads(record_path.read_text(encoding="utf-8"))
+                record["actor_id"] = actor_ids[lane]
+                write_json(record_path, record)
+                reference["record_sha256"] = file_hash(record_path)
+            write_json(release_path, release)
+            self.assert_finding(root, "identities must be independent")
 
     def test_direct_blueprint_hash_sabotage_fails(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -252,6 +293,18 @@ class LibraryControlPlaneTests(unittest.TestCase):
             rendered = "\n".join(findings)
             self.assertIn("descriptor.template_id", rendered)
             self.assertIn("must exactly match release native assets", rendered)
+
+    def test_anonymous_file_in_template_version_directory_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            _, _, descriptor_path, _ = self.make_release(root, blueprint_path)
+            build_side = descriptor_path.parent.parent / "build/build.log"
+            build_side.parent.mkdir(parents=True, exist_ok=True)
+            build_side.write_text("build output\n", encoding="utf-8")
+            self.assertEqual(validate_repository(root)[0], [])
+            anonymous = descriptor_path.parent / "anonymous-world-facts.csv"
+            anonymous.write_text("private,answer\n", encoding="utf-8")
+            self.assert_finding(root, "file is not bound as the descriptor or a native asset")
 
     def test_catalog_mismatched_id_descriptor_and_asset_hashes_fail(self):
         with tempfile.TemporaryDirectory() as temporary:

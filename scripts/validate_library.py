@@ -7,6 +7,7 @@ import argparse
 import copy
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -219,6 +220,7 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
     releases: dict[str, tuple[Path, dict[str, Any]]] = {}
     release_template_keys: set[tuple[str, str]] = set()
     release_descriptors: dict[Path, dict[str, Any]] = {}
+    release_version_files: dict[Path, set[Path]] = {}
     count = 0
 
     for path in sorted((root / "library/foundations").glob("FOUND-*.json")):
@@ -287,6 +289,18 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
                 if isinstance(pattern, str) and pattern not in allowed_patterns:
                     findings.append(f"{prefix}.patterns_used: pattern is not named by the foundation card")
 
+    archetype_schema = as_dict(as_dict(schemas["artifact-blueprint"].get("properties")).get("archetype"))
+    required_archetypes = {value for value in as_list(archetype_schema.get("enum")) if isinstance(value, str)}
+    archetype_blueprints: dict[str, list[str]] = {}
+    for blueprint_id, (_, blueprint) in blueprints.items():
+        archetype = blueprint.get("archetype")
+        if isinstance(archetype, str):
+            archetype_blueprints.setdefault(archetype, []).append(blueprint_id)
+    for archetype in sorted(required_archetypes):
+        identifiers = archetype_blueprints.get(archetype, [])
+        if len(identifiers) != 1:
+            findings.append(f"examples/blueprints:{archetype}: requires exactly one production blueprint; found {len(identifiers)}")
+
     for path in sorted((root / "library/releases").glob("REL-*.json")):
         data = load_json(path, root, findings)
         if data is None:
@@ -311,8 +325,17 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
 
     for path, data in releases.values():
         label = display_path(path, root)
+        template_id, version = data.get("template_id"), data.get("version")
+        version_root = None
+        if isinstance(template_id, str) and isinstance(version, str):
+            version_root = (root / "library/templates" / template_id / version).resolve()
+            release_version_files.setdefault(version_root, set())
         descriptor_ref = as_dict(data.get("descriptor"))
         descriptor_path = check_bound_file(root, descriptor_ref, "path", "sha256", f"{label}:descriptor", findings, Path("library/templates"))
+        if descriptor_path is not None and version_root is not None:
+            if descriptor_path.parent != version_root:
+                findings.append(f"{label}:descriptor.path: must be directly under its template version directory")
+            release_version_files[version_root].add(descriptor_path)
         descriptor_hash = descriptor_ref.get("sha256")
         descriptor = load_json(descriptor_path, root, findings) if descriptor_path is not None else None
         if descriptor is not None:
@@ -324,7 +347,11 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
             findings.append(f"{label}:native_assets: duplicate asset path or binding")
         for index, asset in enumerate(as_list(data.get("native_assets"))):
             if isinstance(asset, dict):
-                check_bound_file(root, asset, "path", "sha256", f"{label}:native_assets.{index}", findings, Path("library/templates"))
+                asset_path = check_bound_file(root, asset, "path", "sha256", f"{label}:native_assets.{index}", findings, Path("library/templates"))
+                if asset_path is not None and version_root is not None:
+                    if asset_path != version_root and version_root not in asset_path.parents:
+                        findings.append(f"{label}:native_assets.{index}.path: must be under its template version directory")
+                    release_version_files[version_root].add(asset_path)
         asset_hashes = {hash_value for _, hash_value in asset_pairs}
 
         blueprint_ref = as_dict(data.get("blueprint"))
@@ -365,8 +392,9 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
         review_paths = [typed[name][0] for name in ("terra", "sol", "conductor") if typed[name][0] is not None]
         if len(review_paths) != len(set(review_paths)):
             findings.append(f"{label}:reviews: Terra, Sol, and conductor record paths must be distinct")
-        actors = [typed[name][1].get("actor") for name in ("terra", "sol", "conductor") if isinstance(typed[name][1].get("actor"), str)]
-        if len(actors) != len(set(actors)):
+        actor_ids = [typed[name][1].get("actor_id") for name in ("terra", "sol", "conductor") if isinstance(typed[name][1].get("actor_id"), str)]
+        normalized_actor_ids = [actor_id.strip().casefold() for actor_id in actor_ids]
+        if len(actor_ids) != 3 or len(normalized_actor_ids) != len(set(normalized_actor_ids)):
             findings.append(f"{label}:reviews: Terra, Sol, and conductor identities must be independent")
 
         blueprint_gates = {gate.get("category"): gate for gate in as_list(blueprint_entry[1].get("proof_gates")) if blueprint_entry and isinstance(gate, dict) and isinstance(gate.get("category"), str)} if blueprint_entry else {}
@@ -379,6 +407,24 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
             expected_procedure = as_dict(blueprint_gates.get(category)).get("procedure")
             if record and as_dict(record.get("procedures")).get(category) != expected_procedure:
                 findings.append(f"{label}:evidence.{category}.procedures: must exactly match the blueprint proof gate")
+
+    templates_root = root / "library/templates"
+    discovered_version_roots = {
+        version_path.resolve()
+        for template_path in templates_root.glob("TMPL-*")
+        if template_path.is_dir()
+        for version_path in template_path.iterdir()
+        if version_path.is_dir() and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version_path.name)
+    }
+    for version_root in sorted(discovered_version_roots | set(release_version_files), key=str):
+        label = display_path(version_root, root)
+        expected_files = release_version_files.get(version_root)
+        if expected_files is None:
+            findings.append(f"{label}: template version directory is not bound by a release")
+            continue
+        actual_files = {file_path.resolve() for file_path in version_root.rglob("*") if file_path.is_file()} if version_root.is_dir() else set()
+        for anonymous in sorted(actual_files - expected_files, key=str):
+            findings.append(f"{display_path(anonymous, root)}: file is not bound as the descriptor or a native asset")
 
     fixture_pairs: dict[str, list[tuple[str, str]]] = {}
     for path in sorted((root / "examples/blueprints/fixtures").glob("*.json")):

@@ -4,7 +4,7 @@
   "title": "Syn Studios typed template-release evidence",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "record_id", "record_type", "release_id", "template_id", "version", "descriptor_sha256", "native_asset_sha256s", "verdict", "actor", "summary"],
+  "required": ["schema_version", "record_id", "record_type", "release_id", "template_id", "version", "descriptor_sha256", "native_asset_sha256s", "verdict", "actor_id", "actor", "summary"],
   "$defs": {"sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}},
   "properties": {
     "schema_version": {"const": "1.0.0"},
@@ -16,6 +16,7 @@
     "descriptor_sha256": {"$ref": "#/$defs/sha256"},
     "native_asset_sha256s": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/sha256"}},
     "verdict": {"enum": ["SANITIZATION_PASS", "USABILITY_PASS", "INTEGRITY_PASS", "APPROVED", "VALIDATION_PASS", "VALIDATION_NOT_APPLICABLE"]},
+    "actor_id": {"type": "string", "minLength": 3, "maxLength": 128, "pattern": ".*\\S.*"},
     "actor": {"type": "string", "minLength": 3},
     "categories": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["core_integrity", "render", "metadata", "computational", "provenance", "leakage", "authority_separation", "anti_filler"]}},
     "procedures": {
