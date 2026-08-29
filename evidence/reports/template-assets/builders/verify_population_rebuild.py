@@ -110,7 +110,8 @@ def main() -> int:
         "formula_boundary": expected_end,
         "control_results": control_results,
         "rendered_outputs": outputs,
-        "verdict": "PASS",
+        "workbook_readiness": control_results["B16"],
+        "rebuild_verdict": "PASS",
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")

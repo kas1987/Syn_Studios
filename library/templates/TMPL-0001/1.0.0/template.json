@@ -10,7 +10,7 @@
     {
       "path": "library/templates/TMPL-0001/1.0.0/internal-close-reconciliation.xlsx",
       "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "sha256": "6e7dcce5515284892f50b60ec652e696316f70cad63be031772fe3e4954e307d"
+      "sha256": "2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66"
     }
   ],
   "producer": {"role": "senior accountant", "review_role": "controller", "department": "finance"},

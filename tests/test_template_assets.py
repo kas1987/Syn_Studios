@@ -423,6 +423,16 @@ class TemplateAssetTests(unittest.TestCase):
         self.assertEqual(checks["B8"], "FAIL")
         self.assertEqual(checks["B16"], "FAIL")
 
+    def test_xlsx_unrelated_reconciliation_substitution_recalculates_to_fail(self):
+        def unrelated_reconciliation(workbook):
+            populate_minimal_valid_workbook(workbook)
+            workbook["Reconciliation"]["A5"] = "DIFFERENT"
+            workbook["Reconciliation"]["B5"] = "Other"
+
+        checks = recalculate_workbook(unrelated_reconciliation)
+        self.assertEqual(checks["B9"], "FAIL")
+        self.assertEqual(checks["B16"], "FAIL")
+
     def test_xlsx_malformed_exception_recalculates_to_fail(self):
         def malformed_exception(workbook):
             populate_minimal_valid_workbook(workbook)
@@ -469,7 +479,8 @@ class TemplateAssetTests(unittest.TestCase):
             self.assertEqual(evidence["source_print_area"], "'Source_Data'!$A$1:$H$34")
             self.assertEqual(evidence["formula_boundary"], 34)
             self.assertEqual(evidence["control_results"], {"B5": "PASS", "B6": "PASS", "B7": "PASS", "B8": "NOT READY", "B13": "PASS", "B16": "NOT READY"})
-            self.assertEqual(evidence["verdict"], "PASS")
+            self.assertEqual(evidence["workbook_readiness"], "NOT READY")
+            self.assertEqual(evidence["rebuild_verdict"], "PASS")
             self.assertGreaterEqual(len(evidence["rendered_outputs"]), 2)
             self.assertTrue(all(re.fullmatch(r"[0-9a-f]{64}", item["sha256"]) for item in evidence["rendered_outputs"]))
 
