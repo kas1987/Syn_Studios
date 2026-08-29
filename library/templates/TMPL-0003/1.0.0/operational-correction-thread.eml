@@ -1,0 +1,76 @@
+From: {{operations_manager_email}}
+To: {{analyst_email}}, {{counterparty_email}}
+Cc: {{review_owner_email}}
+Date: Thu, 01 Jan 1970 00:00:00 +0000
+Message-ID: <build-slot-message-id@template.invalid>
+Subject: {{case_reference}} | corrected support and remaining item
+X-Syn-Studios-Template: TMPL-0003@1.0.0
+X-Syn-Build-Slots:
+ date,message-id,participants,case-reference,due-date,attachment-facts
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="syn-studios-tmpl-0003-1-0-0"
+
+--syn-studios-tmpl-0003-1-0-0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+{{operations_manager_first_name}},
+
+The corrected support is attached. Please use {{corrected_attachment_name}} a=
+nd disregard {{superseded_attachment_name}}.
+
+The remaining item is {{open_item_description}}. {{open_item_owner_role}} own=
+s the follow-up by {{open_item_due_date}}. This message coordinates the work;=
+ it does not approve or resolve the underlying treatment.
+
+Thanks,
+{{sender_display_name}}
+{{sender_role}}
+
+-----Original Message-----
+From: {{counterparty_display_name}} <{{counterparty_email}}>
+Sent: {{message_3_timestamp}}
+To: {{operations_manager_display_name}} <{{operations_manager_email}}>
+Subject: RE: {{case_reference}} | support request
+
+We can confirm receipt of {{received_item_description}}. The field labeled {{=
+questioned_field_name}} still needs clarification from your team.
+
+-----Original Message-----
+From: {{analyst_display_name}} <{{analyst_email}}>
+Sent: {{message_2_timestamp}}
+To: {{counterparty_display_name}} <{{counterparty_email}}>
+Cc: {{operations_manager_display_name}} <{{operations_manager_email}}>
+Subject: RE: {{case_reference}} | support request
+
+Attaching the first export now. I have not validated {{unvalidated_scope}} ye=
+t; I will follow up after the source owner responds.
+
+-----Original Message-----
+From: {{operations_manager_display_name}} <{{operations_manager_email}}>
+Sent: {{message_1_timestamp}}
+To: {{analyst_display_name}} <{{analyst_email}}>
+Subject: {{case_reference}} | support request
+
+Please assemble the source support for {{request_scope}}. Keep any unresolved=
+ questions separate from the governing record.
+
+--syn-studios-tmpl-0003-1-0-0
+Content-Type: text/csv; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="{{corrected_attachment_name}}"
+MIME-Version: 1.0
+
+row_reference,status_code,question_owner_role
+{{row_reference}},{{status_code}},{{question_owner_role}}
+
+--syn-studios-tmpl-0003-1-0-0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="{{correction_note_name}}"
+MIME-Version: 1.0
+
+Correction note: {{correction_summary}}
+Superseded attachment: {{superseded_attachment_name}}
+
+--syn-studios-tmpl-0003-1-0-0--

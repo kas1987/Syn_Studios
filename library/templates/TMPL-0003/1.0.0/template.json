@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0.0",
+  "template_id": "TMPL-0003",
+  "version": "1.0.0",
+  "name": "Operational correction email chain",
+  "release_status": "candidate",
+  "artifact_type": "eml",
+  "lineage": {
+    "blueprint_id": "BP-0003",
+    "foundation_ids": ["FOUND-0006"],
+    "method": "Built as a new standards-compliant MIME message from the abstract quoted-thread concept; no source bytes, addresses, names, dates, identifiers, amounts, or facts were copied."
+  },
+  "native_assets": [
+    {
+      "path": "library/templates/TMPL-0003/1.0.0/operational-correction-thread.eml",
+      "media_type": "message/rfc822",
+      "sha256": "ac002c90d10a19f7aab37b1cf38f3d47ff7042f82886b9739b47de157df47c49"
+    }
+  ],
+  "producer": {"role": "operations manager with analyst and counterparty participants", "department": "operations"},
+  "purpose": "Coordinate an operational exception, circulate and correct support, and retain one bounded open item without creating approval authority.",
+  "lifecycle": "sent and received thread retained in an internal project file",
+  "authority": "contextual",
+  "slots": [
+    "operations_manager_email", "analyst_email", "counterparty_email", "review_owner_email", "case_reference", "corrected_attachment_name", "superseded_attachment_name", "open_item_description", "open_item_owner_role", "open_item_due_date", "sender_display_name", "sender_role", "operations_manager_first_name", "counterparty_display_name", "message_3_timestamp", "received_item_description", "questioned_field_name", "analyst_display_name", "message_2_timestamp", "operations_manager_display_name", "unvalidated_scope", "message_1_timestamp", "request_scope", "correction_note_name", "correction_summary", "row_reference", "status_code", "question_owner_role"
+  ],
+  "slot_contract": {
+    "token_format": "{{slot_name}}",
+    "required": true,
+    "instantiated_artifact_policy": "reject_if_any_declared_or_double_brace_token_or_template.invalid_address_remains",
+    "value_source": "authorized world facts or explicit role assignment only",
+    "header_fields_to_replace": ["Date", "Message-ID", "From", "To", "Cc", "Subject"]
+  },
+  "knowledge_and_authority_constraints": [
+    "Each participant may state only facts available to that role at that point in the thread.",
+    "The analyst explicitly marks unvalidated scope rather than resolving it.",
+    "The counterparty confirms receipt and asks a question; it does not supply internal conclusions.",
+    "The final message coordinates follow-up and does not approve the underlying treatment."
+  ],
+  "prohibited_content": ["prior submission bytes or facts", "real addresses or identities", "impossible or duplicate message IDs", "fabricated approvals", "attachment claims unsupported by instantiated attachments", "private grading or generator residue", "unresolved build tokens in instantiated artifacts"],
+  "supported_consumers": ["anna", "holodeck-file-generation", "human-artifact-realism"],
+  "capabilities": ["native_eml", "multipart_mime", "quoted_thread", "role_specific_voice", "attachment_correction", "embedded_csv_attachment", "embedded_text_attachment", "bounded_open_item", "machine_parseable"],
+  "generation_notes": [
+    "Replace the epoch template date and build-slot Message-ID with plausible unique values at instantiation.",
+    "Update both attachment filenames and embedded attachment facts consistently.",
+    "Preserve partial replies and role-specific knowledge boundaries rather than making every message complete.",
+    "Do not add a signature image, approval claim, or answer-bearing marginal note."
+  ],
+  "proof_expectations": [
+    {"id": "eml-parse", "capability": "mime_parse", "required": true, "description": "Parse the message and verify required headers, one body, and two attachments."},
+    {"id": "eml-attachments", "capability": "attachment_open", "required": true, "description": "Open each attachment and reconcile its filename and facts to the body."},
+    {"id": "eml-chronology", "capability": "knowledge_and_time_review", "required": true, "description": "Verify chronological order, unique message identities, and role knowledge boundaries."},
+    {"id": "eml-leakage", "capability": "metadata_and_content_scan", "required": true, "description": "Reject identities, world facts, generator residue, template addresses, and unresolved tokens in an instantiated artifact."}
+  ]
+}

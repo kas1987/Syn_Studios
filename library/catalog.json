@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0.0",
+  "catalog_id": "syn-studios-artifact-library",
+  "discovery_fields": ["artifact_type", "authority", "lifecycle", "capabilities", "supported_consumers", "blueprint_id", "release_status"],
+  "templates": [
+    {
+      "kind": "artifact_template",
+      "template_id": "TMPL-0001",
+      "version": "1.0.0",
+      "name": "Internal close and reconciliation workbook",
+      "release_status": "candidate",
+      "artifact_type": "xlsx",
+      "authority": "supporting",
+      "lifecycle": "internal working copy through reviewed close file",
+      "blueprint_id": "BP-0001",
+      "descriptor": "library/templates/TMPL-0001/1.0.0/template.json",
+      "native_assets": ["library/templates/TMPL-0001/1.0.0/internal-close-reconciliation.xlsx"],
+      "supported_consumers": ["anna", "holodeck-file-generation", "human-artifact-realism"],
+      "capabilities": ["native_xlsx", "transaction_population", "account_mapping", "formula_reconciliation", "proposed_entries", "prior_period_context", "exception_log", "control_checks", "renderable"]
+    },
+    {
+      "kind": "artifact_template",
+      "template_id": "TMPL-0002",
+      "version": "1.0.0",
+      "name": "Internal controller decision memorandum",
+      "release_status": "candidate",
+      "artifact_type": "docx",
+      "authority": "supporting",
+      "lifecycle": "reviewed internal working copy before approval",
+      "blueprint_id": "BP-0002",
+      "descriptor": "library/templates/TMPL-0002/1.0.0/template.json",
+      "native_assets": ["library/templates/TMPL-0002/1.0.0/internal-controller-memo.docx"],
+      "supported_consumers": ["anna", "holodeck-file-generation", "human-artifact-realism"],
+      "capabilities": ["native_docx", "five_page_memo", "decision_summary", "source_matrix", "issue_analysis", "alternatives_matrix", "risk_and_sensitivity", "open_items", "appendix_index", "renderable"]
+    },
+    {
+      "kind": "artifact_template",
+      "template_id": "TMPL-0003",
+      "version": "1.0.0",
+      "name": "Operational correction email chain",
+      "release_status": "candidate",
+      "artifact_type": "eml",
+      "authority": "contextual",
+      "lifecycle": "sent and received thread retained in an internal project file",
+      "blueprint_id": "BP-0003",
+      "descriptor": "library/templates/TMPL-0003/1.0.0/template.json",
+      "native_assets": ["library/templates/TMPL-0003/1.0.0/operational-correction-thread.eml"],
+      "supported_consumers": ["anna", "holodeck-file-generation", "human-artifact-realism"],
+      "capabilities": ["native_eml", "multipart_mime", "quoted_thread", "role_specific_voice", "attachment_correction", "embedded_csv_attachment", "embedded_text_attachment", "bounded_open_item", "machine_parseable"]
+    }
+  ]
+}
