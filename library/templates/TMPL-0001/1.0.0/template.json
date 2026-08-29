@@ -68,10 +68,10 @@
   },
   "render_contract": {
     "required": true,
-    "evidence_manifest": "evidence/reports/template-assets/render-manifest.json",
+    "evidence_manifest": "evidence/template-releases/REL-0001/render-manifest.json",
     "expected_page_count": 8,
-    "expected_pdf_path": "evidence/reports/template-assets/renders/xlsx-print/internal-close-reconciliation.pdf",
-    "expected_page_image_pattern": "evidence/reports/template-assets/renders/xlsx-print/internal-close-reconciliation-page-{page}.png",
+    "expected_pdf_path": "evidence/template-releases/REL-0001/render/internal-close-reconciliation.pdf",
+    "expected_page_image_pattern": "evidence/template-releases/REL-0001/render/internal-close-reconciliation-page-{page}.png",
     "expected_sheet_names": ["Close_Control", "Source_Data", "Account_Map", "Reconciliation", "Proposed_Entries", "Prior_Period", "Exceptions", "Checks"],
     "print_policy": "one_readable_candidate_page_per_bounded_sheet; capacity changes require rebuild and fresh evidence"
   },

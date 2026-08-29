@@ -31,10 +31,10 @@
   },
   "render_contract": {
     "required": true,
-    "evidence_manifest": "evidence/reports/template-assets/render-manifest.json",
+    "evidence_manifest": "evidence/template-releases/REL-0002/render-manifest.json",
     "expected_page_count": 5,
-    "expected_pdf_path": "evidence/reports/template-assets/renders/docx/internal-controller-memo.pdf",
-    "expected_page_image_pattern": "evidence/reports/template-assets/renders/docx/page-{page}.png",
+    "expected_pdf_path": "evidence/template-releases/REL-0002/render/internal-controller-memo.pdf",
+    "expected_page_image_pattern": "evidence/template-releases/REL-0002/render/internal-controller-memo-page-{page}.png",
     "expected_sheet_names": [],
     "print_policy": "candidate scaffold must render as exactly five readable pages; populated instances require their own pagination evidence"
   },

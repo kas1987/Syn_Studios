@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0.0",
+  "templates": {
+    "TMPL-0002": {
+      "asset_path": "library/templates/TMPL-0002/1.0.0/internal-controller-memo.docx",
+      "asset_sha256": "1a922e87a29682bdea8a04734084f9f9fe1631bf785139b95b2b0f74c238818f",
+      "page_count": 5,
+      "sheet_names": [],
+      "rendered_outputs": [
+        {"path": "evidence/template-releases/REL-0002/render/internal-controller-memo.pdf", "sha256": "7ab74990636dc585a29f83c681181c8eacf6b1a24327a40404209b4ce861049c"},
+        {"path": "evidence/template-releases/REL-0002/render/internal-controller-memo-page-1.png", "sha256": "64f0116a42619297fd083a1563533d6d756c06d8fa389ad446377c4da7e60110"},
+        {"path": "evidence/template-releases/REL-0002/render/internal-controller-memo-page-2.png", "sha256": "5a2e3c005c8006922805fa987fa0f4fd415343a2a46b0778656e0e9a2718d124"},
+        {"path": "evidence/template-releases/REL-0002/render/internal-controller-memo-page-3.png", "sha256": "d905e8e2c9c9e4605ed30b3bd96f1d7d134f6311ee78e66c2a1cb54d37d3a71e"},
+        {"path": "evidence/template-releases/REL-0002/render/internal-controller-memo-page-4.png", "sha256": "ce46e2c58b2f91a2d89fd850a070eddeac641e71123803481f59f286b7c2985f"},
+        {"path": "evidence/template-releases/REL-0002/render/internal-controller-memo-page-5.png", "sha256": "9339112c00651ce29edc8f93849090c62ee9814d448a8d07bdfd6f05ca40ab65"}
+      ]
+    }
+  }
+}
