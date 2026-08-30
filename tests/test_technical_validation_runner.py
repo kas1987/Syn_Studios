@@ -6,6 +6,7 @@ import tempfile
 import unittest
 import zipfile
 from email import policy
+from email.message import EmailMessage
 from email.parser import BytesParser
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -16,6 +17,7 @@ from scripts.run_template_technical_validation import ValidationFailed, run, sha
 ROOT = Path(__file__).resolve().parents[1]
 MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 PACKAGE_REL = "http://schemas.openxmlformats.org/package/2006/relationships"
+OFFICE_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 WORD = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
 
@@ -346,6 +348,36 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
                 self.rebind_asset(root, "REL-0002")
                 self.assert_refused_without_results(root)
 
+    def test_docx_altchunk_content_is_refused_before_any_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0002")
+            with zipfile.ZipFile(asset) as package:
+                members = {info.filename: package.read(info.filename) for info in package.infolist()}
+            document = ET.fromstring(members["word/document.xml"])
+            body = document.find(f"{{{WORD}}}body")
+            ET.SubElement(body, f"{{{WORD}}}altChunk", {f"{{{OFFICE_REL}}}id": "rIdAltChunkReview"})
+            members["word/document.xml"] = ET.tostring(document, encoding="utf-8", xml_declaration=True)
+            relationships = ET.fromstring(members["word/_rels/document.xml.rels"])
+            ET.SubElement(
+                relationships,
+                f"{{{PACKAGE_REL}}}Relationship",
+                {
+                    "Id": "rIdAltChunkReview",
+                    "Type": f"{OFFICE_REL}/aFChunk",
+                    "Target": "afchunk1.html",
+                },
+            )
+            members["word/_rels/document.xml.rels"] = ET.tostring(
+                relationships, encoding="utf-8", xml_declaration=True
+            )
+            members["word/afchunk1.html"] = b"<html><body>private grading answer key</body></html>"
+            with zipfile.ZipFile(asset, "w") as package:
+                for name, payload in members.items():
+                    package.writestr(name, payload)
+            self.rebind_asset(root, "REL-0002")
+            self.assert_refused_without_results(root)
+
     def test_prohibited_secondary_docx_asset_is_refused_before_any_write(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self.copy_release_inputs(directory)
@@ -421,6 +453,21 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             )
             self.assertEqual(count, 1)
             asset.write_bytes(payload)
+            self.rebind_asset(root, "REL-0003")
+            self.assert_refused_without_results(root)
+
+    def test_binary_signature_mislabeled_as_text_attachment_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0003")
+            message = BytesParser(policy=policy.default).parsebytes(asset.read_bytes())
+            attachment = EmailMessage(policy=policy.default)
+            attachment["Content-Type"] = 'text/plain; charset="iso-8859-1"'
+            attachment["Content-Disposition"] = 'attachment; filename="review-cache.txt"'
+            attachment["Content-Transfer-Encoding"] = "base64"
+            attachment.set_payload(base64.b64encode(b"PK\x03\x04compressed review payload").decode("ascii"))
+            message.attach(attachment)
+            asset.write_bytes(message.as_bytes(policy=policy.default))
             self.rebind_asset(root, "REL-0003")
             self.assert_refused_without_results(root)
 

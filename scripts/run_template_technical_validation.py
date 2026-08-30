@@ -42,6 +42,15 @@ EMPTY_STRING_FORMULA_GUARD = re.compile(
     r'^\s*IF\(\s*(\$?[A-Z]{1,3}\$?\d+)\s*=\s*""\s*,\s*""\s*,',
     re.IGNORECASE,
 )
+UNSUPPORTED_ATTACHMENT_SUFFIXES = {
+    ".7z", ".bin", ".bz2", ".docx", ".exe", ".gz", ".gzip", ".pdf",
+    ".pptx", ".rar", ".tar", ".xlsx", ".xz", ".zip",
+}
+BINARY_ATTACHMENT_PREFIXES = (
+    b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08", b"\x1f\x8b", b"BZh",
+    b"\xfd7zXZ\x00", b"7z\xbc\xaf\x27\x1c", b"Rar!", b"%PDF-", b"\xd0\xcf\x11\xe0",
+    b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a", b"GIF89a", b"MZ",
+)
 
 
 class ValidationFailed(RuntimeError):
@@ -108,6 +117,15 @@ def cached_cell_text(cell: ET.Element) -> str:
     if value is not None:
         return value.text or ""
     return "".join(node.text or "" for node in cell.findall(f"{{{MAIN}}}is//{{{MAIN}}}t"))
+
+
+def unsupported_text_attachment(filename: str, payload: bytes) -> bool:
+    suffix = Path(filename).suffix.casefold()
+    if suffix in UNSUPPORTED_ATTACHMENT_SUFFIXES:
+        return True
+    if payload.startswith(BINARY_ATTACHMENT_PREFIXES) or b"\x00" in payload:
+        return True
+    return any(byte < 32 and byte not in {9, 10, 12, 13} for byte in payload[:4096])
 
 
 def xlsx_inventory(path: Path) -> dict[str, Any]:
@@ -230,13 +248,21 @@ def docx_inventory(path: Path) -> dict[str, Any]:
             tables = len(document.findall(f".//{{{WORD}}}tbl"))
             comments = [name for name in names if name == "word/comments.xml"]
             external: list[str] = []
+            alt_chunks = [
+                element.get(f"{{{OFFICE_REL}}}id", "<unbound>")
+                for element in document.findall(f".//{{{WORD}}}altChunk")
+            ]
             for name in names:
                 if name.endswith(".rels"):
                     rels = ET.fromstring(package.read(name))
-                    external.extend(item.get("Target", "") for item in rels if item.get("TargetMode") == "External")
+                    for item in rels:
+                        if item.get("TargetMode") == "External":
+                            external.append(item.get("Target", ""))
+                        if (item.get("Type") or "").rsplit("/", 1)[-1].casefold() == "afchunk":
+                            alt_chunks.append(item.get("Target", "<missing-target>"))
             revisions = len(document.findall(f".//{{{WORD}}}ins")) + len(document.findall(f".//{{{WORD}}}del"))
             custom_xml = len([name for name in names if name.startswith("customXml/") and name.endswith(".xml")])
-            return {"text": "\n".join(extracted), "paragraphs": paragraphs, "tables": tables, "hidden": hidden, "comments": len(comments), "revisions": revisions, "custom_xml": custom_xml, "external": external}
+            return {"text": "\n".join(extracted), "paragraphs": paragraphs, "tables": tables, "hidden": hidden, "comments": len(comments), "revisions": revisions, "custom_xml": custom_xml, "external": external, "alt_chunks": alt_chunks}
     except (KeyError, OSError, zipfile.BadZipFile, ET.ParseError) as error:
         raise ValidationFailed(f"{path}: invalid docx package: {error}") from error
 
@@ -263,8 +289,11 @@ def eml_inventory(path: Path) -> dict[str, Any]:
     message_count = len(re.findall(r"(?im)^From:\s*.+$", raw))
     for attachment in attachments:
         payload = attachment.get_payload(decode=True) or b""
-        if not attachment.get_filename() or not payload:
+        filename = attachment.get_filename()
+        if not filename or not payload:
             raise ValidationFailed(f"{path}: attachment lacks a filename or payload")
+        if unsupported_text_attachment(filename, payload):
+            raise ValidationFailed(f"{path}: attachment bytes or filename identify an unsupported binary or structured format: {filename}")
         if attachment.get_content_type() == "text/csv":
             decoded = payload.decode(attachment.get_content_charset() or "utf-8")
             if len([line for line in decoded.splitlines() if line.strip()]) < 2:
@@ -423,8 +452,8 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
             if asset_inventory["external"] or hidden or asset_inventory["hidden_rows"] or asset_inventory["hidden_columns"]:
                 raise ValidationFailed(f"{release_id}: workbook {asset_path.name} contains external links or hidden workbook surfaces")
         elif asset_type == "docx":
-            if asset_inventory["external"] or asset_inventory["hidden"]:
-                raise ValidationFailed(f"{release_id}: document {asset_path.name} contains external relationships or hidden text")
+            if asset_inventory["external"] or asset_inventory["hidden"] or asset_inventory["alt_chunks"]:
+                raise ValidationFailed(f"{release_id}: document {asset_path.name} contains external relationships, hidden text, or unsupported altChunk content")
         elif len(asset_inventory["message_ids"]) != len(set(asset_inventory["message_ids"])):
             raise ValidationFailed(f"{release_id}: email {asset_path.name} contains duplicate Message-ID values")
 
