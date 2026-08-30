@@ -41,6 +41,9 @@ class ReleaseAssemblyTests(unittest.TestCase):
             if source.exists():
                 shutil.copytree(source, root / relative)
         shutil.rmtree(root / "library/releases", ignore_errors=True)
+        # This fixture rebuilds releases from candidate state. Submission profiles
+        # bind published exact hashes and therefore do not belong in pre-release assembly.
+        shutil.rmtree(root / "library/submissions", ignore_errors=True)
         evidence_root = root / "evidence/template-releases"
         if evidence_root.is_dir():
             for release_root in evidence_root.glob("REL-*"):
