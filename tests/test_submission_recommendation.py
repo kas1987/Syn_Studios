@@ -159,6 +159,55 @@ class SubmissionProfileValidatorTests(unittest.TestCase):
 
             self.assertIn("must be unique within one profiled template", "\n".join(findings))
 
+    def test_unknown_bound_foundation_card_is_reported_without_crashing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.copy_repository(temporary)
+            path = root / "library/submissions/SUB-005/profile.json"
+            profile = json.loads(path.read_text(encoding="utf-8"))
+            template = profile["templates"][0]
+            template["foundation_cards"][0]["card_id"] = "FOUND-9999"
+            template["pattern_invariants"][0]["foundation_card_id"] = "FOUND-9999"
+            write_json(path, profile)
+
+            findings, _ = validate_repository(root)
+
+            self.assertIn("unknown foundation card", "\n".join(findings))
+
+    def test_submission_profile_root_must_be_a_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.copy_repository(temporary)
+            profile_root = root / "library/submissions"
+            shutil.rmtree(profile_root)
+            profile_root.write_bytes(b"raw submission bytes")
+
+            findings, _ = validate_repository(root)
+
+            self.assertIn(
+                "library/submissions: submission profile root must be a directory",
+                findings,
+            )
+            with self.assertRaisesRegex(CatalogQueryError, "canonical library validation failed"):
+                recommend(requirements(), [], repository_root=root)
+
+    def test_dangling_submission_profile_root_symlink_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.copy_repository(temporary)
+            profile_root = root / "library/submissions"
+            shutil.rmtree(profile_root)
+            try:
+                profile_root.symlink_to(root / "missing-submission-profiles", target_is_directory=True)
+            except OSError as error:
+                self.skipTest(f"directory symlink creation unavailable: {error}")
+
+            findings, _ = validate_repository(root)
+
+            self.assertIn(
+                "library/submissions: submission profile root cannot be a symbolic link or junction",
+                findings,
+            )
+            with self.assertRaisesRegex(CatalogQueryError, "canonical library validation failed"):
+                recommend(requirements(), [], repository_root=root)
+
     def test_semantic_pattern_id_must_match_its_reviewed_meaning_binding(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = self.copy_repository(temporary)
