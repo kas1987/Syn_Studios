@@ -4,7 +4,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.immutable_publication import PublicationSafetyError, open_staging_file
+from scripts.immutable_publication import (
+    PublicationSafetyError,
+    open_staging_file,
+    verify_parent,
+)
 from scripts.generate_workbook_recalculation_proof import (
     ProofGenerationFailed,
     main,
@@ -13,6 +17,51 @@ from scripts.generate_workbook_recalculation_proof import (
 
 
 class RecalculationProofImmutabilityTests(unittest.TestCase):
+    def test_parent_accepts_an_equivalent_nonlexical_root_spelling(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            actual_parent = root / "evidence"
+            actual_parent.mkdir()
+            alias_root = root.with_name(root.name + "~alias")
+            alias_parent = alias_root / "evidence"
+            target = alias_parent / "workbook-recalculation.json"
+            real_resolve = Path.resolve
+            real_stat = Path.stat
+            real_samefile = os.path.samefile
+
+            def resolve(path, *args, **kwargs):
+                if path == root:
+                    return root
+                if path == alias_parent:
+                    return actual_parent
+                return real_resolve(path, *args, **kwargs)
+
+            def path_stat(path, *args, **kwargs):
+                if path == alias_parent:
+                    return real_stat(actual_parent, *args, **kwargs)
+                if path == alias_root:
+                    return real_stat(root, *args, **kwargs)
+                return real_stat(path, *args, **kwargs)
+
+            def samefile(left, right):
+                left_path = Path(left)
+                right_path = Path(right)
+                if left_path == alias_parent:
+                    return False
+                if left_path == alias_root and right_path == root:
+                    return True
+                return real_samefile(left, right)
+
+            with (
+                patch("pathlib.Path.resolve", autospec=True, side_effect=resolve),
+                patch("pathlib.Path.stat", autospec=True, side_effect=path_stat),
+                patch(
+                    "scripts.immutable_publication.os.path.samefile",
+                    side_effect=samefile,
+                ),
+            ):
+                verify_parent(root, target)
+
     def test_initial_creation_publishes_generated_bytes(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "evidence" / "workbook-recalculation.json"

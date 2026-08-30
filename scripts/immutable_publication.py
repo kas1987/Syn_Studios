@@ -123,31 +123,48 @@ def verify_parent(root: Path, target: Path) -> None:
     root = root.resolve(strict=True)
     parent = Path(os.path.abspath(target.parent))
     try:
-        parent.relative_to(root)
         parent.resolve(strict=False).relative_to(root)
     except (OSError, RuntimeError, ValueError) as error:
         raise PublicationSafetyError(
             "publication directory must remain within the repository root"
         ) from error
 
-    current = root
-    for part in parent.relative_to(root).parts:
-        current /= part
+    # Walk the spelling the caller supplied so a symlink or Windows reparse
+    # point cannot disappear behind ``resolve()``.  Stop by file identity,
+    # rather than lexical prefix, because Windows may report one path through
+    # its 8.3 alias (for example RUNNER~1) and the other through its long name.
+    current = parent
+    while True:
         try:
             current_stat = current.stat(follow_symlinks=False)
         except FileNotFoundError:
-            break
+            current_stat = None
         except OSError as error:
             raise PublicationSafetyError(
                 f"cannot inspect publication directory: {error}"
             ) from error
-        if not stat.S_ISDIR(current_stat.st_mode) or (
-            getattr(current_stat, "st_file_attributes", 0)
-            & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
-        ):
-            raise PublicationSafetyError(
-                "publication directory must use direct directories within the repository root"
-            )
+        if current_stat is not None:
+            if not stat.S_ISDIR(current_stat.st_mode) or (
+                getattr(current_stat, "st_file_attributes", 0)
+                & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+            ):
+                raise PublicationSafetyError(
+                    "publication directory must use direct directories within the repository root"
+                )
+            try:
+                if os.path.samefile(current, root):
+                    return
+            except OSError as error:
+                raise PublicationSafetyError(
+                    f"cannot compare publication directory identity: {error}"
+                ) from error
+        if current.parent == current:
+            break
+        current = current.parent
+
+    raise PublicationSafetyError(
+        "publication directory must remain within the repository root"
+    )
 
 
 def read_stable_file(
