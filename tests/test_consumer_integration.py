@@ -60,6 +60,14 @@ class ConsumerIntegrationTests(unittest.TestCase):
         self.assertEqual(set(operations), {"discover", "recommend", "select", "instantiate", "validate"})
         self.assertFalse(operations["recommend"]["side_effects"])
         self.assertEqual(operations["recommend"]["next_operation"], "select")
+        self.assertIn(
+            "known_selectable_catalog_recent_usage_identities",
+            operations["recommend"]["requires"],
+        )
+        self.assertNotIn(
+            "known_profiled_recent_usage_identities",
+            operations["recommend"]["requires"],
+        )
         self.assertIn("release_status_is_selectable", operations["select"]["requires"])
         self.assertEqual(operations["select"]["no_match_behavior"], "return_constraints_and_stop")
         self.assertIn("consumer_write_authorization", operations["instantiate"]["requires"])
