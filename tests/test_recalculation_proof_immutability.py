@@ -62,6 +62,23 @@ class RecalculationProofImmutabilityTests(unittest.TestCase):
             ):
                 verify_parent(root, target)
 
+    def test_parent_rejects_equivalent_root_reached_through_indirect_ancestor(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            temporary_root = Path(temporary).resolve()
+            real_parent = temporary_root / "real"
+            root = real_parent / "repository"
+            evidence = root / "evidence"
+            evidence.mkdir(parents=True)
+            alias_parent = temporary_root / "alias"
+            try:
+                alias_parent.symlink_to(real_parent, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("directory symlinks are unavailable")
+            target = alias_parent / "repository" / "evidence" / "proof.json"
+
+            with self.assertRaisesRegex(PublicationSafetyError, "direct directories"):
+                verify_parent(root, target)
+
     def test_initial_creation_publishes_generated_bytes(self):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "evidence" / "workbook-recalculation.json"

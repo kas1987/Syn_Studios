@@ -134,6 +134,7 @@ def verify_parent(root: Path, target: Path) -> None:
     # rather than lexical prefix, because Windows may report one path through
     # its 8.3 alias (for example RUNNER~1) and the other through its long name.
     current = parent
+    found_root_identity = False
     while True:
         try:
             current_stat = current.stat(follow_symlinks=False)
@@ -153,7 +154,7 @@ def verify_parent(root: Path, target: Path) -> None:
                 )
             try:
                 if os.path.samefile(current, root):
-                    return
+                    found_root_identity = True
             except OSError as error:
                 raise PublicationSafetyError(
                     f"cannot compare publication directory identity: {error}"
@@ -162,6 +163,8 @@ def verify_parent(root: Path, target: Path) -> None:
             break
         current = current.parent
 
+    if found_root_identity:
+        return
     raise PublicationSafetyError(
         "publication directory must remain within the repository root"
     )
