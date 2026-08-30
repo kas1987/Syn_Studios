@@ -46,6 +46,17 @@ class SubmissionProfileValidatorTests(unittest.TestCase):
             findings, _ = validate_repository(root)
             self.assertIn("raw artifact bytes are forbidden", "\n".join(findings))
 
+    def test_unreadable_catalog_is_reported_without_crashing_profile_validation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.copy_repository(temporary)
+            (root / "library/catalog.json").write_text("not-json\n", encoding="utf-8")
+
+            findings, _ = validate_repository(root)
+
+            rendered = "\n".join(findings)
+            self.assertIn("library/catalog.json:<root>: cannot read JSON", rendered)
+            self.assertIn("exact template identity is absent from the catalog", rendered)
+
     def test_schema_owns_required_cross_sector_vocabulary(self):
         schema = json.loads((ROOT / "schemas/submission-profile.schema.json").read_text(encoding="utf-8"))
         definitions = schema["$defs"]
