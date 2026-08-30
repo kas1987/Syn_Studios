@@ -519,6 +519,14 @@ def validate_png_shape(payload: bytes, label: str, findings: list[str]) -> None:
         findings.append(f"{label}: PNG proof raster data does not match declared dimensions")
         return
     offset = 0
+    if color_type != 3:
+        for row_bytes, rows, _ in segments:
+            for _ in range(rows):
+                if raster[offset] > 4:
+                    findings.append(f"{label}: PNG proof raster uses an invalid scanline filter")
+                    return
+                offset += row_bytes + 1
+        return
     filter_stride = max(1, (bits_per_pixel + 7) // 8)
     for row_bytes, rows, pixel_width in segments:
         prior = bytearray(row_bytes)
