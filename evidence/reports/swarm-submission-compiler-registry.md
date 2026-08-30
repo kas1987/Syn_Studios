@@ -1,6 +1,6 @@
 # Submission-aware artifact compiler swarm registry
 
-Base: `4235c44016ad4f29cc95d6cd2ef26e19879dd510`
+Base: `fd6022c6e4139ccf3f0889a9240b1452823f8eeb`
 
 | Agent | Role | Slice | Worktree | Owned files | Expected output | Status | Last evidence | Next gate |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -12,7 +12,7 @@ Base: `4235c44016ad4f29cc95d6cd2ef26e19879dd510`
 | CRITIC-CHANGE-01 | change critic | Adversarial architecture, security, authority, and compatibility review | `Syn_Studios-wt-submission-compiler` | Read-only; no repository writes | `CHANGE_PASS`, `CHANGE_FIX_FIRST`, `CHANGE_REJECT`, or `CHANGE_SPLIT` with P0-P2 findings | fix-repaired | `CHANGE_FIX_FIRST` found semantic-ID laundering and NTFS junction escape; reviewed semantic bindings, resolved-root containment, and both regression arms now pass | Re-run after rebase |
 | CRITIC-TEST-02 | test-gate critic | Falsify the final rebased compiler proof | `Syn_Studios-wt-submission-compiler` | Read-only; no repository writes | Exact-head test verdict | reviewing | Final release-head rebase and local gates complete | Exact-head verdict and hosted checks |
 | CRITIC-CHANGE-02 | change critic | Adversarially review the final rebased compiler interface and authority model | `Syn_Studios-wt-submission-compiler` | Read-only; no repository writes | Exact-head change verdict | fix-repaired | `CHANGE_FIX_FIRST` found ambiguous duplicate recommendation vocabularies, unqualified producer/lifecycle broadening, and a machine-contract history wording mismatch | Re-run on repair head |
-| BUILD-02 | repair | Close final compiler interface and applicability findings | `Syn_Studios-wt-submission-compiler` | Recommendation schema/resolver/profile metadata, validator, tests, contracts, and registry only | Committed repair and proof | review-ready | Exact base `4235c44`; `358` tests passed with `4` expected platform/optional-stack skips; focused recommendation/profile suite passed `35`; combined recommendation/consumer suite passed `79` with `1` expected platform skip; canonical validator passed `41` records; technical dry run passed `24`; compileall and diff check passed | Two fresh exact-head critics |
+| BUILD-02 | repair | Close final compiler interface and applicability findings | `Syn_Studios-wt-submission-compiler` | Recommendation schema/resolver/profile metadata, validator, tests, contracts, and registry only | Committed repair and proof | review-ready | Exact base `fd6022c`; `358` tests passed with `4` expected platform/optional-stack skips; focused recommendation/profile suite passed `35`; combined recommendation/consumer suite passed `79` with `1` expected platform skip; canonical validator passed `41` records; technical dry run passed `24`; compileall and diff check passed | Two fresh exact-head critics |
 
 The conductor owns implementation, review intake, and all merge or publication decisions. Tool events and agent completion notices are not approval or proof.
 
