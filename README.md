@@ -54,6 +54,22 @@ python scripts/audit_tabular_package.py --package-root <package> --policy <packa
 
 GitHub runs the substantive contract on Linux and Windows. See [CONTRIBUTING.md](CONTRIBUTING.md) for the review flow and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
 
+## Codex skill installation
+
+Install the repository root, not the nested `skill/` directory. The root
+`SKILL.md` is a thin entry point to the canonical workflow, while the complete
+package retains the catalog, released assets, validators, and integration
+contract needed by consume mode. Pin installation to an immutable published
+commit:
+
+```powershell
+python <skill-installer> --repo kas1987/Syn_Studios --ref <commit-sha> --path . --name synthetic-studio --method download
+```
+
+The installer must refuse an existing destination. Installation exposes the
+library workflow; it does not grant generation, materialization, downstream
+acceptance, or merge authority.
+
 ## Local document stack
 
 Binary generation and rendered QA use an isolated local environment plus externally managed applications; no Office, LibreOffice, Poppler, or private Node package is vendored here.

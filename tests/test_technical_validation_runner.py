@@ -23,7 +23,7 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
     actor = "Syn Studios validation runner"
 
     def copy_release_inputs(self, directory: str) -> Path:
-        root = Path(directory)
+        root = Path(directory).resolve()
         for relative in ("library/releases", "library/templates", "library/foundations", "examples/blueprints"):
             shutil.copytree(ROOT / relative, root / relative)
         evidence = root / "evidence/template-releases"

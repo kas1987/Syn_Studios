@@ -7,3 +7,4 @@
 *.yaml text eol=lf
 *.sha256 text eol=lf
 *.txt text eol=lf
+*.eml text eol=crlf

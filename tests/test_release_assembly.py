@@ -34,7 +34,7 @@ class ReleaseAssemblyTests(unittest.TestCase):
     }
 
     def make_root(self, temporary):
-        root = Path(temporary)
+        root = Path(temporary).resolve()
         for relative in ("schemas", "library", "examples/blueprints", "evidence/reports", "evidence/template-releases", "tests/fixtures"):
             source = ROOT / relative
             if source.exists():
