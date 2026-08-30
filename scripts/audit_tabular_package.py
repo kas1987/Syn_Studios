@@ -28,6 +28,17 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def has_reconstructed_token(root: ElementTree.Element, container: str) -> bool:
+    """Scan one logical rich-text string at a time across its XML runs."""
+    for item in root.findall(f".//{{{SHEET_NS}}}{container}"):
+        visible_text = "".join(
+            node.text or "" for node in item.findall(f".//{{{SHEET_NS}}}t")
+        )
+        if TOKEN.search(visible_text.encode("utf-8")):
+            return True
+    return False
+
+
 def resolve_package_path(package_root: Path, value: object, label: str, findings: list[str]) -> Path | None:
     """Resolve one policy path without allowing it to leave the package."""
     raw = str(value)
@@ -112,10 +123,12 @@ def audit_workbook(path: Path, rule: dict, findings: list[str]) -> dict[str, obj
     try:
         with zipfile.ZipFile(path) as package:
             names = package.namelist()
+            token_members: set[str] = set()
             for name in names:
                 payload = package.read(name)
                 if TOKEN.search(payload):
                     findings.append(f"{path.name}: unresolved build token in {name}")
+                    token_members.add(name)
                 if name.startswith(("customXml/", "xl/comments", "xl/threadedComments", "xl/embeddings/")):
                     inventory["embedded_objects"].append(name)
             workbook = ElementTree.fromstring(package.read("xl/workbook.xml"))
@@ -125,6 +138,8 @@ def audit_workbook(path: Path, rule: dict, findings: list[str]) -> dict[str, obj
             for name in names:
                 if name.startswith("xl/worksheets/") and name.endswith(".xml"):
                     root = ElementTree.fromstring(package.read(name))
+                    if name not in token_members and has_reconstructed_token(root, "is"):
+                        findings.append(f"{path.name}: unresolved build token in {name}")
                     inventory["formula_count"] += len(root.findall(f".//{{{SHEET_NS}}}f"))
                     for row in root.findall(f".//{{{SHEET_NS}}}row"):
                         if row.get("hidden") in {"1", "true"}:
@@ -134,10 +149,17 @@ def audit_workbook(path: Path, rule: dict, findings: list[str]) -> dict[str, obj
                             inventory["hidden_surfaces"].append(f"{name}:column:{column.get('min')}-{column.get('max')}")
                     if root.findall(f".//{{{SHEET_NS}}}c[@t='e']"):
                         findings.append(f"{path.name}: formula error cells present in {name}")
+                if name == "xl/sharedStrings.xml":
+                    root = ElementTree.fromstring(package.read(name))
+                    if name not in token_members and has_reconstructed_token(root, "si"):
+                        findings.append(f"{path.name}: unresolved build token in {name}")
                 if name.endswith(".rels"):
                     try:
                         relationships = ElementTree.fromstring(package.read(name))
-                    except ElementTree.ParseError:
+                    except ElementTree.ParseError as error:
+                        findings.append(
+                            f"{path.name}: malformed relationship XML in {name}: {error}"
+                        )
                         continue
                     for relationship in relationships.findall(f"{{{REL_NS}}}Relationship"):
                         if relationship.get("TargetMode") == "External":

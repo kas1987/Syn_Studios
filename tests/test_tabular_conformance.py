@@ -23,6 +23,15 @@ def workbook(path: Path, *, token=False, formula=True, hidden=False):
         package.writestr("xl/worksheets/sheet1.xml", f'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{sheet_data}</sheetData></worksheet>')
 
 
+def rewrite_workbook(path: Path, replacements: dict[str, str]):
+    with zipfile.ZipFile(path) as package:
+        members = {item.filename: package.read(item.filename) for item in package.infolist()}
+    members.update({name: payload.encode("utf-8") for name, payload in replacements.items()})
+    with zipfile.ZipFile(path, "w") as package:
+        for name, payload in members.items():
+            package.writestr(name, payload)
+
+
 class TabularConformanceTests(unittest.TestCase):
     def build_package(self, root: Path, *, mismatch=False, token=False, formula=True, hidden=False, malformed_lifecycle=False):
         (root / "manifest.md").write_text("approved synthetic package\n", encoding="utf-8")
@@ -82,6 +91,83 @@ class TabularConformanceTests(unittest.TestCase):
                 root = Path(temporary)
                 result = audit(root, self.build_package(root, **options))
                 self.assertTrue(any(fragment in finding for finding in result["findings"]), result)
+
+    def test_split_inline_string_token_is_reconstructed_before_scanning(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy = self.build_package(root)
+            worksheet = (
+                f'<worksheet xmlns="{SHEET_NS}"><sheetData><row r="1">'
+                '<c r="A1" t="n"><f>1+1</f><v>2</v></c>'
+                '<c r="B1" t="inlineStr"><is>'
+                '<r><t>{</t></r><r><t>{organization_name}</t></r><r><t>}</t></r>'
+                '</is></c></row></sheetData></worksheet>'
+            )
+            rewrite_workbook(
+                root / policy["workbook"]["path"],
+                {"xl/worksheets/sheet1.xml": worksheet},
+            )
+
+            result = audit(root, policy)
+
+            self.assertIn(
+                "working.xlsx: unresolved build token in xl/worksheets/sheet1.xml",
+                result["findings"],
+            )
+
+    def test_split_shared_string_token_is_reconstructed_before_scanning(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy = self.build_package(root)
+            worksheet = (
+                f'<worksheet xmlns="{SHEET_NS}"><sheetData><row r="1">'
+                '<c r="A1" t="n"><f>1+1</f><v>2</v></c>'
+                '<c r="B1" t="s"><v>0</v></c>'
+                '</row></sheetData></worksheet>'
+            )
+            shared_strings = (
+                f'<sst xmlns="{SHEET_NS}" count="1" uniqueCount="1"><si>'
+                '<r><t>{{organization</t></r><r><t>_name}</t></r><r><t>}</t></r>'
+                '</si></sst>'
+            )
+            rewrite_workbook(
+                root / policy["workbook"]["path"],
+                {
+                    "xl/worksheets/sheet1.xml": worksheet,
+                    "xl/sharedStrings.xml": shared_strings,
+                },
+            )
+
+            result = audit(root, policy)
+
+            self.assertIn(
+                "working.xlsx: unresolved build token in xl/sharedStrings.xml",
+                result["findings"],
+            )
+
+    def test_malformed_relationship_xml_is_an_explicit_finding(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy = self.build_package(root)
+            rewrite_workbook(
+                root / policy["workbook"]["path"],
+                {
+                    "xl/_rels/workbook.xml.rels": (
+                        '<Relationships xmlns="http://schemas.openxmlformats.org/'
+                        'package/2006/relationships"><Relationship'
+                    )
+                },
+            )
+
+            result = audit(root, policy)
+
+            self.assertTrue(
+                any(
+                    "malformed relationship XML in xl/_rels/workbook.xml.rels" in finding
+                    for finding in result["findings"]
+                ),
+                result,
+            )
 
     def test_malformed_exception_lifecycle_fails(self):
         with tempfile.TemporaryDirectory() as temporary:
