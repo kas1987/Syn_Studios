@@ -47,10 +47,14 @@ UNSUPPORTED_ATTACHMENT_SUFFIXES = {
     ".pptx", ".rar", ".tar", ".xlsx", ".xz", ".zip",
 }
 BINARY_ATTACHMENT_PREFIXES = (
-    b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08", b"\x1f\x8b", b"BZh",
-    b"\xfd7zXZ\x00", b"7z\xbc\xaf\x27\x1c", b"Rar!", b"%PDF-", b"\xd0\xcf\x11\xe0",
-    b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a", b"GIF89a",
+    b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08", b"\x1f\x8b",
+    b"\xfd7zXZ\x00", b"7z\xbc\xaf\x27\x1c", b"\xd0\xcf\x11\xe0",
+    b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff",
 )
+PDF_HEADER = re.compile(rb"%PDF-(?:1\.[0-7]|2\.0)(?:\r\n|\r|\n)")
+PDF_OBJECT = re.compile(rb"(?m)^\s*\d+\s+\d+\s+obj(?:\s|$)")
+PDF_TRAILER = re.compile(rb"startxref\s+(\d+)\s+%%EOF\s*\Z")
+PDF_XREF_TYPE = re.compile(rb"/Type\s*/XRef\b")
 
 
 class ValidationFailed(RuntimeError):
@@ -129,11 +133,25 @@ def structured_executable(payload: bytes) -> bool:
     return signature == b"PE\x00\x00" or signature[:2] in {b"NE", b"LE", b"LX"}
 
 
+def structured_pdf(payload: bytes) -> bool:
+    header = PDF_HEADER.search(payload[:1024])
+    trailer = PDF_TRAILER.search(payload)
+    if header is None or trailer is None or PDF_OBJECT.search(payload[header.start():]) is None:
+        return False
+    xref_offset = int(trailer.group(1))
+    if xref_offset < header.start() or xref_offset >= len(payload):
+        return False
+    xref = payload[xref_offset:xref_offset + 512]
+    return xref.startswith(b"xref") or (
+        PDF_OBJECT.match(xref) is not None and PDF_XREF_TYPE.search(xref) is not None
+    )
+
+
 def unsupported_text_attachment(filename: str, payload: bytes, charset: str | None) -> bool:
     suffix = Path(filename).suffix.casefold()
     if suffix in UNSUPPORTED_ATTACHMENT_SUFFIXES:
         return True
-    if structured_executable(payload) or payload.startswith(BINARY_ATTACHMENT_PREFIXES):
+    if structured_executable(payload) or structured_pdf(payload) or payload.startswith(BINARY_ATTACHMENT_PREFIXES):
         return True
     try:
         decoded = payload.decode(charset or "utf-8")
