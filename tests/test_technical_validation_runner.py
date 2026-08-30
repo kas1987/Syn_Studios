@@ -26,6 +26,30 @@ def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
+def minimal_compact_pdf(newline: bytes) -> bytes:
+    pdf = bytearray(b"\xef\xbb\xbf%PDF-1.4" + newline)
+    offsets = []
+    objects = (
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Contents 4 0 R >>",
+        b"<< /Length 0 >>" + newline + b"stream" + newline + newline + b"endstream",
+    )
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(pdf))
+        pdf.extend(f"{number} 0 obj".encode("ascii"))
+        pdf.extend(body + newline + b"endobj" + newline)
+    xref_offset = len(pdf)
+    pdf.extend(b"xref" + newline + f"0 {len(objects) + 1}".encode("ascii") + newline)
+    pdf.extend(b"0000000000 65535 f " + newline)
+    for offset in offsets:
+        pdf.extend(f"{offset:010d} 00000 n ".encode("ascii") + newline)
+    pdf.extend(b"trailer" + newline)
+    pdf.extend(f"<< /Size {len(objects) + 1} /Root 1 0 R >>".encode("ascii") + newline)
+    pdf.extend(b"startxref" + newline + str(xref_offset).encode("ascii") + newline + b"%%EOF" + newline)
+    return bytes(pdf)
+
+
 class TechnicalValidationRunnerTests(unittest.TestCase):
     actor_id = "syn-validation-runner-2026-08-29"
     actor = "Syn Studios validation runner"
@@ -529,32 +553,26 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             root = self.copy_release_inputs(directory)
             _, _, _, _, asset = self.release(root, "REL-0003")
             message = BytesParser(policy=policy.default).parsebytes(asset.read_bytes())
-            pdf = bytearray(b"\xef\xbb\xbf%PDF-1.4\n")
-            offsets = []
-            objects = (
-                b"<< /Type /Catalog /Pages 2 0 R >>",
-                b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-                b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Contents 4 0 R >>",
-                b"<< /Length 0 >>\nstream\n\nendstream",
-            )
-            for number, body in enumerate(objects, start=1):
-                offsets.append(len(pdf))
-                pdf.extend(f"{number} 0 obj".encode("ascii"))
-                pdf.extend(body + b"\nendobj\n")
-            xref_offset = len(pdf)
-            pdf.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
-            pdf.extend(b"0000000000 65535 f \n")
-            for offset in offsets:
-                pdf.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
-            pdf.extend(
-                f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
-                f"startxref\n{xref_offset}\n%%EOF\n".encode("ascii")
-            )
             attachment = EmailMessage(policy=policy.default)
             attachment["Content-Type"] = 'text/plain; charset="iso-8859-1"'
             attachment["Content-Disposition"] = 'attachment; filename="review.txt"'
             attachment["Content-Transfer-Encoding"] = "base64"
-            attachment.set_payload(base64.b64encode(pdf).decode("ascii"))
+            attachment.set_payload(base64.b64encode(minimal_compact_pdf(b"\n")).decode("ascii"))
+            message.attach(attachment)
+            asset.write_bytes(message.as_bytes(policy=policy.default))
+            self.rebind_asset(root, "REL-0003")
+            self.assert_refused_without_results(root)
+
+    def test_cr_only_compact_pdf_mislabeled_as_text_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0003")
+            message = BytesParser(policy=policy.default).parsebytes(asset.read_bytes())
+            attachment = EmailMessage(policy=policy.default)
+            attachment["Content-Type"] = 'text/plain; charset="iso-8859-1"'
+            attachment["Content-Disposition"] = 'attachment; filename="cr-only-review.txt"'
+            attachment["Content-Transfer-Encoding"] = "base64"
+            attachment.set_payload(base64.b64encode(minimal_compact_pdf(b"\r")).decode("ascii"))
             message.attach(attachment)
             asset.write_bytes(message.as_bytes(policy=policy.default))
             self.rebind_asset(root, "REL-0003")

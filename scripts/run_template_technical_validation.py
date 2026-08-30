@@ -53,7 +53,7 @@ BINARY_ATTACHMENT_PREFIXES = (
 )
 PDF_HEADER = re.compile(rb"%PDF-(?:1\.[0-7]|2\.0)(?:\r\n|\r|\n)")
 PDF_OBJECT = re.compile(
-    rb"(?m)^[\x00\x09\x0a\x0c\x0d\x20]*"
+    rb"(?:\A|(?<=[\x00\x09\x0a\x0c\x0d\x20()<>\[\]{}/%]))"
     rb"\d+[\x00\x09\x0a\x0c\x0d\x20]+\d+[\x00\x09\x0a\x0c\x0d\x20]+"
     rb"obj(?=[\x00\x09\x0a\x0c\x0d\x20()<>\[\]{}/%]|\Z)"
 )
