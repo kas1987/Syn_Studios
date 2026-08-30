@@ -1,5 +1,6 @@
 import csv
 import json
+import shutil
 import tempfile
 import unittest
 import zipfile
@@ -86,6 +87,79 @@ class TabularConformanceTests(unittest.TestCase):
             root = Path(temporary)
             result = audit(root, self.build_package(root, malformed_lifecycle=True))
             self.assertTrue(any("Open cannot carry a resolution reference" in finding for finding in result["findings"]), result)
+
+    def test_parent_traversal_is_rejected_for_every_package_path_kind(self):
+        for path_kind, policy_value, source_name in [
+            ("provenance", "../outside-manifest.md", "manifest.md"),
+            ("workbook", "../outside-working.xlsx", "working.xlsx"),
+            ("CSV carrier", "../outside-source.csv", "source.csv"),
+        ]:
+            with self.subTest(path_kind=path_kind), tempfile.TemporaryDirectory() as temporary:
+                base = Path(temporary)
+                root = base / "package"
+                root.mkdir()
+                policy = self.build_package(root)
+                outside = base / Path(policy_value).name
+                shutil.copyfile(root / source_name, outside)
+                if path_kind == "provenance":
+                    policy["provenance_reference"] = policy_value
+                elif path_kind == "workbook":
+                    policy["workbook"]["path"] = policy_value
+                else:
+                    policy["csv_carriers"][0]["path"] = policy_value
+                    policy["reconciliations"][0]["left_path"] = policy_value
+
+                result = audit(root, policy)
+
+                self.assertTrue(
+                    any("path must remain within package root" in finding for finding in result["findings"]),
+                    result,
+                )
+
+    def test_symlink_escape_is_rejected_for_every_package_path_kind(self):
+        for path_kind, link_name, source_name in [
+            ("provenance", "linked-manifest.md", "manifest.md"),
+            ("workbook", "linked-working.xlsx", "working.xlsx"),
+            ("CSV carrier", "linked-source.csv", "source.csv"),
+        ]:
+            with self.subTest(path_kind=path_kind), tempfile.TemporaryDirectory() as temporary:
+                base = Path(temporary)
+                root = base / "package"
+                root.mkdir()
+                policy = self.build_package(root)
+                outside = base / f"outside-{source_name}"
+                shutil.copyfile(root / source_name, outside)
+                try:
+                    (root / link_name).symlink_to(outside)
+                except OSError as error:
+                    self.skipTest(f"file symlinks are unavailable: {error}")
+                if path_kind == "provenance":
+                    policy["provenance_reference"] = link_name
+                elif path_kind == "workbook":
+                    policy["workbook"]["path"] = link_name
+                else:
+                    policy["csv_carriers"][0]["path"] = link_name
+                    policy["reconciliations"][0]["left_path"] = link_name
+
+                result = audit(root, policy)
+
+                self.assertTrue(
+                    any("path must remain within package root" in finding for finding in result["findings"]),
+                    result,
+                )
+
+    def test_unknown_reconciliation_relationship_is_a_finding(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy = self.build_package(root)
+            policy["reconciliations"][0]["relationship"] = "equals"
+
+            result = audit(root, policy)
+
+            self.assertIn(
+                "reconciliation source-to-map has unsupported relationship: equals",
+                result["findings"],
+            )
 
 
 if __name__ == "__main__":

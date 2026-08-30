@@ -11,6 +11,7 @@ from scripts.run_template_technical_validation import ValidationFailed, run, sha
 
 ROOT = Path(__file__).resolve().parents[1]
 MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+PACKAGE_REL = "http://schemas.openxmlformats.org/package/2006/relationships"
 WORD = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
 
@@ -120,6 +121,53 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             self.rebind_asset(root, "REL-0001")
             self.assert_refused_without_results(root)
 
+    def test_external_xlsx_relationship_is_refused_before_any_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0001")
+            with zipfile.ZipFile(asset) as package:
+                members = {info.filename: package.read(info.filename) for info in package.infolist()}
+            relationships = ET.fromstring(members["xl/_rels/workbook.xml.rels"])
+            ET.SubElement(
+                relationships,
+                f"{{{PACKAGE_REL}}}Relationship",
+                {
+                    "Id": "rIdExternalReview",
+                    "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink",
+                    "Target": "https://example.invalid/external-review.xlsx",
+                    "TargetMode": "External",
+                },
+            )
+            members["xl/_rels/workbook.xml.rels"] = ET.tostring(
+                relationships, encoding="utf-8", xml_declaration=True
+            )
+            with zipfile.ZipFile(asset, "w") as package:
+                for name, payload in members.items():
+                    package.writestr(name, payload)
+            self.rebind_asset(root, "REL-0001")
+            self.assert_refused_without_results(root)
+
+    def test_prohibited_xlsx_header_footer_text_is_refused_before_any_write(self):
+        for tag in ("oddHeader", "oddFooter"):
+            with self.subTest(tag=tag), tempfile.TemporaryDirectory() as directory:
+                root = self.copy_release_inputs(directory)
+                _, _, _, _, asset = self.release(root, "REL-0001")
+                with zipfile.ZipFile(asset) as package:
+                    members = {info.filename: package.read(info.filename) for info in package.infolist()}
+                worksheet = ET.fromstring(members["xl/worksheets/sheet1.xml"])
+                header_footer = worksheet.find(f"{{{MAIN}}}headerFooter")
+                if header_footer is None:
+                    header_footer = ET.SubElement(worksheet, f"{{{MAIN}}}headerFooter")
+                ET.SubElement(header_footer, f"{{{MAIN}}}{tag}").text = "&Lprivate grading answer key"
+                members["xl/worksheets/sheet1.xml"] = ET.tostring(
+                    worksheet, encoding="utf-8", xml_declaration=True
+                )
+                with zipfile.ZipFile(asset, "w") as package:
+                    for name, payload in members.items():
+                        package.writestr(name, payload)
+                self.rebind_asset(root, "REL-0001")
+                self.assert_refused_without_results(root)
+
     def test_prohibited_leakage_is_refused_before_any_write(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self.copy_release_inputs(directory)
@@ -146,6 +194,38 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
                     package.writestr(member, xml)
                 self.rebind_asset(root, "REL-0002")
                 self.assert_refused_without_results(root)
+
+    def test_prohibited_secondary_docx_asset_is_refused_before_any_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            release_path, release, descriptor_path, descriptor, primary = self.release(root, "REL-0002")
+            secondary = primary.with_name("supporting-controller-notes.docx")
+            shutil.copy2(primary, secondary)
+            with zipfile.ZipFile(secondary) as package:
+                members = {info.filename: package.read(info.filename) for info in package.infolist()}
+            header = ET.fromstring(members["word/header1.xml"])
+            paragraph = ET.SubElement(header, f"{{{WORD}}}p")
+            run_element = ET.SubElement(paragraph, f"{{{WORD}}}r")
+            ET.SubElement(run_element, f"{{{WORD}}}t").text = "private grading answer key"
+            members["word/header1.xml"] = ET.tostring(header, encoding="utf-8", xml_declaration=True)
+            with zipfile.ZipFile(secondary, "w") as package:
+                for name, payload in members.items():
+                    package.writestr(name, payload)
+
+            relative = secondary.relative_to(root).as_posix()
+            digest = sha256(secondary)
+            descriptor["native_assets"].append(
+                {
+                    "path": relative,
+                    "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "sha256": digest,
+                }
+            )
+            write_json(descriptor_path, descriptor)
+            release["descriptor"]["sha256"] = sha256(descriptor_path)
+            release["native_assets"].append({"path": relative, "sha256": digest})
+            write_json(release_path, release)
+            self.assert_refused_without_results(root)
 
     def test_stale_foundation_provenance_is_refused_before_any_write(self):
         with tempfile.TemporaryDirectory() as directory:

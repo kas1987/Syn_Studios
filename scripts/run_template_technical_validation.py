@@ -79,6 +79,17 @@ def check(check_id: str, detail: str, status: str = "PASS") -> dict[str, str]:
     return {"id": check_id, "status": status, "detail": detail}
 
 
+def xml_surfaces(tree: ET.Element) -> list[str]:
+    surfaces: list[str] = []
+    for node in tree.iter():
+        if node.text:
+            surfaces.append(node.text)
+        if node.tail:
+            surfaces.append(node.tail)
+        surfaces.extend(value for value in node.attrib.values() if value)
+    return surfaces
+
+
 def xlsx_inventory(path: Path) -> dict[str, Any]:
     try:
         with zipfile.ZipFile(path) as package:
@@ -127,7 +138,14 @@ def xlsx_inventory(path: Path) -> dict[str, Any]:
                 tree = ET.fromstring(package.read(shared))
                 extracted.extend(item.text or "" for item in tree.findall(f".//{{{MAIN}}}t"))
             calc = workbook.find(f"{{{MAIN}}}calcPr")
-            external = sorted(name for name in names if "externallink" in name.casefold())
+            external = {name for name in names if "externallink" in name.casefold()}
+            for member in sorted(name for name in names if name.endswith(".rels")):
+                relationship_tree = ET.fromstring(package.read(member))
+                external.update(
+                    f"{member}:{item.get('Target', '')}"
+                    for item in relationship_tree
+                    if item.get("TargetMode") == "External"
+                )
             comments = sorted(name for name in names if "comment" in name.casefold() and name.endswith(".xml"))
             for member in comments:
                 comment_tree = ET.fromstring(package.read(member))
@@ -135,11 +153,18 @@ def xlsx_inventory(path: Path) -> dict[str, Any]:
             for member in ("docProps/core.xml", "docProps/custom.xml"):
                 if member in names:
                     extracted.extend(node.text or "" for node in ET.fromstring(package.read(member)).iter())
+            text_members = sorted(
+                name
+                for name in names
+                if name.endswith(".xml")
+            )
+            for member in text_members:
+                extracted.extend(xml_surfaces(ET.fromstring(package.read(member))))
             tables = [name for name in names if name.startswith("xl/tables/") and name.endswith(".xml")]
             return {
                 "sheets": sheets, "cells": cell_count, "formulas": formula_count,
                 "cached_formulas": cached_formula_count, "errors": error_count,
-                "check_values": check_values, "external": external, "comments": comments,
+                "check_values": check_values, "external": sorted(external), "comments": comments,
                 "tables": len(tables), "text": "\n".join(extracted),
                 "hidden_rows": hidden_rows, "hidden_columns": hidden_columns,
                 "formula_sheets": sorted(formula_sheets),
@@ -218,6 +243,17 @@ def eml_inventory(path: Path) -> dict[str, Any]:
         "text": raw + "\n" + "\n".join(text_parts), "message_ids": message_ids,
         "message_count": message_count,
     }
+
+
+def native_asset_inventory(path: Path) -> tuple[str, dict[str, Any]]:
+    suffix = path.suffix.casefold()
+    if suffix == ".xlsx":
+        return "xlsx", xlsx_inventory(path)
+    if suffix == ".docx":
+        return "docx", docx_inventory(path)
+    if suffix == ".eml":
+        return "eml", eml_inventory(path)
+    raise ValidationFailed(f"{path}: unsupported bound native asset type {suffix or '<none>'}")
 
 
 def pdf_pages(path: Path) -> int:
@@ -309,15 +345,15 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
         raise ValidationFailed(f"{release_id}: release does not bind the descriptor native assets")
 
     artifact_type = descriptor.get("artifact_type")
-    primary = assets[0][0]
-    if artifact_type == "xlsx":
-        inventory = xlsx_inventory(primary)
-    elif artifact_type == "docx":
-        inventory = docx_inventory(primary)
-    elif artifact_type == "eml":
-        inventory = eml_inventory(primary)
-    else:
+    inventories = [
+        (path, *native_asset_inventory(path))
+        for path, _ in assets
+    ]
+    primary, primary_type, inventory = inventories[0]
+    if artifact_type not in {"xlsx", "docx", "eml"}:
         raise ValidationFailed(f"{release_id}: unsupported technical runner artifact type {artifact_type}")
+    if primary_type != artifact_type:
+        raise ValidationFailed(f"{release_id}: primary native asset type does not match {artifact_type}")
     outputs, output_checks = render_outputs(root, descriptor, release_id, assets[0][1])
 
     category_checks: dict[str, list[dict[str, str]]] = {name: [] for name in CATEGORIES}
@@ -343,19 +379,24 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
     else:
         raise ValidationFailed(f"{release_id}: applicable render gate has no render outputs")
 
+    for asset_path, asset_type, asset_inventory in inventories:
+        if asset_type == "xlsx":
+            hidden = [name for name, _, state in asset_inventory["sheets"] if state in {"hidden", "veryHidden"}]
+            if asset_inventory["external"] or hidden or asset_inventory["hidden_rows"] or asset_inventory["hidden_columns"]:
+                raise ValidationFailed(f"{release_id}: workbook {asset_path.name} contains external links or hidden workbook surfaces")
+        elif asset_type == "docx":
+            if asset_inventory["external"] or asset_inventory["hidden"]:
+                raise ValidationFailed(f"{release_id}: document {asset_path.name} contains external relationships or hidden text")
+        elif len(asset_inventory["message_ids"]) != len(set(asset_inventory["message_ids"])):
+            raise ValidationFailed(f"{release_id}: email {asset_path.name} contains duplicate Message-ID values")
+
     if artifact_type == "xlsx":
-        hidden = [name for name, _, state in inventory["sheets"] if state in {"hidden", "veryHidden"}]
-        if inventory["external"] or hidden or inventory["hidden_rows"] or inventory["hidden_columns"]:
-            raise ValidationFailed(f"{release_id}: workbook contains external links or hidden workbook surfaces")
         category_checks["metadata"].append(check("metadata:xlsx-surfaces", f"Inspected workbook relationships, {len(inventory['sheets'])} sheet states, row/column visibility, and {len(inventory['comments'])} parsed comment parts; found no external links or hidden surfaces."))
     elif artifact_type == "docx":
-        if inventory["external"] or inventory["hidden"]:
-            raise ValidationFailed(f"{release_id}: document contains external relationships or hidden text")
         category_checks["metadata"].append(check("metadata:docx-surfaces", f"Inspected package relationships, hidden text, {inventory['revisions']} revisions, {inventory['comments']} parsed comment parts, and {inventory['custom_xml']} custom XML parts with no external targets."))
     else:
-        if len(inventory["message_ids"]) != len(set(inventory["message_ids"])):
-            raise ValidationFailed(f"{release_id}: duplicate Message-ID values found")
         category_checks["metadata"].append(check("metadata:mime-headers", f"Inspected MIME encodings, attachment names, timestamps, and {len(inventory['message_ids'])} unique message identifiers."))
+    category_checks["metadata"].append(check("metadata:bound-native-assets", f"Parsed metadata and relationship surfaces across all {len(inventories)} bound native assets."))
 
     if gates["computational"].get("applicable") is True:
         if artifact_type != "xlsx" or inventory["formulas"] < 1 or inventory["cached_formulas"] != inventory["formulas"] or inventory["errors"]:
@@ -377,18 +418,19 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
             raise ValidationFailed(f"{release_id}: foundation provenance is stale or unauthorized")
     category_checks["provenance"].append(check("provenance:lineage-hashes", f"Recomputed the blueprint and descriptor hashes and verified {len(blueprint.get('foundation_lineage', []))} reviewed, synthetic-authorized foundation bindings."))
 
-    text = str(inventory.get("text", ""))
+    text = "\n".join(str(item.get("text", "")) for _, _, item in inventories)
     slots = set(descriptor.get("slots", []))
     unknown_slots = set(re.findall(r"\{\{([a-z0-9_]+)\}\}", text)) - slots
     forbidden = [token for token in FORBIDDEN_TEXT if token in text.casefold()]
     if unknown_slots or forbidden:
         raise ValidationFailed(f"{release_id}: leakage scan found unknown slots or prohibited residue")
-    category_checks["leakage"].append(check("leakage:visible-hidden-scan", f"Scanned extracted native content for prohibited residue and verified all {len(set(re.findall(r'\{\{([a-z0-9_]+)\}\}', text)))} template tokens against the descriptor slot allowlist."))
+    category_checks["leakage"].append(check("leakage:visible-hidden-scan", f"Scanned extracted content from all {len(inventories)} bound native assets for prohibited residue and verified all {len(set(re.findall(r'\{\{([a-z0-9_]+)\}\}', text)))} template tokens against the descriptor slot allowlist."))
 
     authority = blueprint.get("authority") or {}
     if descriptor.get("authority") != authority.get("primary_class") or not authority.get("governing_scope") or not authority.get("non_governing_scope") or not descriptor.get("knowledge_and_authority_constraints"):
         raise ValidationFailed(f"{release_id}: authority boundary declarations are incomplete or inconsistent")
-    authority_markers = {marker for marker in ("approval", "governing", "supporting", "contextual", "question", "superseded") if marker in text.casefold()}
+    primary_text = str(inventory.get("text", ""))
+    authority_markers = {marker for marker in ("approval", "governing", "supporting", "contextual", "question", "superseded") if marker in primary_text.casefold()}
     if len(authority_markers) < 2:
         raise ValidationFailed(f"{release_id}: native content does not express a reviewable authority boundary")
     category_checks["authority_separation"].append(check("authority_separation:declared-boundary", f"Descriptor authority {descriptor.get('authority')} matches the blueprint and retains explicit governing, non-governing, and knowledge boundaries."))
@@ -425,7 +467,7 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
             "applicable": applicable, "verdict": "VALIDATION_PASS" if applicable else "VALIDATION_NOT_APPLICABLE",
             "procedure": gate.get("procedure"), "actor_id": actor_id, "actor": actor,
             "checks": checks, "rendered_outputs": outputs if category == "render" else [],
-            "observations": [f"Deterministic {category} checks inspected the frozen descriptor and every native asset byte."],
+            "observations": [f"Deterministic {category} checks inspected the frozen descriptor and all {len(inventories)} bound native assets."],
             "summary": f"Category-specific {category} validation completed against the frozen release inputs.",
         }
         writes.append((root / f"evidence/template-releases/{release_id}/technical-results/{category}.json", json_bytes(result)))

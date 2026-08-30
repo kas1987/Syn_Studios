@@ -313,6 +313,30 @@ class ReleaseAssemblyTests(unittest.TestCase):
             findings, _ = validate_repository(root)
             self.assertEqual(findings, [], "\n".join(findings))
 
+    def test_refuses_to_rewrite_an_existing_published_exact_version(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_root(temporary)
+            self.add_reviews(root)
+            self.add_technical_results(root)
+            self.assemble(root)
+            before = {
+                path.relative_to(root): path.read_bytes()
+                for parent in (root / "library/releases", root / "evidence/template-releases")
+                for path in parent.rglob("*")
+                if path.is_file()
+            }
+
+            with self.assertRaisesRegex(AssemblyRefused, "existing published exact version is immutable"):
+                self.assemble(root, builder_id="release:replacement-builder", builder_name="Replacement Builder")
+
+            after = {
+                path.relative_to(root): path.read_bytes()
+                for parent in (root / "library/releases", root / "evidence/template-releases")
+                for path in parent.rglob("*")
+                if path.is_file()
+            }
+            self.assertEqual(after, before)
+
 
 if __name__ == "__main__":
     unittest.main()

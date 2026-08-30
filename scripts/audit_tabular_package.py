@@ -17,6 +17,7 @@ from xml.etree import ElementTree
 SHEET_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 TOKEN = re.compile(rb"\{\{[^{}]+\}\}")
+RECONCILIATION_RELATIONSHIPS = ("equal", "left_subset_of_right")
 
 
 def sha256(path: Path) -> str:
@@ -25,6 +26,22 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def resolve_package_path(package_root: Path, value: object, label: str, findings: list[str]) -> Path | None:
+    """Resolve one policy path without allowing it to leave the package."""
+    relative = Path(str(value))
+    if relative.is_absolute() or ".." in relative.parts:
+        findings.append(f"{label}: path must remain within package root")
+        return None
+    try:
+        root = package_root.resolve()
+        resolved = (root / relative).resolve()
+        resolved.relative_to(root)
+    except (OSError, RuntimeError, ValueError):
+        findings.append(f"{label}: path must remain within package root")
+        return None
+    return resolved
 
 
 def load_csv(path: Path, rule: dict, findings: list[str]) -> list[dict[str, str]]:
@@ -126,21 +143,42 @@ def audit_workbook(path: Path, rule: dict, findings: list[str]) -> dict[str, obj
 
 def audit(package_root: Path, policy: dict) -> dict[str, object]:
     findings: list[str] = []
-    provenance = package_root / str(policy.get("provenance_reference", ""))
-    if not provenance.is_file():
+    provenance = resolve_package_path(
+        package_root,
+        policy.get("provenance_reference", ""),
+        "package provenance reference",
+        findings,
+    )
+    if provenance is not None and not provenance.is_file():
         findings.append("package provenance reference is missing")
     workbook_rule = policy.get("workbook")
     workbook_inventory = None
     if isinstance(workbook_rule, dict):
-        workbook = package_root / str(workbook_rule.get("path", ""))
-        workbook_inventory = audit_workbook(workbook, workbook_rule, findings) if workbook.is_file() else None
-        if workbook_inventory is None:
+        workbook = resolve_package_path(
+            package_root,
+            workbook_rule.get("path", ""),
+            "declared workbook",
+            findings,
+        )
+        workbook_inventory = (
+            audit_workbook(workbook, workbook_rule, findings)
+            if workbook is not None and workbook.is_file()
+            else None
+        )
+        if workbook is not None and workbook_inventory is None:
             findings.append("declared workbook is missing")
     carriers: dict[str, list[dict[str, str]]] = {}
     carrier_metrics: dict[str, dict[str, object]] = {}
     for rule in policy.get("csv_carriers", []):
         relative = str(rule.get("path", ""))
-        path = package_root / relative
+        path = resolve_package_path(
+            package_root,
+            relative,
+            f"{relative}: declared CSV carrier",
+            findings,
+        )
+        if path is None:
+            continue
         if not path.is_file():
             findings.append(f"{relative}: declared CSV carrier is missing")
             continue
@@ -154,7 +192,12 @@ def audit(package_root: Path, policy: dict) -> dict[str, object]:
         right = {row.get(str(rule.get("right_column")), "").strip() for row in right_rows}
         left.discard("")
         right.discard("")
-        relation = rule.get("relationship", "equal")
+        relation = rule.get("relationship")
+        if relation not in RECONCILIATION_RELATIONSHIPS:
+            findings.append(
+                f"reconciliation {rule.get('id', 'unnamed')} has unsupported relationship: {relation}"
+            )
+            continue
         passed = left == right if relation == "equal" else left <= right
         if not passed:
             findings.append(f"reconciliation {rule.get('id', 'unnamed')} failed: {relation}")

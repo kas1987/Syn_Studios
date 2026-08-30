@@ -407,6 +407,7 @@ def assemble(root: Path, *, approved: bool, builder_id: str, builder_name: str, 
         }
         plans.append({
             "release_id": release_id, "template_id": str(template_id), "version": str(version), "entry": entry,
+            "was_published": entry.get("release_status") in {"released", "deprecated", "withdrawn"},
             "descriptor_path": descriptor_path, "descriptor": descriptor, "descriptor_hash": descriptor_hash,
             "assets": assets, "asset_hashes": asset_hashes, "blueprint_path": blueprint_path, "blueprint": blueprint,
             "gate_map": gate_map, "foundation_ids": foundation_ids, "reviews": review_refs,
@@ -487,6 +488,27 @@ def assemble(root: Path, *, approved: bool, builder_id: str, builder_name: str, 
         entry["release_status"] = "released"
         entry["release_record"] = {"path": release_path.relative_to(root).as_posix(), "sha256": hashlib.sha256(payload).hexdigest()}
     writes[catalog_path] = json_bytes(catalog)
+
+    for plan in plans:
+        if not plan["was_published"]:
+            continue
+        release_id = plan["release_id"]
+        release_root = (root / "evidence/template-releases" / release_id).resolve()
+        release_record = (root / "library/releases" / f"{release_id}.template.json").resolve()
+        protected = {
+            path: payload
+            for path, payload in writes.items()
+            if path.resolve() == release_record or path.resolve().is_relative_to(release_root)
+        }
+        mismatches = [
+            path
+            for path, payload in protected.items()
+            if not path.is_file() or path.read_bytes() != payload
+        ]
+        if mismatches:
+            raise AssemblyRefused(
+                f"{release_id} existing published exact version is immutable; create a new version"
+            )
 
     written = []
     for path in sorted(writes, key=lambda item: item.as_posix()):
