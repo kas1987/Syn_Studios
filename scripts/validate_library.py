@@ -111,6 +111,9 @@ MEDIA_SUFFIXES = {
 }
 MAX_PNG_PIXELS = 8_000_000
 MAX_PNG_RASTER_BYTES = 64 * 1024 * 1024
+SUPPORTED_PNG_PROOF_CHUNKS = frozenset(
+    {b"IHDR", b"PLTE", b"IDAT", b"IEND", b"tRNS", b"hIST", b"bKGD", b"pHYs"}
+)
 
 
 def normalized_actor(value: str) -> str:
@@ -455,6 +458,13 @@ def validate_png_shape(payload: bytes, label: str, findings: list[str]) -> None:
     if chunk_types.count(b"IHDR") != 1 or chunk_types.count(b"IEND") != 1:
         findings.append(f"{label}: PNG proof has duplicate required image chunks")
         return
+    unsupported_chunks = sorted(set(chunk_types) - SUPPORTED_PNG_PROOF_CHUNKS)
+    if unsupported_chunks:
+        names = [kind.decode("ascii") for kind in unsupported_chunks]
+        findings.append(
+            f"{label}: PNG proof uses unsupported render-proof chunks {names}"
+        )
+        return
     idat_indexes = [index for index, kind in enumerate(chunk_types) if kind == b"IDAT"]
     if idat_indexes != list(range(idat_indexes[0], idat_indexes[-1] + 1)):
         findings.append(f"{label}: PNG proof has nonconsecutive image-data chunks")
@@ -567,11 +577,6 @@ def validate_png_shape(payload: bytes, label: str, findings: list[str]) -> None:
         if len(physical) != 9 or physical[8] not in {0, 1}:
             findings.append(f"{label}: PNG proof has invalid physical-dimension data")
             return
-    known_critical = {b"IHDR", b"PLTE", b"IDAT", b"IEND"}
-    if any(kind[0] & 0x20 == 0 and kind not in known_critical for kind in chunk_types):
-        findings.append(f"{label}: PNG proof has an unsupported critical chunk")
-        return
-
     channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[color_type]
     bits_per_pixel = channels * bit_depth
     if interlace == 0:

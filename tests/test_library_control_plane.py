@@ -1386,6 +1386,79 @@ class LibraryControlPlaneTests(unittest.TestCase):
 
                 self.assertIn(expected, "\n".join(findings))
 
+    def test_png_supported_ancillary_profile_accepts_legal_indexed_proof(self):
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+        payload = (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 1, 3, 0, 0, 0))
+            + chunk(b"PLTE", b"\x00\x00\x00\xff\xff\xff")
+            + chunk(b"hIST", struct.pack(">HH", 1, 2))
+            + chunk(b"tRNS", b"\xff\x80")
+            + chunk(b"bKGD", b"\x01")
+            + chunk(b"pHYs", struct.pack(">IIB", 3779, 3779, 1))
+            + chunk(b"IDAT", zlib.compress(b"".join(b"\x00\x00\x00" for _ in range(16))))
+            + chunk(b"IEND", b"")
+        )
+        findings = []
+
+        validate_png_shape(payload, "valid", findings)
+
+        self.assertEqual(findings, [])
+
+    def test_png_render_proof_profile_rejects_unsupported_ancillary_chunks(self):
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+        header = chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 0, 0, 0, 0))
+        raster = chunk(b"IDAT", zlib.compress(b"".join(b"\x00" + b"\x00" * 16 for _ in range(16))))
+        unsupported = (
+            (b"gAMA", struct.pack(">I", 45455)),
+            (b"cHRM", b"\x00" * 32),
+            (b"sRGB", b"\x00"),
+            (b"sBIT", b"\x08"),
+        )
+        for kind, data in unsupported:
+            with self.subTest(kind=kind):
+                payload = (
+                    b"\x89PNG\r\n\x1a\n"
+                    + header
+                    + chunk(kind, data)
+                    + raster
+                    + chunk(b"IEND", b"")
+                )
+                findings = []
+
+                validate_png_shape(payload, "unsupported", findings)
+
+                rendered = "\n".join(findings)
+                self.assertIn("unsupported render-proof chunks", rendered)
+                self.assertIn(kind.decode("ascii"), rendered)
+
+    def test_png_render_proof_profile_rejects_malformed_unsupported_chunks(self):
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+        header = chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 0, 0, 0, 0))
+        raster = chunk(b"IDAT", zlib.compress(b"".join(b"\x00" + b"\x00" * 16 for _ in range(16))))
+        cases = (
+            chunk(b"gAMA", b"\x01") + raster,
+            chunk(b"gAMA", struct.pack(">I", 45455)) * 2 + raster,
+            raster + chunk(b"gAMA", struct.pack(">I", 45455)),
+            chunk(b"sRGB", b"\x04") + raster,
+            chunk(b"cHRM", b"\x00" * 4) + raster,
+            chunk(b"sBIT", b"\x00") + raster,
+        )
+        for body in cases:
+            with self.subTest(body=body[:12]):
+                payload = b"\x89PNG\r\n\x1a\n" + header + body + chunk(b"IEND", b"")
+                findings = []
+
+                validate_png_shape(payload, "unsupported", findings)
+
+                self.assertIn("unsupported render-proof chunks", "\n".join(findings))
+
     def test_png_chunk_types_require_letters_and_uppercase_reserved_byte(self):
         def chunk(kind, data):
             return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
