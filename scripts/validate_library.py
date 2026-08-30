@@ -1258,10 +1258,13 @@ def validate_submission_profiles(
 ) -> int:
     """Validate the public-safe submission metadata topology and its exact joins."""
     profile_root = root / "library/submissions"
-    if not profile_root.exists():
-        return 0
     if is_path_indirection(profile_root):
         findings.append("library/submissions: submission profile root cannot be a symbolic link or junction")
+        return 0
+    if not profile_root.exists():
+        return 0
+    if not profile_root.is_dir():
+        findings.append("library/submissions: submission profile root must be a directory")
         return 0
     try:
         profile_root_resolved = profile_root.resolve(strict=True)
@@ -1620,9 +1623,12 @@ def validate_submission_profiles(
                 if card_id not in foundation_ids:
                     findings.append(f"{invariant_label}.foundation_card_id: must identify a bound foundation card")
                     continue
+                card_entry = cards.get(str(card_id))
+                if card_entry is None:
+                    continue
                 pointer = invariant.get("json_pointer")
                 pointer_match = re.fullmatch(r"/reuse/patterns/([0-9]+)", str(pointer))
-                card = cards[str(card_id)][1]
+                card = card_entry[1]
                 patterns = as_list(as_dict(card.get("reuse")).get("patterns"))
                 pattern_index = int(pointer_match.group(1)) if pointer_match else -1
                 if pattern_index < 0 or pattern_index >= len(patterns):
