@@ -1157,6 +1157,22 @@ class LibraryControlPlaneTests(unittest.TestCase):
             validate_native_asset_shape(path, "eml", "missing-id", findings)
             self.assertIn("Message-ID", "\n".join(findings))
 
+    def test_eml_with_unknown_charset_is_a_deterministic_finding(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "unknown-charset.eml"
+            path.write_bytes(
+                b"From: sender@example.test\r\nTo: recipient@example.test\r\n"
+                b"Date: Sat, 30 Aug 2026 10:00:00 -0400\r\n"
+                b"Message-ID: <unknown-charset@example.test>\r\nSubject: Status\r\n"
+                b"Content-Type: text/plain; charset=x-unknown\r\n"
+                b"Content-Transfer-Encoding: 8bit\r\n\r\nBody \xff\r\n"
+            )
+            findings = []
+
+            validate_native_asset_shape(path, "eml", "unknown-charset", findings)
+
+            self.assertIn("EML body cannot be decoded", "\n".join(findings))
+
     def test_xlsx_release_cannot_bind_uncontracted_second_workbook(self):
         with tempfile.TemporaryDirectory() as temporary:
             root, _, blueprint_path = self.make_minimal_root(temporary)
@@ -1208,6 +1224,40 @@ class LibraryControlPlaneTests(unittest.TestCase):
                 validate_png_shape(payload, "invalid", findings)
 
                 self.assertIn(expected, "\n".join(findings))
+
+    def test_indexed_png_palette_and_sample_bounds_are_validated(self):
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+        header = chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 3, 0, 0, 0))
+        raster = zlib.compress(b"".join(b"\x00" + b"\x01" * 16 for _ in range(16)))
+        for palette, expected in ((b"\x00", "invalid palette"), (b"\x00\x00\x00", "missing palette entry")):
+            with self.subTest(expected=expected):
+                payload = (
+                    b"\x89PNG\r\n\x1a\n"
+                    + header
+                    + chunk(b"PLTE", palette)
+                    + chunk(b"IDAT", raster)
+                    + chunk(b"IEND", b"")
+                )
+                findings = []
+
+                validate_png_shape(payload, "invalid", findings)
+
+                self.assertIn(expected, "\n".join(findings))
+
+    def test_png_duplicate_ihdr_is_rejected(self):
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+        header = chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 0, 0, 0, 0))
+        raster = zlib.compress(b"".join(b"\x00" + b"\x00" * 16 for _ in range(16)))
+        payload = b"\x89PNG\r\n\x1a\n" + header + header + chunk(b"IDAT", raster) + chunk(b"IEND", b"")
+        findings = []
+
+        validate_png_shape(payload, "invalid", findings)
+
+        self.assertIn("duplicate required image chunks", "\n".join(findings))
 
     def test_bare_object_pdf_spoof_is_rejected(self):
         findings = []

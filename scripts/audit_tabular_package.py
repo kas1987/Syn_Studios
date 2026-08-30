@@ -99,6 +99,16 @@ def load_csv(path: Path, rule: dict, findings: list[str]) -> list[dict[str, str]
         for value in row.values()
     ):
         findings.append(f"{path.name}: unresolved build token in CSV content")
+    mismatched_rows = [
+        row_number
+        for row_number, row in enumerate(rows, start=2)
+        if None in row or any(row.get(header) is None for header in headers)
+    ]
+    if mismatched_rows:
+        findings.append(
+            f"{path.name}: CSV row width must match the header at rows {mismatched_rows}"
+        )
+        return []
     if not headers or len(headers) != len(set(headers)) or any(not value for value in headers):
         findings.append(f"{path.name}: headers must be nonempty and unique")
         return rows

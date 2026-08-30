@@ -443,13 +443,39 @@ def validate_png_shape(payload: bytes, label: str, findings: list[str]) -> None:
         findings.append(f"{label}: PNG proof has an unsupported IHDR encoding")
         return
     chunk_types = [kind for kind, _ in chunks]
+    if chunk_types.count(b"IHDR") != 1 or chunk_types.count(b"IEND") != 1:
+        findings.append(f"{label}: PNG proof has duplicate required image chunks")
+        return
     idat_indexes = [index for index, kind in enumerate(chunk_types) if kind == b"IDAT"]
     if idat_indexes != list(range(idat_indexes[0], idat_indexes[-1] + 1)):
         findings.append(f"{label}: PNG proof has nonconsecutive image-data chunks")
         return
-    if color_type == 3 and (b"PLTE" not in chunk_types or chunk_types.index(b"PLTE") > idat_indexes[0]):
-        findings.append(f"{label}: indexed PNG proof lacks a palette before image data")
+    palette_chunks = [data for kind, data in chunks if kind == b"PLTE"]
+    palette_entries = 0
+    if len(palette_chunks) > 1 or (
+        palette_chunks and chunk_types.index(b"PLTE") > idat_indexes[0]
+    ):
+        findings.append(f"{label}: PNG proof has an invalid palette layout")
         return
+    if palette_chunks and color_type in {0, 4}:
+        findings.append(f"{label}: grayscale PNG proof cannot contain a palette")
+        return
+    if palette_chunks and (
+        len(palette_chunks[0]) < 3
+        or len(palette_chunks[0]) > 768
+        or len(palette_chunks[0]) % 3
+    ):
+        findings.append(f"{label}: PNG proof has an invalid palette")
+        return
+    if color_type == 3:
+        if len(palette_chunks) != 1:
+            findings.append(f"{label}: indexed PNG proof lacks one palette before image data")
+            return
+        palette = palette_chunks[0]
+        palette_entries = len(palette) // 3
+        if palette_entries > 2**bit_depth:
+            findings.append(f"{label}: indexed PNG proof has an invalid palette")
+            return
     known_critical = {b"IHDR", b"PLTE", b"IDAT", b"IEND"}
     if any(kind[0] & 0x20 == 0 and kind not in known_critical for kind in chunk_types):
         findings.append(f"{label}: PNG proof has an unsupported critical chunk")
@@ -458,7 +484,7 @@ def validate_png_shape(payload: bytes, label: str, findings: list[str]) -> None:
     channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[color_type]
     bits_per_pixel = channels * bit_depth
     if interlace == 0:
-        segments = [((width * bits_per_pixel + 7) // 8, height)]
+        segments = [((width * bits_per_pixel + 7) // 8, height, width)]
     else:
         passes = (
             (0, 0, 8, 8),
@@ -474,8 +500,8 @@ def validate_png_shape(payload: bytes, label: str, findings: list[str]) -> None:
             pass_width = (width - x_start + x_step - 1) // x_step if width > x_start else 0
             pass_height = (height - y_start + y_step - 1) // y_step if height > y_start else 0
             if pass_width and pass_height:
-                segments.append(((pass_width * bits_per_pixel + 7) // 8, pass_height))
-    expected_size = sum((row_bytes + 1) * rows for row_bytes, rows in segments)
+                segments.append(((pass_width * bits_per_pixel + 7) // 8, pass_height, pass_width))
+    expected_size = sum((row_bytes + 1) * rows for row_bytes, rows, _ in segments)
     if width * height > 100_000_000 or expected_size > 512 * 1024 * 1024:
         findings.append(f"{label}: PNG proof raster is too large to validate safely")
         return
@@ -493,11 +519,47 @@ def validate_png_shape(payload: bytes, label: str, findings: list[str]) -> None:
         findings.append(f"{label}: PNG proof raster data does not match declared dimensions")
         return
     offset = 0
-    for row_bytes, rows in segments:
+    filter_stride = max(1, (bits_per_pixel + 7) // 8)
+    for row_bytes, rows, pixel_width in segments:
+        prior = bytearray(row_bytes)
         for _ in range(rows):
-            if raster[offset] > 4:
+            filter_type = raster[offset]
+            if filter_type > 4:
                 findings.append(f"{label}: PNG proof raster uses an invalid scanline filter")
                 return
+            scanline = raster[offset + 1:offset + row_bytes + 1]
+            reconstructed = bytearray(row_bytes)
+            for index, value in enumerate(scanline):
+                left = reconstructed[index - filter_stride] if index >= filter_stride else 0
+                above = prior[index]
+                upper_left = prior[index - filter_stride] if index >= filter_stride else 0
+                if filter_type == 0:
+                    predictor = 0
+                elif filter_type == 1:
+                    predictor = left
+                elif filter_type == 2:
+                    predictor = above
+                elif filter_type == 3:
+                    predictor = (left + above) // 2
+                else:
+                    estimate = left + above - upper_left
+                    distances = (
+                        abs(estimate - left),
+                        abs(estimate - above),
+                        abs(estimate - upper_left),
+                    )
+                    predictor = (left, above, upper_left)[distances.index(min(distances))]
+                reconstructed[index] = (value + predictor) & 0xFF
+            if color_type == 3:
+                sample_mask = (1 << bit_depth) - 1
+                for pixel in range(pixel_width):
+                    bit_offset = pixel * bit_depth
+                    shift = 8 - bit_depth - (bit_offset % 8)
+                    palette_index = (reconstructed[bit_offset // 8] >> shift) & sample_mask
+                    if palette_index >= palette_entries:
+                        findings.append(f"{label}: indexed PNG proof references a missing palette entry")
+                        return
+            prior = reconstructed
             offset += row_bytes + 1
 
 
@@ -587,8 +649,12 @@ def validate_native_asset_shape(path: Path, artifact_type: object, label: str, f
             findings.append(f"{label}: is not a parseable EML message: {error}")
             return
         required_headers = ("From", "To", "Date", "Message-ID", "Subject")
-        body = message.get_body(preferencelist=("plain", "html")) if message.is_multipart() else message
-        content = body.get_content() if body is not None else ""
+        try:
+            body = message.get_body(preferencelist=("plain", "html")) if message.is_multipart() else message
+            content = body.get_content() if body is not None else ""
+        except (LookupError, UnicodeError, ValueError) as error:
+            findings.append(f"{label}: EML body cannot be decoded: {error}")
+            return
         if message.defects or any(not message.get(header) for header in required_headers) or not str(content).strip():
             findings.append(f"{label}: EML must have valid From, To, Date, Message-ID, Subject, MIME structure, and body")
 

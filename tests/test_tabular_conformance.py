@@ -108,6 +108,26 @@ class TabularConformanceTests(unittest.TestCase):
                     result,
                 )
 
+    def test_csv_rows_must_match_header_width(self):
+        for payload in (
+            "Row ID,Entity,Account\nR-001,E-01,A-10,uncontracted\n",
+            "Row ID,Entity,Account\nR-001,E-01\n",
+        ):
+            with self.subTest(payload=payload), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                policy = self.build_package(root)
+                (root / "source.csv").write_text(payload, encoding="utf-8")
+
+                result = audit(root, policy)
+
+                self.assertTrue(
+                    any(
+                        "source.csv: CSV row width must match the header" in finding
+                        for finding in result["findings"]
+                    ),
+                    result,
+                )
+
     def test_cross_file_mismatch_fails(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
