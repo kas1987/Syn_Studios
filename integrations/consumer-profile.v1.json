@@ -6,6 +6,7 @@
   "interface": {
     "operations": [
       "discover",
+      "recommend",
       "select",
       "instantiate",
       "validate"
@@ -13,6 +14,7 @@
     "resolver": "integrations/query_catalog.py",
     "resolver_modes": [
       "discover",
+      "recommend",
       "select",
       "instantiate",
       "validate"
@@ -25,8 +27,10 @@
       "skill/references/artifact-archetypes.md",
       "skill/references/package-composition.md",
       "docs/DOCUMENT_STACK.md",
+      "schemas/submission-profile.schema.json",
       "examples/blueprints",
-      "library/foundations"
+      "library/foundations",
+      "library/submissions"
     ]
   },
   "authority": {
@@ -44,6 +48,7 @@
   "data_classes": {
     "library_safe": [
       "foundation_metadata",
+      "submission_profile_metadata",
       "blueprint_constraints",
       "sanitized_template_bytes",
       "release_evidence",
@@ -78,6 +83,35 @@
       ],
       "returns": "catalog_entries",
       "release_policy": "released_or_deprecated_exact_versions",
+      "side_effects": false
+    },
+    "recommend": {
+      "accepts": [
+        "closed_schema_versioned_requirements",
+        "canonical_consumer_id",
+        "existing_compatibility_constraints",
+        "controlled_facets",
+        "bounded_recent_window",
+        "package_local_oldest_to_newest_exact_recent_usage",
+        "optional_target_bound_material_transformation_plan"
+      ],
+      "reads": [
+        "library/catalog.json",
+        "library/submissions/SUB-XXXX/profile.json",
+        "bound_foundation_blueprint_release_and_evidence_metadata"
+      ],
+      "requires": [
+        "canonical_repository_validation",
+        "recommendation_profile_exists",
+        "release_status_is_selectable",
+        "profile_and_catalog_compatibility",
+        "known_profiled_recent_usage_identities"
+      ],
+      "returns": "ranked_exact_versions_with_reuse_evidence_or_explicit_no_match",
+      "material_transformation_policy": "planned_not_validated_until_bound_to_package_local_template_binding_and_proven_by_consumer_candidate_artifact_validation",
+      "version_policy": "exact_only_no_floating_aliases",
+      "history_policy": "package_local_input_only_no_global_usage_store",
+      "next_operation": "select",
       "side_effects": false
     },
     "select": {
@@ -236,6 +270,7 @@
       "consumer_id": "anna",
       "modes": [
         "discover",
+        "recommend",
         "select",
         "instantiate",
         "validate"
@@ -252,6 +287,7 @@
       "consumer_id": "holodeck-file-generation",
       "modes": [
         "discover",
+        "recommend",
         "select",
         "instantiate",
         "validate",
@@ -270,6 +306,7 @@
       "consumer_id": "human-artifact-realism",
       "modes": [
         "discover",
+        "recommend",
         "select",
         "validate",
         "plan",
