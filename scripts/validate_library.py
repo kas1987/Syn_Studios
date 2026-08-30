@@ -420,9 +420,85 @@ def validate_png_shape(payload: bytes, label: str, findings: list[str]) -> None:
     if offset != len(payload) or not chunks or chunks[0][0] != b"IHDR" or len(chunks[0][1]) != 13 or chunks[-1] != (b"IEND", b"") or not any(kind == b"IDAT" and data for kind, data in chunks):
         findings.append(f"{label}: declared PNG proof is missing required image chunks")
         return
-    width, height = struct.unpack(">II", chunks[0][1][:8])
+    width, height, bit_depth, color_type, compression, filter_method, interlace = struct.unpack(
+        ">IIBBBBB", chunks[0][1]
+    )
     if width < 16 or height < 16:
         findings.append(f"{label}: PNG proof dimensions are not meaningful")
+        return
+    allowed_depths = {
+        0: {1, 2, 4, 8, 16},
+        2: {8, 16},
+        3: {1, 2, 4, 8},
+        4: {8, 16},
+        6: {8, 16},
+    }
+    if (
+        color_type not in allowed_depths
+        or bit_depth not in allowed_depths[color_type]
+        or compression != 0
+        or filter_method != 0
+        or interlace not in {0, 1}
+    ):
+        findings.append(f"{label}: PNG proof has an unsupported IHDR encoding")
+        return
+    chunk_types = [kind for kind, _ in chunks]
+    idat_indexes = [index for index, kind in enumerate(chunk_types) if kind == b"IDAT"]
+    if idat_indexes != list(range(idat_indexes[0], idat_indexes[-1] + 1)):
+        findings.append(f"{label}: PNG proof has nonconsecutive image-data chunks")
+        return
+    if color_type == 3 and (b"PLTE" not in chunk_types or chunk_types.index(b"PLTE") > idat_indexes[0]):
+        findings.append(f"{label}: indexed PNG proof lacks a palette before image data")
+        return
+    known_critical = {b"IHDR", b"PLTE", b"IDAT", b"IEND"}
+    if any(kind[0] & 0x20 == 0 and kind not in known_critical for kind in chunk_types):
+        findings.append(f"{label}: PNG proof has an unsupported critical chunk")
+        return
+
+    channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[color_type]
+    bits_per_pixel = channels * bit_depth
+    if interlace == 0:
+        segments = [((width * bits_per_pixel + 7) // 8, height)]
+    else:
+        passes = (
+            (0, 0, 8, 8),
+            (4, 0, 8, 8),
+            (0, 4, 4, 8),
+            (2, 0, 4, 4),
+            (0, 2, 2, 4),
+            (1, 0, 2, 2),
+            (0, 1, 1, 2),
+        )
+        segments = []
+        for x_start, y_start, x_step, y_step in passes:
+            pass_width = (width - x_start + x_step - 1) // x_step if width > x_start else 0
+            pass_height = (height - y_start + y_step - 1) // y_step if height > y_start else 0
+            if pass_width and pass_height:
+                segments.append(((pass_width * bits_per_pixel + 7) // 8, pass_height))
+    expected_size = sum((row_bytes + 1) * rows for row_bytes, rows in segments)
+    if width * height > 100_000_000 or expected_size > 512 * 1024 * 1024:
+        findings.append(f"{label}: PNG proof raster is too large to validate safely")
+        return
+    compressed = b"".join(data for kind, data in chunks if kind == b"IDAT")
+    try:
+        decoder = zlib.decompressobj()
+        raster = decoder.decompress(compressed, expected_size + 1)
+        if decoder.unconsumed_tail or len(raster) > expected_size:
+            raise zlib.error("decoded raster exceeds declared dimensions")
+        raster += decoder.flush()
+    except zlib.error as error:
+        findings.append(f"{label}: PNG proof raster data cannot be decoded: {error}")
+        return
+    if not decoder.eof or decoder.unused_data or len(raster) != expected_size:
+        findings.append(f"{label}: PNG proof raster data does not match declared dimensions")
+        return
+    offset = 0
+    for row_bytes, rows in segments:
+        for _ in range(rows):
+            if raster[offset] > 4:
+                findings.append(f"{label}: PNG proof raster uses an invalid scanline filter")
+                return
+            offset += row_bytes + 1
 
 
 def validate_native_asset_shape(path: Path, artifact_type: object, label: str, findings: list[str]) -> None:

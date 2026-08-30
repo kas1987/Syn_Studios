@@ -75,10 +75,30 @@ def resolve_package_path(package_root: Path, value: object, label: str, findings
 
 
 def load_csv(path: Path, rule: dict, findings: list[str]) -> list[dict[str, str]]:
-    with path.open("r", encoding="utf-8-sig", newline="") as source:
-        reader = csv.DictReader(source)
-        headers = reader.fieldnames or []
-        rows = list(reader)
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as source:
+            reader = csv.DictReader(source, strict=True)
+            headers = reader.fieldnames or []
+            rows = list(reader)
+    except (OSError, UnicodeError, csv.Error) as error:
+        findings.append(f"{path.name}: cannot parse UTF-8 CSV carrier: {error}")
+        return []
+
+    def cell_text(row: dict[str, str], column: str) -> str:
+        value = row.get(column, "")
+        return value.strip() if isinstance(value, str) else ""
+
+    def contains_token(value: object) -> bool:
+        if isinstance(value, list):
+            return any(contains_token(item) for item in value)
+        return isinstance(value, str) and TOKEN.search(value.encode("utf-8")) is not None
+
+    if any(contains_token(header) for header in headers) or any(
+        contains_token(value)
+        for row in rows
+        for value in row.values()
+    ):
+        findings.append(f"{path.name}: unresolved build token in CSV content")
     if not headers or len(headers) != len(set(headers)) or any(not value for value in headers):
         findings.append(f"{path.name}: headers must be nonempty and unique")
         return rows
@@ -93,14 +113,14 @@ def load_csv(path: Path, rule: dict, findings: list[str]) -> list[dict[str, str]
     if identifier and identifier not in headers:
         findings.append(f"{path.name}: configured id_column is missing: {identifier}")
     elif identifier in headers:
-        values = [row.get(identifier, "").strip() for row in rows]
+        values = [cell_text(row, identifier) for row in rows]
         if any(not value for value in values) or len(values) != len(set(values)):
             findings.append(f"{path.name}: {identifier} must be populated and unique")
     for column, threshold in rule.get("minimum_unique", {}).items():
         if column not in headers:
             findings.append(f"{path.name}: configured minimum_unique column is missing: {column}")
             continue
-        observed = {row.get(column, "").strip() for row in rows if row.get(column, "").strip()}
+        observed = {cell_text(row, column) for row in rows if cell_text(row, column)}
         if len(observed) < int(threshold):
             findings.append(f"{path.name}: {column} has {len(observed)} unique values; requires {threshold}")
     lifecycle = rule.get("lifecycle")
@@ -108,7 +128,7 @@ def load_csv(path: Path, rule: dict, findings: list[str]) -> list[dict[str, str]
         status_column = str(lifecycle.get("status_column", ""))
         resolution_column = str(lifecycle.get("resolution_column", ""))
         allowed = set(lifecycle.get("allowed_statuses", []))
-        observed_statuses = {row.get(status_column, "").strip() for row in rows}
+        observed_statuses = {cell_text(row, status_column) for row in rows}
         invalid = sorted(observed_statuses - allowed) if allowed else []
         if invalid:
             findings.append(f"{path.name}: invalid lifecycle statuses {invalid}")
@@ -116,8 +136,8 @@ def load_csv(path: Path, rule: dict, findings: list[str]) -> list[dict[str, str]
         if not required <= observed_statuses:
             findings.append(f"{path.name}: missing required lifecycle statuses {sorted(required - observed_statuses)}")
         for row_number, row in enumerate(rows, start=2):
-            status = row.get(status_column, "").strip()
-            resolution = row.get(resolution_column, "").strip()
+            status = cell_text(row, status_column)
+            resolution = cell_text(row, resolution_column)
             if status in set(lifecycle.get("requires_resolution", [])) and not resolution:
                 findings.append(f"{path.name}: row {row_number} {status} requires a resolution reference")
             if status in set(lifecycle.get("forbids_resolution", [])) and resolution:

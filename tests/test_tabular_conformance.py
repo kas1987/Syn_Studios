@@ -80,6 +80,34 @@ class TabularConformanceTests(unittest.TestCase):
             self.assertEqual(result["status"], "pass")
             self.assertEqual(result["scope"], "downstream_conformance_only_not_acceptance")
 
+    def test_csv_token_in_unrelated_field_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy = self.build_package(root)
+            source = root / "source.csv"
+            source.write_text(
+                source.read_text(encoding="utf-8").replace("E-01", "{{undeclared_secret}}", 1),
+                encoding="utf-8",
+            )
+
+            result = audit(root, policy)
+
+            self.assertIn("source.csv: unresolved build token in CSV content", result["findings"])
+
+    def test_unreadable_or_malformed_csv_is_reported_as_a_finding(self):
+        for payload in (b"Row ID,Entity,Account\nR-001,\xff,A-10\n", b'Row ID,Entity,Account\nR-001,"unterminated,A-10\n'):
+            with self.subTest(payload=payload), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                policy = self.build_package(root)
+                (root / "source.csv").write_bytes(payload)
+
+                result = audit(root, policy)
+
+                self.assertTrue(
+                    any("source.csv: cannot parse UTF-8 CSV carrier" in finding for finding in result["findings"]),
+                    result,
+                )
+
     def test_cross_file_mismatch_fails(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

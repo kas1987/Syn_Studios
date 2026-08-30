@@ -13,7 +13,7 @@ from xml.etree import ElementTree as ET
 
 from jsonschema import Draft202012Validator
 
-from scripts.validate_library import SCHEMA_NAMES, canonical_json_sha256, validate_expansion_resources, validate_native_asset_shape, validate_pdf_shape, validate_proof_artifact, validate_repository
+from scripts.validate_library import SCHEMA_NAMES, canonical_json_sha256, validate_expansion_resources, validate_native_asset_shape, validate_pdf_shape, validate_png_shape, validate_proof_artifact, validate_repository
 from scripts.workbook_recalculation import workbook_formula_evidence
 
 
@@ -1187,6 +1187,27 @@ class LibraryControlPlaneTests(unittest.TestCase):
             rendered = "\n".join(findings)
             self.assertIn("PNG proof", rendered)
             self.assertIn("not a structurally valid PDF", rendered)
+
+    def test_png_with_valid_chunks_and_invalid_raster_is_rejected(self):
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+        for image_data, expected in (
+            (b"not-a-zlib-stream", "raster data cannot be decoded"),
+            (zlib.compress(b"\x00" * 10), "raster data does not match declared dimensions"),
+        ):
+            with self.subTest(expected=expected):
+                payload = (
+                    b"\x89PNG\r\n\x1a\n"
+                    + chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 0, 0, 0, 0))
+                    + chunk(b"IDAT", image_data)
+                    + chunk(b"IEND", b"")
+                )
+                findings = []
+
+                validate_png_shape(payload, "invalid", findings)
+
+                self.assertIn(expected, "\n".join(findings))
 
     def test_bare_object_pdf_spoof_is_rejected(self):
         findings = []

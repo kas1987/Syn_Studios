@@ -20,6 +20,8 @@ import zipfile
 from email import policy
 from email.message import EmailMessage
 from email.parser import BytesParser
+from html import unescape
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -98,6 +100,29 @@ QUOTED_MESSAGE_SEPARATOR = re.compile(
 
 class ValidationFailed(RuntimeError):
     pass
+
+
+class _VisibleHTMLText(HTMLParser):
+    """Collect parser-decoded visible HTML text for leakage inspection."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.fragments: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        self.fragments.append(data)
+
+
+def rendered_html_text(content: str) -> str:
+    parser = _VisibleHTMLText()
+    parser.feed(content)
+    parser.close()
+    return "\n".join((unescape(content), "".join(parser.fragments), " ".join(parser.fragments)))
+
+
+def word_on_off_enabled(element: ET.Element) -> bool:
+    value = element.get(f"{{{WORD}}}val", element.get("val"))
+    return value is None or value.casefold() not in {"0", "false", "off", "no"}
 
 
 def sha256(path: Path) -> str:
@@ -334,11 +359,19 @@ def docx_inventory(path: Path) -> dict[str, Any]:
                         "".join(node.text or "" for node in paragraph.findall(f".//{{{WORD}}}t"))
                         for paragraph in tree.findall(f".//{{{WORD}}}p")
                     )
-                    hidden += len(tree.findall(f".//{{{WORD}}}vanish"))
+                    hidden += sum(
+                        word_on_off_enabled(element)
+                        for element in tree.findall(f".//{{{WORD}}}vanish")
+                    )
             paragraphs = len(document.findall(f".//{{{WORD}}}p"))
             tables = len(document.findall(f".//{{{WORD}}}tbl"))
             comments = [name for name in names if name == "word/comments.xml"]
             external: list[str] = []
+            embedded_payloads = sorted(
+                name
+                for name in names
+                if name.casefold().startswith("word/embeddings/")
+            )
             alt_chunks = [
                 element.get(f"{{{OFFICE_REL}}}id", "<unbound>")
                 for element in document.findall(f".//{{{WORD}}}altChunk")
@@ -347,13 +380,16 @@ def docx_inventory(path: Path) -> dict[str, Any]:
                 if name.endswith(".rels"):
                     rels = ET.fromstring(package.read(name))
                     for item in rels:
+                        relationship_type = (item.get("Type") or "").rsplit("/", 1)[-1].casefold()
                         if item.get("TargetMode") == "External":
                             external.append(item.get("Target", ""))
-                        if (item.get("Type") or "").rsplit("/", 1)[-1].casefold() == "afchunk":
+                        if relationship_type == "afchunk":
                             alt_chunks.append(item.get("Target", "<missing-target>"))
+                        if relationship_type in {"oleobject", "package"}:
+                            embedded_payloads.append(f"{name}:{item.get('Target', '<missing-target>')}")
             revisions = len(document.findall(f".//{{{WORD}}}ins")) + len(document.findall(f".//{{{WORD}}}del"))
             custom_xml = len([name for name in names if name.startswith("customXml/") and name.endswith(".xml")])
-            return {"text": "\n".join(extracted), "paragraphs": paragraphs, "tables": tables, "hidden": hidden, "comments": len(comments), "revisions": revisions, "custom_xml": custom_xml, "external": external, "alt_chunks": alt_chunks}
+            return {"text": "\n".join(extracted), "paragraphs": paragraphs, "tables": tables, "hidden": hidden, "comments": len(comments), "revisions": revisions, "custom_xml": custom_xml, "external": external, "alt_chunks": alt_chunks, "embedded_payloads": sorted(set(embedded_payloads))}
     except (KeyError, OSError, zipfile.BadZipFile, ET.ParseError) as error:
         raise ValidationFailed(f"{path}: invalid docx package: {error}") from error
 
@@ -396,6 +432,8 @@ def eml_inventory(path: Path) -> dict[str, Any]:
             except (LookupError, UnicodeError):
                 raise ValidationFailed(f"{path}: text MIME part cannot be decoded")
             text_parts.append(content)
+            if part.get_content_type().casefold() == "text/html":
+                text_parts.append(rendered_html_text(content))
     body_part = message.get_body(preferencelist=("plain", "html"))
     try:
         decoded_body = body_part.get_content() if body_part is not None else ""
@@ -403,7 +441,7 @@ def eml_inventory(path: Path) -> dict[str, Any]:
         raise ValidationFailed(f"{path}: message body cannot be decoded")
     if not isinstance(decoded_body, str):
         decoded_body = ""
-    raw = path.read_text(encoding="utf-8")
+    raw = path.read_bytes().decode("ascii", errors="replace")
     quoted_blocks = quoted_message_blocks(decoded_body)
     message_ids = [str(message["Message-ID"]).strip()] if message.get("Message-ID") else []
     for block in quoted_blocks:
@@ -417,12 +455,21 @@ def eml_inventory(path: Path) -> dict[str, Any]:
         if unsupported_text_attachment(filename, payload, attachment.get_content_charset()):
             raise ValidationFailed(f"{path}: attachment bytes or filename identify an unsupported binary or structured format: {filename}")
         if attachment.get_content_type() == "text/csv":
-            decoded = payload.decode(attachment.get_content_charset() or "utf-8")
+            try:
+                decoded = payload.decode(attachment.get_content_charset() or "utf-8")
+            except (LookupError, UnicodeError) as error:
+                raise ValidationFailed(f"{path}: text attachment cannot be decoded: {filename}") from error
             if len([line for line in decoded.splitlines() if line.strip()]) < 2:
                 raise ValidationFailed(f"{path}: CSV attachment lacks header and data")
             text_parts.append(decoded)
         elif attachment.get_content_maintype() == "text":
-            text_parts.append(payload.decode(attachment.get_content_charset() or "utf-8"))
+            try:
+                decoded = payload.decode(attachment.get_content_charset() or "utf-8")
+            except (LookupError, UnicodeError) as error:
+                raise ValidationFailed(f"{path}: text attachment cannot be decoded: {filename}") from error
+            text_parts.append(decoded)
+            if attachment.get_content_type().casefold() == "text/html":
+                text_parts.append(rendered_html_text(decoded))
         else:
             raise ValidationFailed(
                 f"{path}: unsupported binary attachment cannot be inspected safely: {attachment.get_filename()}"
@@ -637,8 +684,8 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
             if asset_inventory["external"] or hidden or asset_inventory["hidden_rows"] or asset_inventory["hidden_columns"]:
                 raise ValidationFailed(f"{release_id}: workbook {asset_path.name} contains external links or hidden workbook surfaces")
         elif asset_type == "docx":
-            if asset_inventory["external"] or asset_inventory["hidden"] or asset_inventory["alt_chunks"]:
-                raise ValidationFailed(f"{release_id}: document {asset_path.name} contains external relationships, hidden text, or unsupported altChunk content")
+            if asset_inventory["external"] or asset_inventory["hidden"] or asset_inventory["alt_chunks"] or asset_inventory["embedded_payloads"]:
+                raise ValidationFailed(f"{release_id}: document {asset_path.name} contains external relationships, hidden text, unsupported altChunk content, or unsupported embedded content")
         elif len(asset_inventory["message_ids"]) != len(set(asset_inventory["message_ids"])):
             raise ValidationFailed(f"{release_id}: email {asset_path.name} contains duplicate Message-ID values")
     all_message_ids = [

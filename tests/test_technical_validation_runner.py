@@ -1367,6 +1367,56 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             self.rebind_asset(root, "REL-0002")
             self.assert_refused_without_results(root)
 
+    def test_docx_embedded_payload_is_refused_before_any_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0002")
+            with zipfile.ZipFile(asset) as package:
+                members = {info.filename: package.read(info.filename) for info in package.infolist()}
+            relationships = ET.fromstring(members["word/_rels/document.xml.rels"])
+            ET.SubElement(
+                relationships,
+                f"{{{PACKAGE_REL}}}Relationship",
+                {
+                    "Id": "rIdEmbeddedReview",
+                    "Type": f"{OFFICE_REL}/oleObject",
+                    "Target": "embeddings/oleObject1.bin",
+                },
+            )
+            members["word/_rels/document.xml.rels"] = ET.tostring(
+                relationships, encoding="utf-8", xml_declaration=True
+            )
+            members["word/embeddings/oleObject1.bin"] = b"private grading answer key"
+            with zipfile.ZipFile(asset, "w") as package:
+                for name, payload in members.items():
+                    package.writestr(name, payload)
+            self.rebind_asset(root, "REL-0002")
+
+            with self.assertRaisesRegex(ValidationFailed, "unsupported embedded content"):
+                run(root, self.actor_id, self.actor, write=True)
+            self.assertEqual(
+                list(root.glob("evidence/template-releases/REL-*/technical-results/*.json")),
+                [],
+            )
+
+    def test_explicitly_disabled_docx_vanish_property_remains_visible(self):
+        for disabled in ("0", "false", "off", "no"):
+            with self.subTest(disabled=disabled), tempfile.TemporaryDirectory() as directory:
+                root = self.copy_release_inputs(directory)
+                _, _, _, _, asset = self.release(root, "REL-0002")
+
+                def add_visible_run(tree):
+                    paragraph = ET.SubElement(tree, f"{{{WORD}}}p")
+                    run_element = ET.SubElement(paragraph, f"{{{WORD}}}r")
+                    properties = ET.SubElement(run_element, f"{{{WORD}}}rPr")
+                    ET.SubElement(properties, f"{{{WORD}}}vanish", {f"{{{WORD}}}val": disabled})
+                    ET.SubElement(run_element, f"{{{WORD}}}t").text = "Visible review status"
+
+                self.mutate_zip_member(asset, "word/header1.xml", add_visible_run)
+                self.rebind_asset(root, "REL-0002")
+
+                self.assertEqual(len(run(root, self.actor_id, self.actor)), 24)
+
     def test_prohibited_secondary_docx_asset_is_refused_before_any_write(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self.copy_release_inputs(directory)
@@ -1661,6 +1711,44 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             asset.write_bytes(payload)
             self.rebind_asset(root, "REL-0003")
             self.assert_refused_without_results(root)
+
+    def test_iso_8859_1_message_body_is_decoded_without_crashing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0003")
+            message = BytesParser(policy=policy.default).parsebytes(asset.read_bytes())
+            body_part = message.get_body(preferencelist=("plain", "html"))
+            body_part.set_content(
+                body_part.get_content() + "\nCaf\u00e9 follow-up remains contextual.\n",
+                charset="iso-8859-1",
+                cte="8bit",
+            )
+            asset.write_bytes(message.as_bytes(policy=policy.SMTP))
+            self.rebind_asset(root, "REL-0003")
+
+            self.assertEqual(len(run(root, self.actor_id, self.actor)), 24)
+
+    def test_html_character_references_cannot_hide_prohibited_eml_text(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0003")
+            message = BytesParser(policy=policy.default).parsebytes(asset.read_bytes())
+            body_part = message.get_body(preferencelist=("plain", "html"))
+            body_part.set_content(
+                body_part.get_content()
+                + "\n<p>Contextual correspondence: private&#32;grading&#32;answer&#32;key</p>\n",
+                subtype="html",
+                charset="utf-8",
+            )
+            asset.write_bytes(message.as_bytes(policy=policy.SMTP))
+            self.rebind_asset(root, "REL-0003")
+
+            with self.assertRaisesRegex(ValidationFailed, "leakage scan found"):
+                run(root, self.actor_id, self.actor, write=True)
+            self.assertEqual(
+                list(root.glob("evidence/template-releases/REL-*/technical-results/*.json")),
+                [],
+            )
 
     def test_binary_signature_mislabeled_as_text_attachment_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
