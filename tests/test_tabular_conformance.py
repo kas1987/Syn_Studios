@@ -175,6 +175,20 @@ class TabularConformanceTests(unittest.TestCase):
                 result["findings"],
             )
 
+    def test_reconciliation_cannot_pass_when_operand_columns_are_unknown(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy = self.build_package(root)
+            policy["reconciliations"][0]["left_column"] = "Missing left"
+            policy["reconciliations"][0]["right_column"] = "Missing right"
+
+            result = audit(root, policy)
+
+            self.assertIn(
+                "reconciliation source-to-map references a missing operand column",
+                result["findings"],
+            )
+
     def test_ntfs_alternate_data_stream_path_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

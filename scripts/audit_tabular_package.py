@@ -205,8 +205,22 @@ def audit(package_root: Path, policy: dict) -> dict[str, object]:
             continue
         left_rows = carriers[left_path]
         right_rows = carriers[right_path]
-        left = {row.get(str(rule.get("left_column")), "").strip() for row in left_rows}
-        right = {row.get(str(rule.get("right_column")), "").strip() for row in right_rows}
+        left_column = rule.get("left_column")
+        right_column = rule.get("right_column")
+        if (
+            not isinstance(left_column, str)
+            or not isinstance(right_column, str)
+            or not left_rows
+            or not right_rows
+            or left_column not in left_rows[0]
+            or right_column not in right_rows[0]
+        ):
+            findings.append(
+                f"reconciliation {rule.get('id', 'unnamed')} references a missing operand column"
+            )
+            continue
+        left = {row.get(left_column, "").strip() for row in left_rows}
+        right = {row.get(right_column, "").strip() for row in right_rows}
         left.discard("")
         right.discard("")
         relation = rule.get("relationship")
