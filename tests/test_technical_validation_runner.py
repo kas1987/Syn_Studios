@@ -30,6 +30,14 @@ def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
+def snapshot_files(root: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
 def minimal_compact_pdf(newline: bytes) -> bytes:
     pdf = bytearray(b"\xef\xbb\xbf%PDF-1.4" + newline)
     offsets = []
@@ -312,6 +320,28 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
                 self.assertEqual(result["actor_id"], self.actor_id)
                 self.assertTrue(result["checks"])
                 self.assertTrue(all(item["id"].startswith(result["category"] + ":") for item in result["checks"]))
+
+    def test_write_refuses_changed_published_results_before_any_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            run(root, self.actor_id, self.actor, write=True)
+            published_tree = snapshot_files(root)
+
+            with self.assertRaisesRegex(ValidationFailed, "published technical results are immutable"):
+                run(root, "different-actor-id", "Different validation actor", write=True)
+
+            self.assertEqual(snapshot_files(root), published_tree)
+
+    def test_idempotent_write_does_not_replace_identical_published_results(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            first = run(root, self.actor_id, self.actor, write=True)
+
+            with patch("scripts.run_template_technical_validation.os.replace") as replace:
+                second = run(root, self.actor_id, self.actor, write=True)
+
+            self.assertEqual(second, first)
+            replace.assert_not_called()
 
     def test_committed_results_match_current_production_runner(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1038,7 +1068,18 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
                 unique_message_id,
                 primary.read_bytes(),
             )
-            secondary.write_bytes(payload + b"\r\nFrom: retained-copy@example.invalid\r\n")
+            message = BytesParser(policy=policy.default).parsebytes(payload)
+            body_part = message.get_body(preferencelist=("plain", "html"))
+            body_part.set_content(
+                body_part.get_content()
+                + "\n-----Original Message-----\n"
+                + "From: retained-copy@example.invalid\n"
+                + "Sent: Sun, 30 Aug 2026 09:00:00 -0400\n"
+                + "To: analyst@example.invalid\n"
+                + "Subject: Contextual retained-copy note\n\n"
+                + "This contextual quoted message records the retained-copy lifecycle.\n"
+            )
+            secondary.write_bytes(message.as_bytes(policy=policy.default))
             self.bind_secondary_asset(root, "REL-0003", secondary, "message/rfc822")
             with self.assertRaisesRegex(ValidationFailed, "combined email footprint"):
                 run(root, self.actor_id, self.actor, write=True)
@@ -1046,6 +1087,26 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
                 list(root.glob("evidence/template-releases/REL-*/technical-results/*.json")),
                 [],
             )
+
+    def test_eml_message_count_ignores_attachment_and_mime_epilogue_lines(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0003")
+            message = BytesParser(policy=policy.default).parsebytes(asset.read_bytes())
+            message.add_attachment(
+                "\n".join(
+                    f"From: attachment-row-{index}@example.invalid"
+                    for index in range(1, 9)
+                ),
+                subtype="plain",
+                filename="message-routing-log.txt",
+            )
+            payload = message.as_bytes(policy=policy.default)
+            payload += b"\r\nFrom: unrelated-mime-epilogue@example.invalid\r\n" * 8
+            asset.write_bytes(payload)
+            self.rebind_asset(root, "REL-0003")
+
+            self.assertEqual(len(run(root, self.actor_id, self.actor)), 24)
 
     def test_prohibited_binary_eml_attachment_is_refused_before_any_write(self):
         with tempfile.TemporaryDirectory() as directory:

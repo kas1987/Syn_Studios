@@ -1,8 +1,9 @@
 """Run deterministic, hash-bound technical checks for template releases.
 
 The runner performs every check before writing anything.  By default it is a
-dry run; pass ``--write`` to atomically replace the 24 category result files.
-Only Python's standard library is used so the release gate remains portable.
+dry run; pass ``--write`` to create the 24 category result files or verify an
+identical published set.  Only Python's standard library is used so the
+release gate remains portable.
 """
 
 from __future__ import annotations
@@ -68,6 +69,10 @@ PDF_OBJECT = re.compile(
 )
 AUTHORITY_MARKERS = (
     "approval", "governing", "supporting", "contextual", "question", "superseded",
+)
+QUOTED_MESSAGE_SEPARATOR = re.compile(
+    r"(?im)^[ \t]*(?:-{2,}[ \t]*(?:original|forwarded) message[ \t]*-{2,}|"
+    r"begin forwarded message:)[ \t]*\r?$"
 )
 
 
@@ -315,6 +320,26 @@ def docx_inventory(path: Path) -> dict[str, Any]:
         raise ValidationFailed(f"{path}: invalid docx package: {error}") from error
 
 
+def quoted_message_blocks(body: str) -> list[str]:
+    blocks = QUOTED_MESSAGE_SEPARATOR.split(body)
+    quoted: list[str] = []
+    for block in blocks[1:]:
+        required_headers = (
+            r"(?im)^[ \t]*From:[ \t]*\S.*$",
+            r"(?im)^[ \t]*To:[ \t]*\S.*$",
+            r"(?im)^[ \t]*Subject:[ \t]*\S.*$",
+        )
+        if not all(re.search(pattern, block) for pattern in required_headers):
+            continue
+        if not re.search(r"(?im)^[ \t]*(?:Sent|Date):[ \t]*\S.*$", block):
+            continue
+        subject = re.search(r"(?im)^[ \t]*Subject:[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*", block)
+        if subject is None or not block[subject.end():].strip():
+            continue
+        quoted.append(block)
+    return quoted
+
+
 def eml_inventory(path: Path) -> dict[str, Any]:
     try:
         message = BytesParser(policy=policy.default).parsebytes(path.read_bytes())
@@ -341,8 +366,11 @@ def eml_inventory(path: Path) -> dict[str, Any]:
     if not isinstance(decoded_body, str):
         decoded_body = ""
     raw = path.read_text(encoding="utf-8")
-    message_ids = re.findall(r"(?im)^Message-ID:\s*(\S+)", raw)
-    message_count = len(re.findall(r"(?im)^From:\s*.+$", raw))
+    quoted_blocks = quoted_message_blocks(decoded_body)
+    message_ids = [str(message["Message-ID"]).strip()] if message.get("Message-ID") else []
+    for block in quoted_blocks:
+        message_ids.extend(re.findall(r"(?im)^[ \t]*Message-ID:[ \t]*(\S+)", block))
+    message_count = (1 + len(quoted_blocks)) if decoded_body.strip() else 0
     for attachment in attachments:
         payload = attachment.get_payload(decode=True) or b""
         filename = attachment.get_filename()
@@ -710,6 +738,25 @@ def run(root: Path, actor_id: str, actor: str, write: bool = False) -> list[Path
     if len(writes) != 24:
         raise ValidationFailed(f"expected 24 category results, produced {len(writes)}; no files written")
     if write:
+        existing_targets = [path for path, _ in writes if path.exists()]
+        if existing_targets:
+            conflicts: list[str] = []
+            for path, payload in writes:
+                if not path.is_file():
+                    conflicts.append(path.relative_to(root).as_posix())
+                    continue
+                try:
+                    identical = path.read_bytes() == payload
+                except OSError:
+                    identical = False
+                if not identical:
+                    conflicts.append(path.relative_to(root).as_posix())
+            if conflicts:
+                raise ValidationFailed(
+                    "published technical results are immutable; no files written; "
+                    "missing or different targets: " + ", ".join(conflicts)
+                )
+            return [path for path, _ in writes]
         for path, payload in writes:
             path.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(dir=path.parent, prefix=path.name + ".", suffix=".tmp", delete=False) as stream:
@@ -727,7 +774,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--actor-id", required=True)
     parser.add_argument("--actor-name", required=True)
-    parser.add_argument("--write", action="store_true", help="Write results after the complete preflight passes.")
+    parser.add_argument("--write", action="store_true", help="Create results after preflight, or verify an identical published set.")
     arguments = parser.parse_args(argv)
     try:
         paths = run(arguments.root, arguments.actor_id, arguments.actor_name, arguments.write)
