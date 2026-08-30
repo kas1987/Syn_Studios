@@ -1975,8 +1975,9 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
     catalog: dict[str, Any] = {}
     if catalog_path.is_file():
         count += 1
-        catalog = load_json(catalog_path, root, findings)
-        if catalog is not None:
+        loaded_catalog = load_json(catalog_path, root, findings)
+        if loaded_catalog is not None:
+            catalog = loaded_catalog
             label = display_path(catalog_path, root)
             findings.extend(schema_findings(catalog, schemas["artifact-catalog"], label))
             seen_keys: set[tuple[str, str]] = set()
