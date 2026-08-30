@@ -52,7 +52,11 @@ BINARY_ATTACHMENT_PREFIXES = (
     b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff",
 )
 PDF_HEADER = re.compile(rb"%PDF-(?:1\.[0-7]|2\.0)(?:\r\n|\r|\n)")
-PDF_OBJECT = re.compile(rb"(?m)^\s*\d+\s+\d+\s+obj(?:\s|$)")
+PDF_OBJECT = re.compile(
+    rb"(?m)^[\x00\x09\x0a\x0c\x0d\x20]*"
+    rb"\d+[\x00\x09\x0a\x0c\x0d\x20]+\d+[\x00\x09\x0a\x0c\x0d\x20]+"
+    rb"obj(?=[\x00\x09\x0a\x0c\x0d\x20()<>\[\]{}/%]|\Z)"
+)
 PDF_TRAILER = re.compile(rb"startxref\s+(\d+)\s+%%EOF\s*\Z")
 PDF_XREF_TYPE = re.compile(rb"/Type\s*/XRef\b")
 

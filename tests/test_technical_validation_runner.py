@@ -524,7 +524,7 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
 
             self.assertEqual(len(run(root, self.actor_id, self.actor)), 24)
 
-    def test_pdf_with_legal_preheader_mislabeled_as_text_is_refused(self):
+    def test_pdf_with_legal_preheader_and_compact_objects_mislabeled_as_text_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self.copy_release_inputs(directory)
             _, _, _, _, asset = self.release(root, "REL-0003")
@@ -539,7 +539,7 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             )
             for number, body in enumerate(objects, start=1):
                 offsets.append(len(pdf))
-                pdf.extend(f"{number} 0 obj\n".encode("ascii"))
+                pdf.extend(f"{number} 0 obj".encode("ascii"))
                 pdf.extend(body + b"\nendobj\n")
             xref_offset = len(pdf)
             pdf.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
@@ -559,6 +559,26 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             asset.write_bytes(message.as_bytes(policy=policy.default))
             self.rebind_asset(root, "REL-0003")
             self.assert_refused_without_results(root)
+
+    def test_pdf_object_prefix_in_text_is_not_classified_as_structured_pdf(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0003")
+            message = BytesParser(policy=policy.default).parsebytes(asset.read_bytes())
+            text = bytearray(b"%PDF-1.4\n1 0 objective status remains open\n")
+            xref_offset = len(text)
+            text.extend(b"xref narrative section\n")
+            text.extend(f"startxref\n{xref_offset}\n%%EOF\n".encode("ascii"))
+            attachment = EmailMessage(policy=policy.default)
+            attachment["Content-Type"] = 'text/plain; charset="utf-8"'
+            attachment["Content-Disposition"] = 'attachment; filename="pdf-review-notes.txt"'
+            attachment["Content-Transfer-Encoding"] = "base64"
+            attachment.set_payload(base64.b64encode(text).decode("ascii"))
+            message.attach(attachment)
+            asset.write_bytes(message.as_bytes(policy=policy.default))
+            self.rebind_asset(root, "REL-0003")
+
+            self.assertEqual(len(run(root, self.actor_id, self.actor)), 24)
 
     def test_valid_utf16_text_attachment_passes(self):
         with tempfile.TemporaryDirectory() as directory:
