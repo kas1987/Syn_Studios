@@ -58,6 +58,10 @@ PDF_OBJECT = re.compile(
     rb"obj(?=[\x00\x09\x0a\x0c\x0d\x20()<>\[\]{}/%]|\Z)"
 )
 PDF_TRAILER = re.compile(rb"startxref\s+(\d+)\s+%%EOF\s*\Z")
+PDF_REFERENCE = re.compile(rb"(\d+)\s+(\d+)\s+R\b")
+AUTHORITY_MARKERS = (
+    "approval", "governing", "supporting", "contextual", "question", "superseded",
+)
 
 
 class ValidationFailed(RuntimeError):
@@ -360,11 +364,169 @@ def native_asset_inventory(path: Path) -> tuple[str, dict[str, Any]]:
     raise ValidationFailed(f"{path}: unsupported bound native asset type {suffix or '<none>'}")
 
 
+def trusted_recalculation_proof(
+    root: Path,
+    release: dict[str, Any],
+    descriptor_hash: str,
+    assets: list[tuple[Path, str]],
+) -> tuple[str, str]:
+    release_id = str(release.get("release_id"))
+    reference = ((release.get("reviews") or {}).get("terra") or {})
+    review_path = repository_path(root, reference.get("record_path"), f"{release_id} trusted recalculation review")
+    if sha256(review_path) != reference.get("record_sha256"):
+        raise ValidationFailed(f"{release_id}: trusted recalculation proof review hash is stale")
+    review = load_json(review_path)
+    asset_hashes = [digest for _, digest in assets]
+    if (
+        review.get("release_id") != release_id
+        or review.get("template_id") != release.get("template_id")
+        or review.get("version") != release.get("version")
+        or review.get("descriptor_sha256") != descriptor_hash
+        or review.get("native_asset_sha256s") != asset_hashes
+        or review.get("verdict") != "USABILITY_PASS"
+    ):
+        raise ValidationFailed(f"{release_id}: trusted recalculation proof does not bind the current release inputs")
+    artifacts = [
+        artifact
+        for artifact in review.get("artifacts", [])
+        if isinstance(artifact, dict) and artifact.get("category") == "computational"
+    ]
+    if len(artifacts) != 1 or len(asset_hashes) != 1:
+        raise ValidationFailed(f"{release_id}: trusted recalculation proof must bind exactly one workbook")
+    artifact = artifacts[0]
+    proof_path = repository_path(root, artifact.get("path"), f"{release_id} trusted recalculation proof")
+    proof_hash = sha256(proof_path)
+    if proof_hash != artifact.get("sha256") or artifact.get("media_type") != "text/plain":
+        raise ValidationFailed(f"{release_id}: trusted recalculation proof artifact is stale or incorrectly typed")
+    proof_text = proof_path.read_text(encoding="utf-8")
+    required = (
+        f"{release_id} | {release.get('template_id')} | computational",
+        f"Descriptor SHA-256: {descriptor_hash}",
+        f"Native asset SHA-256: {asset_hashes[0]}",
+        "independently recalculated",
+    )
+    if any(item.casefold() not in proof_text.casefold() for item in required):
+        raise ValidationFailed(f"{release_id}: trusted recalculation proof lacks the required hash-bound result")
+    return proof_path.relative_to(root).as_posix(), proof_hash
+
+
+def pdf_xref(payload: bytes, offset: int) -> tuple[dict[tuple[int, int], int], tuple[int, int]]:
+    section = payload[offset:]
+    if not section.startswith(b"xref"):
+        raise ValueError("startxref does not point to a classic xref table")
+    trailer_line = re.search(rb"(?m)^trailer[\t ]*\r?$", section)
+    if trailer_line is None:
+        raise ValueError("xref table has no trailer")
+    lines = section[len(b"xref"):trailer_line.start()].splitlines()
+    entries: dict[tuple[int, int], int] = {}
+    index = 0
+    while index < len(lines):
+        line = lines[index].strip()
+        index += 1
+        if not line:
+            continue
+        header = re.fullmatch(rb"(\d+)\s+(\d+)", line)
+        if header is None:
+            raise ValueError("malformed xref subsection")
+        first, count = (int(value) for value in header.groups())
+        if count < 1 or index + count > len(lines):
+            raise ValueError("truncated xref subsection")
+        for number in range(first, first + count):
+            entry = re.fullmatch(rb"(\d{10})\s+(\d{5})\s+([fn])", lines[index].strip())
+            index += 1
+            if entry is None:
+                raise ValueError("malformed xref entry")
+            object_offset, generation, state = entry.groups()
+            if state == b"n":
+                key = (number, int(generation))
+                if key in entries:
+                    raise ValueError("duplicate in-use xref entry")
+                entries[key] = int(object_offset)
+    trailer = section[trailer_line.end():]
+    root = re.search(rb"/Root\s+(\d+)\s+(\d+)\s+R\b", trailer)
+    if root is None:
+        raise ValueError("trailer has no catalog root")
+    root_ref = tuple(int(value) for value in root.groups())
+    if root_ref not in entries:
+        raise ValueError("catalog root is absent from xref")
+    for (number, generation), object_offset in entries.items():
+        if object_offset < 0 or object_offset >= offset:
+            raise ValueError("xref object offset is outside the object section")
+        header = re.match(rb"(\d+)\s+(\d+)\s+obj\b", payload[object_offset:])
+        if header is None or (int(header.group(1)), int(header.group(2))) != (number, generation):
+            raise ValueError("xref entry does not point to its object header")
+    return entries, root_ref
+
+
+def pdf_object_body(payload: bytes, entries: dict[tuple[int, int], int], reference: tuple[int, int]) -> bytes:
+    offset = entries.get(reference)
+    if offset is None:
+        raise ValueError("page tree references a missing object")
+    header = re.match(rb"\d+\s+\d+\s+obj\b", payload[offset:])
+    if header is None:
+        raise ValueError("object header is malformed")
+    body_start = offset + header.end()
+    body_end = payload.find(b"endobj", body_start)
+    if body_end < 0:
+        raise ValueError("object is not terminated")
+    return payload[body_start:body_end]
+
+
+def pdf_named_reference(body: bytes, name: bytes) -> tuple[int, int]:
+    match = re.search(rb"/" + name + rb"\s+(\d+)\s+(\d+)\s+R\b", body)
+    if match is None:
+        raise ValueError(f"PDF dictionary lacks /{name.decode('ascii')} reference")
+    return tuple(int(value) for value in match.groups())
+
+
+def pdf_page_tree_count(payload: bytes, entries: dict[tuple[int, int], int], root_ref: tuple[int, int]) -> int:
+    catalog = pdf_object_body(payload, entries, root_ref)
+    if re.search(rb"/Type\s*/Catalog\b", catalog) is None:
+        raise ValueError("root object is not a catalog")
+    pages_ref = pdf_named_reference(catalog, b"Pages")
+    visited: set[tuple[int, int]] = set()
+
+    def visit(reference: tuple[int, int], parent: tuple[int, int] | None) -> int:
+        if reference in visited:
+            raise ValueError("page tree contains a cycle or duplicate child")
+        visited.add(reference)
+        body = pdf_object_body(payload, entries, reference)
+        if re.search(rb"/Type\s*/Pages\b", body):
+            count_match = re.search(rb"/Count\s+(\d+)\b", body)
+            kids_match = re.search(rb"/Kids\s*\[(.*?)\]", body, re.DOTALL)
+            if count_match is None or kids_match is None:
+                raise ValueError("pages node lacks Count or Kids")
+            kids = [tuple(int(value) for value in match) for match in PDF_REFERENCE.findall(kids_match.group(1))]
+            residual = PDF_REFERENCE.sub(b"", kids_match.group(1)).strip()
+            if not kids or residual:
+                raise ValueError("pages node has malformed Kids")
+            actual = sum(visit(child, reference) for child in kids)
+            if actual != int(count_match.group(1)):
+                raise ValueError("pages node Count does not match its page tree")
+            return actual
+        if re.search(rb"/Type\s*/Page\b", body) is None:
+            raise ValueError("page tree child is neither Page nor Pages")
+        if parent is None or pdf_named_reference(body, b"Parent") != parent:
+            raise ValueError("page Parent does not match its containing Pages node")
+        return 1
+
+    return visit(pages_ref, None)
+
+
 def pdf_pages(path: Path) -> int:
     payload = path.read_bytes()
-    if not payload.startswith(b"%PDF-"):
-        raise ValidationFailed(f"{path}: render is not a PDF")
-    return len(re.findall(rb"/Type\s*/Page\b", payload))
+    try:
+        header = PDF_HEADER.search(payload[:1024])
+        trailer = PDF_TRAILER.search(payload)
+        if header is None or trailer is None:
+            raise ValueError("missing PDF header or final startxref trailer")
+        xref_offset = int(trailer.group(1))
+        if xref_offset < header.end() or xref_offset >= trailer.start():
+            raise ValueError("startxref offset is outside the PDF body")
+        entries, root_ref = pdf_xref(payload, xref_offset)
+        return pdf_page_tree_count(payload, entries, root_ref)
+    except (OSError, ValueError) as error:
+        raise ValidationFailed(f"{path}: render is not a structurally valid PDF: {error}") from error
 
 
 def png_dimensions(path: Path) -> tuple[int, int]:
@@ -461,6 +623,17 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
     outputs, output_checks = render_outputs(root, descriptor, release_id, assets[0][1])
 
     category_checks: dict[str, list[dict[str, str]]] = {name: [] for name in CATEGORIES}
+    for asset_path, asset_type, asset_inventory in inventories:
+        if asset_type == "xlsx" and (not asset_inventory["sheets"] or asset_inventory["cells"] == 0):
+            raise ValidationFailed(f"{release_id}: workbook {asset_path.name} has insufficient native structure")
+        if asset_type == "docx" and (asset_inventory["paragraphs"] == 0 or not asset_inventory["text"].strip()):
+            raise ValidationFailed(f"{release_id}: document {asset_path.name} has insufficient native structure")
+        if asset_type == "eml" and (
+            not asset_inventory["message"].get("From")
+            or not asset_inventory["message"].get("To")
+            or asset_inventory["message_count"] < 1
+        ):
+            raise ValidationFailed(f"{release_id}: email {asset_path.name} lacks required headers or message content")
     if artifact_type == "xlsx":
         sheet_names = [item[0] for item in inventory["sheets"]]
         expected = (descriptor.get("render_contract") or {}).get("expected_sheet_names")
@@ -472,14 +645,19 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
             raise ValidationFailed(f"{release_id}: DOCX has insufficient native document structure")
         category_checks["core_integrity"].append(check("core_integrity:docx-structure", f"Parsed {inventory['paragraphs']} paragraphs and {inventory['tables']} tables from native WordprocessingML."))
     else:
-        if not inventory["message"].get("From") or not inventory["message"].get("To") or inventory["message_count"] < 2:
+        email_inventories = [item for _, kind, item in inventories if kind == "eml"]
+        message_count = sum(item["message_count"] for item in email_inventories)
+        attachment_count = sum(len(item["attachments"]) for item in email_inventories)
+        if message_count < 2:
             raise ValidationFailed(f"{release_id}: email thread lacks required headers or thread depth")
-        category_checks["core_integrity"].append(check("core_integrity:mime-structure", f"Parsed {len(inventory['parts'])} MIME parts, {inventory['message_count']} messages, and {len(inventory['attachments'])} attachments."))
+        category_checks["core_integrity"].append(check("core_integrity:mime-structure", f"Parsed {sum(len(item['parts']) for item in email_inventories)} MIME parts, {message_count} messages, and {attachment_count} attachments across {len(email_inventories)} bound email assets."))
+    category_checks["core_integrity"].append(check("core_integrity:bound-native-assets", f"Parsed and checked native structure for all {len(inventories)} bound assets."))
 
     if outputs:
         category_checks["render"].extend(output_checks)
     elif artifact_type == "eml":
-        category_checks["render"].append(check("render:mime-parts", f"Opened and decoded all {len(inventory['attachments'])} native MIME attachment payloads; pagination is not the descriptor render surface."))
+        attachments = sum(len(item["attachments"]) for _, kind, item in inventories if kind == "eml")
+        category_checks["render"].append(check("render:mime-parts", f"Opened and decoded all {attachments} native MIME attachment payloads across every bound email asset; pagination is not the descriptor render surface."))
     else:
         raise ValidationFailed(f"{release_id}: applicable render gate has no render outputs")
 
@@ -493,13 +671,21 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
                 raise ValidationFailed(f"{release_id}: document {asset_path.name} contains external relationships, hidden text, or unsupported altChunk content")
         elif len(asset_inventory["message_ids"]) != len(set(asset_inventory["message_ids"])):
             raise ValidationFailed(f"{release_id}: email {asset_path.name} contains duplicate Message-ID values")
+    all_message_ids = [
+        message_id
+        for _, asset_type, asset_inventory in inventories
+        if asset_type == "eml"
+        for message_id in asset_inventory["message_ids"]
+    ]
+    if len(all_message_ids) != len(set(all_message_ids)):
+        raise ValidationFailed(f"{release_id}: duplicate Message-ID values occur across bound email assets")
 
     if artifact_type == "xlsx":
         category_checks["metadata"].append(check("metadata:xlsx-surfaces", f"Inspected workbook relationships, {len(inventory['sheets'])} sheet states, row/column visibility, and {len(inventory['comments'])} parsed comment parts; found no external links or hidden surfaces."))
     elif artifact_type == "docx":
         category_checks["metadata"].append(check("metadata:docx-surfaces", f"Inspected package relationships, hidden text, {inventory['revisions']} revisions, {inventory['comments']} parsed comment parts, and {inventory['custom_xml']} custom XML parts with no external targets."))
     else:
-        category_checks["metadata"].append(check("metadata:mime-headers", f"Inspected MIME encodings, attachment names, timestamps, and {len(inventory['message_ids'])} unique message identifiers."))
+        category_checks["metadata"].append(check("metadata:mime-headers", f"Inspected MIME encodings, attachment names, timestamps, and {len(all_message_ids)} globally unique message identifiers."))
     category_checks["metadata"].append(check("metadata:bound-native-assets", f"Parsed metadata and relationship surfaces across all {len(inventories)} bound native assets."))
 
     if gates["computational"].get("applicable") is True:
@@ -511,8 +697,10 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
             raise ValidationFailed(f"{release_id}: workbook calculation controls or live checks failed")
         if len(inventory["formula_sheets"]) < 3:
             raise ValidationFailed(f"{release_id}: formulas do not span the expected workbook calculation layers")
-        category_checks["computational"].append(check("computational:live-formulas", f"Parsed {inventory['formulas']} live formulas with cached values across {len(inventory['formula_sheets'])} sheets, automatic full recalculation, and no formula errors."))
-        category_checks["computational"].append(check("computational:control-checks", f"Inspected {len(inventory['check_values'])} cached control results; none report FAIL."))
+        proof_path, proof_hash = trusted_recalculation_proof(root, release, descriptor_hash, assets)
+        category_checks["computational"].append(check("computational:recalculation-proof", f"Verified trusted independent recalculation proof {proof_path} ({proof_hash}) against the exact descriptor and workbook hash."))
+        category_checks["computational"].append(check("computational:formula-cache-state", f"Parsed {inventory['formulas']} formulas and their proof-bound cached results across {len(inventory['formula_sheets'])} sheets with no recorded formula errors."))
+        category_checks["computational"].append(check("computational:control-checks", f"Inspected {len(inventory['check_values'])} proof-bound control results; none report FAIL."))
 
     for lineage in blueprint.get("foundation_lineage", []):
         card_id = lineage.get("card_id")
@@ -535,24 +723,43 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
     authority = blueprint.get("authority") or {}
     if descriptor.get("authority") != authority.get("primary_class") or not authority.get("governing_scope") or not authority.get("non_governing_scope") or not descriptor.get("knowledge_and_authority_constraints"):
         raise ValidationFailed(f"{release_id}: authority boundary declarations are incomplete or inconsistent")
-    primary_text = str(inventory.get("text", ""))
-    authority_markers = {marker for marker in ("approval", "governing", "supporting", "contextual", "question", "superseded") if marker in primary_text.casefold()}
+    marker_sets = [
+        {
+            marker
+            for marker in AUTHORITY_MARKERS
+            if marker in str(asset_inventory.get("text", "")).casefold()
+        }
+        for _, _, asset_inventory in inventories
+    ]
+    if any(not markers for markers in marker_sets):
+        raise ValidationFailed(f"{release_id}: a bound native asset does not express its authority state")
+    authority_markers = set().union(*marker_sets)
     if len(authority_markers) < 2:
         raise ValidationFailed(f"{release_id}: native content does not express a reviewable authority boundary")
     category_checks["authority_separation"].append(check("authority_separation:declared-boundary", f"Descriptor authority {descriptor.get('authority')} matches the blueprint and retains explicit governing, non-governing, and knowledge boundaries."))
     category_checks["authority_separation"].append(check("authority_separation:native-content", f"Extracted native content preserves {len(authority_markers)} distinct authority-state markers: {', '.join(sorted(authority_markers))}."))
 
     if artifact_type == "xlsx":
-        actual, unit = len(inventory["sheets"]), "tabs"
+        actual = sum(len(item["sheets"]) for _, kind, item in inventories if kind == "xlsx")
+        unit = "tabs"
     elif artifact_type == "docx":
+        if len(inventories) != 1:
+            raise ValidationFailed(f"{release_id}: document footprint contract does not account for multiple native assets")
         actual, unit = int((descriptor.get("render_contract") or {}).get("expected_page_count") or 0), "pages"
     else:
-        actual, unit = inventory["message_count"], "messages"
+        actual = sum(item["message_count"] for _, kind, item in inventories if kind == "eml")
+        unit = "messages"
     bounds = target_range(blueprint, unit)
-    if bounds is None or not bounds[0] <= actual <= bounds[1]:
+    if bounds is None:
+        raise ValidationFailed(f"{release_id}: blueprint does not define a supported {unit} footprint")
+    if artifact_type == "eml" and not bounds[0] <= actual <= bounds[1]:
+        raise ValidationFailed(f"{release_id}: combined email footprint is outside blueprint bounds")
+    if artifact_type != "eml" and not bounds[0] <= actual <= bounds[1]:
         raise ValidationFailed(f"{release_id}: {actual} {unit} do not satisfy blueprint footprint")
-    if artifact_type == "eml" and not 2 <= len(inventory["attachments"]) <= 4:
-        raise ValidationFailed(f"{release_id}: attachment footprint is outside blueprint bounds")
+    if artifact_type == "eml":
+        attachment_count = sum(len(item["attachments"]) for _, kind, item in inventories if kind == "eml")
+        if not 2 <= attachment_count <= 4:
+            raise ValidationFailed(f"{release_id}: combined email footprint has attachments outside blueprint bounds")
     category_checks["anti_filler"].append(check("anti_filler:footprint", f"Native footprint of {actual} {unit} satisfies the blueprint's producer-owned {bounds[0]}-{bounds[1]} range."))
 
     writes: list[tuple[Path, bytes]] = []

@@ -91,9 +91,10 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
         for source in sorted((ROOT / "evidence/template-releases").glob("REL-*")):
             target = evidence / source.name
             target.mkdir(parents=True)
-            manifest = source / "render-manifest.json"
-            if manifest.is_file():
-                shutil.copy2(manifest, target / manifest.name)
+            for filename in ("render-manifest.json", "terra.json", "terra-proof.txt"):
+                evidence_file = source / filename
+                if evidence_file.is_file():
+                    shutil.copy2(evidence_file, target / evidence_file.name)
             if (source / "render").is_dir():
                 shutil.copytree(source / "render", target / "render")
         return root
@@ -136,6 +137,24 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             for name, payload in members.items():
                 package.writestr(name, payload)
 
+    def bind_secondary_asset(
+        self,
+        root: Path,
+        release_id: str,
+        asset: Path,
+        media_type: str,
+    ) -> None:
+        release_path, release, descriptor_path, descriptor, _ = self.release(root, release_id)
+        relative = asset.relative_to(root).as_posix()
+        digest = sha256(asset)
+        descriptor["native_assets"].append(
+            {"path": relative, "media_type": media_type, "sha256": digest}
+        )
+        write_json(descriptor_path, descriptor)
+        release["descriptor"]["sha256"] = sha256(descriptor_path)
+        release["native_assets"].append({"path": relative, "sha256": digest})
+        write_json(release_path, release)
+
     def test_real_release_inputs_dry_run_without_writes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self.copy_release_inputs(directory)
@@ -163,6 +182,19 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             root = self.copy_release_inputs(directory)
             png = root / "evidence/template-releases/REL-0002/render/internal-controller-memo-page-3.png"
             png.write_bytes(b"not a PNG")
+            self.assert_refused_without_results(root)
+
+    def test_marker_only_pdf_render_is_refused_before_any_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, descriptor, _ = self.release(root, "REL-0002")
+            pdf = root / descriptor["render_contract"]["expected_pdf_path"]
+            pdf.write_bytes(b"%PDF-1.7\n" + (b"/Type /Page\n" * 5) + b"%%EOF\n")
+            manifest_path = root / descriptor["render_contract"]["evidence_manifest"]
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            rendered = manifest["templates"][descriptor["template_id"]]["rendered_outputs"]
+            next(item for item in rendered if item["path"] == descriptor["render_contract"]["expected_pdf_path"])["sha256"] = sha256(pdf)
+            write_json(manifest_path, manifest)
             self.assert_refused_without_results(root)
 
     def test_missing_formula_cache_is_refused_before_any_write(self):
@@ -207,6 +239,30 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             self.mutate_zip_member(asset, "xl/worksheets/sheet6.xml", spoof_cache)
             self.rebind_asset(root, "REL-0001")
             self.assert_refused_without_results(root)
+
+    def test_tampered_formula_with_stale_nonempty_cache_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0001")
+
+            def replace_formula_but_keep_cache(tree):
+                formula_cell = next(
+                    cell
+                    for cell in tree.findall(f".//{{{MAIN}}}c")
+                    if cell.find(f"{{{MAIN}}}f") is not None
+                    and cell.find(f"{{{MAIN}}}v") is not None
+                    and (cell.find(f"{{{MAIN}}}v").text or "").strip()
+                )
+                formula_cell.find(f"{{{MAIN}}}f").text = "1/0"
+
+            self.mutate_zip_member(asset, "xl/worksheets/sheet8.xml", replace_formula_but_keep_cache)
+            self.rebind_asset(root, "REL-0001")
+            with self.assertRaisesRegex(ValidationFailed, "trusted recalculation proof"):
+                run(root, self.actor_id, self.actor, write=True)
+            self.assertEqual(
+                list(root.glob("evidence/template-releases/REL-*/technical-results/*.json")),
+                [],
+            )
 
     def test_true_lexical_hidden_row_is_refused_before_any_write(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -462,6 +518,73 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             release["native_assets"].append({"path": relative, "sha256": digest})
             write_json(release_path, release)
             self.assert_refused_without_results(root)
+
+    def test_secondary_eml_without_required_headers_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, primary = self.release(root, "REL-0003")
+            secondary = primary.with_name("supporting-status-note.eml")
+            message = EmailMessage(policy=policy.default)
+            message["From"] = "analyst@example.invalid"
+            message["Message-ID"] = "<supporting-status-note@example.invalid>"
+            message["Subject"] = "Supporting status note"
+            message.set_content("This contextual note records a routine follow-up.")
+            secondary.write_bytes(message.as_bytes(policy=policy.default))
+            self.bind_secondary_asset(root, "REL-0003", secondary, "message/rfc822")
+            self.assert_refused_without_results(root)
+
+    def test_secondary_eml_without_authority_marker_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, primary = self.release(root, "REL-0003")
+            secondary = primary.with_name("routine-status-note.eml")
+            message = EmailMessage(policy=policy.default)
+            message["From"] = "analyst@example.invalid"
+            message["To"] = "manager@example.invalid"
+            message["Message-ID"] = "<routine-status-note@example.invalid>"
+            message["Subject"] = "Routine status note"
+            message.set_content("The follow-up meeting remains on the calendar.")
+            secondary.write_bytes(message.as_bytes(policy=policy.default))
+            self.bind_secondary_asset(root, "REL-0003", secondary, "message/rfc822")
+            self.assert_refused_without_results(root)
+
+    def test_duplicate_message_ids_across_bound_eml_assets_are_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, primary = self.release(root, "REL-0003")
+            secondary = primary.with_name("duplicate-thread.eml")
+            shutil.copy2(primary, secondary)
+            self.bind_secondary_asset(root, "REL-0003", secondary, "message/rfc822")
+            with self.assertRaisesRegex(ValidationFailed, "duplicate Message-ID"):
+                run(root, self.actor_id, self.actor, write=True)
+            self.assertEqual(
+                list(root.glob("evidence/template-releases/REL-*/technical-results/*.json")),
+                [],
+            )
+
+    def test_combined_eml_footprint_uses_every_bound_asset(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, primary = self.release(root, "REL-0003")
+            secondary = primary.with_name("additional-thread.eml")
+            sequence = iter(range(1, 100))
+
+            def unique_message_id(_match):
+                return f"Message-ID: <additional-{next(sequence)}@example.invalid>".encode("ascii")
+
+            payload = re.sub(
+                rb"(?im)^Message-ID:\s*\S+",
+                unique_message_id,
+                primary.read_bytes(),
+            )
+            secondary.write_bytes(payload + b"\r\nFrom: retained-copy@example.invalid\r\n")
+            self.bind_secondary_asset(root, "REL-0003", secondary, "message/rfc822")
+            with self.assertRaisesRegex(ValidationFailed, "combined email footprint"):
+                run(root, self.actor_id, self.actor, write=True)
+            self.assertEqual(
+                list(root.glob("evidence/template-releases/REL-*/technical-results/*.json")),
+                [],
+            )
 
     def test_prohibited_binary_eml_attachment_is_refused_before_any_write(self):
         with tempfile.TemporaryDirectory() as directory:
