@@ -471,6 +471,62 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             self.rebind_asset(root, "REL-0003")
             self.assert_refused_without_results(root)
 
+    def test_structured_executable_mislabeled_as_text_attachment_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0003")
+            message = BytesParser(policy=policy.default).parsebytes(asset.read_bytes())
+            executable = bytearray(128)
+            executable[:2] = b"MZ"
+            executable[60:64] = (64).to_bytes(4, "little")
+            executable[64:68] = b"PE\x00\x00"
+            attachment = EmailMessage(policy=policy.default)
+            attachment["Content-Type"] = 'text/plain; charset="iso-8859-1"'
+            attachment["Content-Disposition"] = 'attachment; filename="review-cache.txt"'
+            attachment["Content-Transfer-Encoding"] = "base64"
+            attachment.set_payload(base64.b64encode(executable).decode("ascii"))
+            message.attach(attachment)
+            asset.write_bytes(message.as_bytes(policy=policy.default))
+            self.rebind_asset(root, "REL-0003")
+            self.assert_refused_without_results(root)
+
+    def test_valid_mz_prefixed_csv_attachment_passes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0003")
+            message = BytesParser(policy=policy.default).parsebytes(asset.read_bytes())
+            message.add_attachment(
+                (
+                    "MZ Account,Amount,Description\r\n"
+                    "MZ-100,2,Opening balance correction\r\n"
+                    "MZ-200,3,Follow-up entry\r\n"
+                ),
+                subtype="csv",
+                filename="mz-source.csv",
+            )
+            asset.write_bytes(message.as_bytes(policy=policy.default))
+            self.rebind_asset(root, "REL-0003")
+
+            self.assertEqual(len(run(root, self.actor_id, self.actor)), 24)
+
+    def test_valid_utf16_text_attachment_passes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0003")
+            message = BytesParser(policy=policy.default).parsebytes(asset.read_bytes())
+            attachment = EmailMessage(policy=policy.default)
+            attachment["Content-Type"] = 'text/plain; charset="utf-16"'
+            attachment["Content-Disposition"] = 'attachment; filename="unicode-notes.txt"'
+            attachment["Content-Transfer-Encoding"] = "base64"
+            attachment.set_payload(
+                base64.b64encode("Owner\tStatus\r\nAnalyst\tOpen\r\n".encode("utf-16")).decode("ascii")
+            )
+            message.attach(attachment)
+            asset.write_bytes(message.as_bytes(policy=policy.default))
+            self.rebind_asset(root, "REL-0003")
+
+            self.assertEqual(len(run(root, self.actor_id, self.actor)), 24)
+
     def test_stale_foundation_provenance_is_refused_before_any_write(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self.copy_release_inputs(directory)

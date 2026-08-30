@@ -49,7 +49,7 @@ UNSUPPORTED_ATTACHMENT_SUFFIXES = {
 BINARY_ATTACHMENT_PREFIXES = (
     b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08", b"\x1f\x8b", b"BZh",
     b"\xfd7zXZ\x00", b"7z\xbc\xaf\x27\x1c", b"Rar!", b"%PDF-", b"\xd0\xcf\x11\xe0",
-    b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a", b"GIF89a", b"MZ",
+    b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a", b"GIF89a",
 )
 
 
@@ -119,13 +119,31 @@ def cached_cell_text(cell: ET.Element) -> str:
     return "".join(node.text or "" for node in cell.findall(f"{{{MAIN}}}is//{{{MAIN}}}t"))
 
 
-def unsupported_text_attachment(filename: str, payload: bytes) -> bool:
+def structured_executable(payload: bytes) -> bool:
+    if not payload.startswith(b"MZ") or len(payload) < 64:
+        return False
+    header_offset = int.from_bytes(payload[60:64], "little")
+    if header_offset <= 0 or header_offset > len(payload) - 2:
+        return False
+    signature = payload[header_offset:header_offset + 4]
+    return signature == b"PE\x00\x00" or signature[:2] in {b"NE", b"LE", b"LX"}
+
+
+def unsupported_text_attachment(filename: str, payload: bytes, charset: str | None) -> bool:
     suffix = Path(filename).suffix.casefold()
     if suffix in UNSUPPORTED_ATTACHMENT_SUFFIXES:
         return True
-    if payload.startswith(BINARY_ATTACHMENT_PREFIXES) or b"\x00" in payload:
+    if structured_executable(payload) or payload.startswith(BINARY_ATTACHMENT_PREFIXES):
         return True
-    return any(byte < 32 and byte not in {9, 10, 12, 13} for byte in payload[:4096])
+    try:
+        decoded = payload.decode(charset or "utf-8")
+    except (LookupError, UnicodeError):
+        return True
+    return any(
+        (ord(character) < 32 or 127 <= ord(character) <= 159)
+        and character not in "\t\n\f\r"
+        for character in decoded
+    )
 
 
 def xlsx_inventory(path: Path) -> dict[str, Any]:
@@ -292,7 +310,7 @@ def eml_inventory(path: Path) -> dict[str, Any]:
         filename = attachment.get_filename()
         if not filename or not payload:
             raise ValidationFailed(f"{path}: attachment lacks a filename or payload")
-        if unsupported_text_attachment(filename, payload):
+        if unsupported_text_attachment(filename, payload, attachment.get_content_charset()):
             raise ValidationFailed(f"{path}: attachment bytes or filename identify an unsupported binary or structured format: {filename}")
         if attachment.get_content_type() == "text/csv":
             decoded = payload.decode(attachment.get_content_charset() or "utf-8")
