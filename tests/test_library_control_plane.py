@@ -1259,6 +1259,59 @@ class LibraryControlPlaneTests(unittest.TestCase):
 
         self.assertIn("duplicate required image chunks", "\n".join(findings))
 
+    def test_png_palette_ancillary_chunks_are_bounded_and_ordered(self):
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+        header = chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 3, 0, 0, 0))
+        palette = chunk(b"PLTE", b"\x00\x00\x00")
+        raster = chunk(b"IDAT", zlib.compress(b"".join(b"\x00" + b"\x00" * 16 for _ in range(16))))
+        cases = (
+            (palette + chunk(b"tRNS", b"\xff\x00") + raster, "invalid transparency data"),
+            (palette + chunk(b"hIST", b"\x00") + raster, "invalid histogram data"),
+            (chunk(b"hIST", b"\x00\x01") + palette + raster, "invalid histogram data"),
+        )
+        for body, expected in cases:
+            with self.subTest(expected=expected):
+                payload = b"\x89PNG\r\n\x1a\n" + header + body + chunk(b"IEND", b"")
+                findings = []
+
+                validate_png_shape(payload, "invalid", findings)
+
+                self.assertIn(expected, "\n".join(findings))
+
+    def test_png_chunk_types_require_letters_and_uppercase_reserved_byte(self):
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+        header = chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 0, 0, 0, 0))
+        raster = chunk(b"IDAT", zlib.compress(b"".join(b"\x00" + b"\x00" * 16 for _ in range(16))))
+        for invalid_type in (b"abcd", b"1bCd"):
+            with self.subTest(invalid_type=invalid_type):
+                payload = b"\x89PNG\r\n\x1a\n" + header + chunk(invalid_type, b"") + raster + chunk(b"IEND", b"")
+                findings = []
+
+                validate_png_shape(payload, "invalid", findings)
+
+                self.assertIn("invalid chunk type", "\n".join(findings))
+
+    def test_png_resource_limit_rejects_large_raster_before_decode(self):
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+        payload = (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", 4000, 4000, 1, 3, 0, 0, 0))
+            + chunk(b"PLTE", b"\x00\x00\x00\xff\xff\xff")
+            + chunk(b"IDAT", zlib.compress(b"\x00"))
+            + chunk(b"IEND", b"")
+        )
+        findings = []
+
+        validate_png_shape(payload, "invalid", findings)
+
+        self.assertIn("raster is too large to validate safely", "\n".join(findings))
+
     def test_bare_object_pdf_spoof_is_rejected(self):
         findings = []
         validate_pdf_shape(spoof_pdf(), "spoof", findings)

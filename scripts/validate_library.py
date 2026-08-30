@@ -108,6 +108,8 @@ MEDIA_SUFFIXES = {
     "image/png": {".png"},
     "application/pdf": {".pdf"},
 }
+MAX_PNG_PIXELS = 8_000_000
+MAX_PNG_RASTER_BYTES = 64 * 1024 * 1024
 
 
 def normalized_actor(value: str) -> str:
@@ -409,6 +411,12 @@ def validate_png_shape(payload: bytes, label: str, findings: list[str]) -> None:
             return
         chunk_type = payload[offset + 4:offset + 8]
         chunk_data = payload[offset + 8:offset + 8 + length]
+        if not all(
+            ord("A") <= value <= ord("Z") or ord("a") <= value <= ord("z")
+            for value in chunk_type
+        ) or not ord("A") <= chunk_type[2] <= ord("Z"):
+            findings.append(f"{label}: PNG proof has an invalid chunk type")
+            return
         expected_crc = struct.unpack(">I", payload[offset + 8 + length:end])[0]
         if zlib.crc32(chunk_type + chunk_data) & 0xFFFFFFFF != expected_crc:
             findings.append(f"{label}: declared PNG proof has an invalid chunk checksum")
@@ -476,6 +484,40 @@ def validate_png_shape(payload: bytes, label: str, findings: list[str]) -> None:
         if palette_entries > 2**bit_depth:
             findings.append(f"{label}: indexed PNG proof has an invalid palette")
             return
+    transparency_chunks = [data for kind, data in chunks if kind == b"tRNS"]
+    if len(transparency_chunks) > 1:
+        findings.append(f"{label}: PNG proof has duplicate transparency chunks")
+        return
+    if transparency_chunks:
+        transparency_index = chunk_types.index(b"tRNS")
+        if transparency_index > idat_indexes[0] or (
+            palette_chunks and transparency_index < chunk_types.index(b"PLTE")
+        ):
+            findings.append(f"{label}: PNG proof has an invalid transparency layout")
+            return
+        transparency = transparency_chunks[0]
+        if (
+            color_type in {4, 6}
+            or (color_type == 0 and len(transparency) != 2)
+            or (color_type == 2 and len(transparency) != 6)
+            or (color_type == 3 and (not transparency or len(transparency) > palette_entries))
+        ):
+            findings.append(f"{label}: PNG proof has invalid transparency data")
+            return
+    histogram_chunks = [data for kind, data in chunks if kind == b"hIST"]
+    if len(histogram_chunks) > 1:
+        findings.append(f"{label}: PNG proof has duplicate histogram chunks")
+        return
+    if histogram_chunks:
+        histogram_index = chunk_types.index(b"hIST")
+        if (
+            not palette_chunks
+            or histogram_index < chunk_types.index(b"PLTE")
+            or histogram_index > idat_indexes[0]
+            or len(histogram_chunks[0]) != palette_entries * 2
+        ):
+            findings.append(f"{label}: PNG proof has invalid histogram data")
+            return
     known_critical = {b"IHDR", b"PLTE", b"IDAT", b"IEND"}
     if any(kind[0] & 0x20 == 0 and kind not in known_critical for kind in chunk_types):
         findings.append(f"{label}: PNG proof has an unsupported critical chunk")
@@ -502,7 +544,7 @@ def validate_png_shape(payload: bytes, label: str, findings: list[str]) -> None:
             if pass_width and pass_height:
                 segments.append(((pass_width * bits_per_pixel + 7) // 8, pass_height, pass_width))
     expected_size = sum((row_bytes + 1) * rows for row_bytes, rows, _ in segments)
-    if width * height > 100_000_000 or expected_size > 512 * 1024 * 1024:
+    if width * height > MAX_PNG_PIXELS or expected_size > MAX_PNG_RASTER_BYTES:
         findings.append(f"{label}: PNG proof raster is too large to validate safely")
         return
     compressed = b"".join(data for kind, data in chunks if kind == b"IDAT")
