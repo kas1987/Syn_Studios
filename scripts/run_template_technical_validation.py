@@ -58,7 +58,6 @@ PDF_OBJECT = re.compile(
     rb"obj(?=[\x00\x09\x0a\x0c\x0d\x20()<>\[\]{}/%]|\Z)"
 )
 PDF_TRAILER = re.compile(rb"startxref\s+(\d+)\s+%%EOF\s*\Z")
-PDF_XREF_TYPE = re.compile(rb"/Type\s*/XRef\b")
 
 
 class ValidationFailed(RuntimeError):
@@ -145,10 +144,8 @@ def structured_pdf(payload: bytes) -> bool:
     xref_offset = int(trailer.group(1))
     if xref_offset < header.start() or xref_offset >= len(payload):
         return False
-    xref = payload[xref_offset:xref_offset + 512]
-    return xref.startswith(b"xref") or (
-        PDF_OBJECT.match(xref) is not None and PDF_XREF_TYPE.search(xref) is not None
-    )
+    xref = payload[xref_offset:]
+    return xref.startswith(b"xref") or PDF_OBJECT.match(xref) is not None
 
 
 def unsupported_text_attachment(filename: str, payload: bytes, charset: str | None) -> bool:

@@ -50,6 +50,35 @@ def minimal_compact_pdf(newline: bytes) -> bytes:
     return bytes(pdf)
 
 
+def long_xref_stream_pdf() -> bytes:
+    newline = b"\n"
+    pdf = bytearray(b"\xef\xbb\xbf%PDF-1.5" + newline)
+    offsets = []
+    objects = (
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Contents 4 0 R >>",
+        b"<< /Length 0 >>" + newline + b"stream" + newline + newline + b"endstream",
+    )
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(pdf))
+        pdf.extend(f"{number} 0 obj".encode("ascii"))
+        pdf.extend(body + newline + b"endobj" + newline)
+    xref_offset = len(pdf)
+    sparse_ids = tuple(range(100, 10100, 100))
+    index = "0 6 " + " ".join(f"{object_id} 1" for object_id in sparse_ids)
+    entries = [b"\x00" + (0).to_bytes(4, "big") + (65535).to_bytes(2, "big")]
+    entries.extend(b"\x01" + offset.to_bytes(4, "big") + b"\x00\x00" for offset in (*offsets, xref_offset))
+    entries.extend(b"\x00\x00\x00\x00\x00\x00\x00" for _ in sparse_ids)
+    encoded_entries = b"".join(entries).hex().upper().encode("ascii") + b">"
+    pdf.extend(b"5 0 obj<< /W [1 4 2] /Index [" + index.encode("ascii") + b"] ")
+    pdf.extend(f"/Size {sparse_ids[-1] + 1} /Root 1 0 R /Length {len(encoded_entries)} ".encode("ascii"))
+    pdf.extend(b"/Filter /ASCIIHexDecode /Type /XRef >>" + newline + b"stream" + newline)
+    pdf.extend(encoded_entries + newline + b"endstream" + newline + b"endobj" + newline)
+    pdf.extend(b"startxref" + newline + str(xref_offset).encode("ascii") + newline + b"%%EOF" + newline)
+    return bytes(pdf)
+
+
 class TechnicalValidationRunnerTests(unittest.TestCase):
     actor_id = "syn-validation-runner-2026-08-29"
     actor = "Syn Studios validation runner"
@@ -549,19 +578,20 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             self.assertEqual(len(run(root, self.actor_id, self.actor)), 24)
 
     def test_pdf_with_legal_preheader_and_compact_objects_mislabeled_as_text_is_refused(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = self.copy_release_inputs(directory)
-            _, _, _, _, asset = self.release(root, "REL-0003")
-            message = BytesParser(policy=policy.default).parsebytes(asset.read_bytes())
-            attachment = EmailMessage(policy=policy.default)
-            attachment["Content-Type"] = 'text/plain; charset="iso-8859-1"'
-            attachment["Content-Disposition"] = 'attachment; filename="review.txt"'
-            attachment["Content-Transfer-Encoding"] = "base64"
-            attachment.set_payload(base64.b64encode(minimal_compact_pdf(b"\n")).decode("ascii"))
-            message.attach(attachment)
-            asset.write_bytes(message.as_bytes(policy=policy.default))
-            self.rebind_asset(root, "REL-0003")
-            self.assert_refused_without_results(root)
+        for newline in (b"\n", b"\r\n"):
+            with self.subTest(newline=newline), tempfile.TemporaryDirectory() as directory:
+                root = self.copy_release_inputs(directory)
+                _, _, _, _, asset = self.release(root, "REL-0003")
+                message = BytesParser(policy=policy.default).parsebytes(asset.read_bytes())
+                attachment = EmailMessage(policy=policy.default)
+                attachment["Content-Type"] = 'text/plain; charset="iso-8859-1"'
+                attachment["Content-Disposition"] = 'attachment; filename="review.txt"'
+                attachment["Content-Transfer-Encoding"] = "base64"
+                attachment.set_payload(base64.b64encode(minimal_compact_pdf(newline)).decode("ascii"))
+                message.attach(attachment)
+                asset.write_bytes(message.as_bytes(policy=policy.default))
+                self.rebind_asset(root, "REL-0003")
+                self.assert_refused_without_results(root)
 
     def test_cr_only_compact_pdf_mislabeled_as_text_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -573,6 +603,24 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             attachment["Content-Disposition"] = 'attachment; filename="cr-only-review.txt"'
             attachment["Content-Transfer-Encoding"] = "base64"
             attachment.set_payload(base64.b64encode(minimal_compact_pdf(b"\r")).decode("ascii"))
+            message.attach(attachment)
+            asset.write_bytes(message.as_bytes(policy=policy.default))
+            self.rebind_asset(root, "REL-0003")
+            self.assert_refused_without_results(root)
+
+    def test_long_xref_stream_dictionary_mislabeled_as_text_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0003")
+            message = BytesParser(policy=policy.default).parsebytes(asset.read_bytes())
+            pdf = long_xref_stream_pdf()
+            xref_offset = int(re.search(rb"startxref\s+(\d+)", pdf).group(1))
+            self.assertGreater(pdf.find(b"/Type /XRef", xref_offset) - xref_offset, 512)
+            attachment = EmailMessage(policy=policy.default)
+            attachment["Content-Type"] = 'text/plain; charset="iso-8859-1"'
+            attachment["Content-Disposition"] = 'attachment; filename="xref-review.txt"'
+            attachment["Content-Transfer-Encoding"] = "base64"
+            attachment.set_payload(base64.b64encode(pdf).decode("ascii"))
             message.attach(attachment)
             asset.write_bytes(message.as_bytes(policy=policy.default))
             self.rebind_asset(root, "REL-0003")
