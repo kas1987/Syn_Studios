@@ -9,6 +9,7 @@ release gate remains portable.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import hashlib
 import json
 import os
@@ -244,10 +245,20 @@ def unsupported_text_attachment(filename: str, payload: bytes, charset: str | No
     )
 
 
+def ooxml_member_names(package: zipfile.ZipFile, path: Path) -> set[str]:
+    names = package.namelist()
+    duplicates = sorted(name for name, count in Counter(names).items() if count > 1)
+    if duplicates:
+        raise ValidationFailed(
+            f"{path}: invalid OOXML package: duplicate member names: {', '.join(duplicates)}"
+        )
+    return set(names)
+
+
 def xlsx_inventory(path: Path) -> dict[str, Any]:
     try:
         with zipfile.ZipFile(path) as package:
-            names = set(package.namelist())
+            names = ooxml_member_names(package, path)
             workbook = ET.fromstring(package.read("xl/workbook.xml"))
             relationships = ET.fromstring(package.read("xl/_rels/workbook.xml.rels"))
             by_id = {item.get("Id"): item for item in relationships.findall(f"{{{PACKAGE_REL}}}Relationship")}
@@ -342,7 +353,7 @@ def xlsx_inventory(path: Path) -> dict[str, Any]:
 def docx_inventory(path: Path) -> dict[str, Any]:
     try:
         with zipfile.ZipFile(path) as package:
-            names = set(package.namelist())
+            names = ooxml_member_names(package, path)
             document = ET.fromstring(package.read("word/document.xml"))
             surface_members = sorted(
                 name

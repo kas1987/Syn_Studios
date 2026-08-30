@@ -1127,6 +1127,25 @@ class LibraryControlPlaneTests(unittest.TestCase):
             self.make_catalog(root, release_path, release, descriptor)
             self.assert_finding(root, "contains malformed xlsx OOXML")
 
+    def test_duplicate_ooxml_member_names_are_rejected_by_native_shape(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "duplicate.xlsx"
+            with zipfile.ZipFile(path, "w") as package:
+                package.writestr(
+                    "[Content_Types].xml",
+                    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
+                )
+                package.writestr("xl/workbook.xml", "<malicious>{{answer_key}}</malicious>")
+                package.writestr(
+                    "xl/workbook.xml",
+                    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>',
+                )
+            findings = []
+
+            validate_native_asset_shape(path, "xlsx", "duplicate", findings)
+
+            self.assertIn("duplicate OOXML member names", "\n".join(findings))
+
     def test_docx_impostor_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "impostor.docx"

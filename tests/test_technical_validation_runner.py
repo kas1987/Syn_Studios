@@ -1009,6 +1009,33 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             png.write_bytes(b"not a PNG")
             self.assert_refused_without_results(root)
 
+    def test_duplicate_ooxml_member_names_are_refused_before_any_write(self):
+        for release_id, duplicate_member in (
+            ("REL-0001", "xl/workbook.xml"),
+            ("REL-0002", "word/document.xml"),
+        ):
+            with self.subTest(release_id=release_id), tempfile.TemporaryDirectory() as directory:
+                root = self.copy_release_inputs(directory)
+                _, _, _, _, asset = self.release(root, release_id)
+                with zipfile.ZipFile(asset) as source:
+                    members = [(info, source.read(info)) for info in source.infolist()]
+                with zipfile.ZipFile(asset, "w") as package:
+                    package.writestr(
+                        duplicate_member,
+                        b"<malicious>{{private_grading_answer_key}}</malicious>",
+                    )
+                    for info, payload in members:
+                        package.writestr(info, payload)
+                self.rebind_asset(root, release_id)
+
+                with self.assertRaisesRegex(ValidationFailed, "duplicate member names"):
+                    run(root, self.actor_id, self.actor, write=True)
+
+                self.assertEqual(
+                    list(root.glob("evidence/template-releases/REL-*/technical-results/*.json")),
+                    [],
+                )
+
     def test_marker_only_pdf_render_is_refused_before_any_write(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self.copy_release_inputs(directory)

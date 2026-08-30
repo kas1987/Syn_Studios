@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 import re
+import secrets
 import shutil
 import sys
 import tempfile
@@ -20,6 +21,12 @@ from typing import Any, Iterable
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.immutable_publication import locked_directory
+
+
 FLOATING_VERSIONS = {"latest", "*", "current", "stable"}
 AUTHORITY_CLASSES = {
     "authoritative",
@@ -212,9 +219,15 @@ def _is_within(parent: Path, child: Path) -> bool:
         return False
 
 
-def _atomic_rename_no_replace(source: Path, target: Path) -> None:
+def _atomic_rename_no_replace(
+    source: Path,
+    target: Path,
+    directory_descriptor: int | None = None,
+) -> None:
     """Atomically publish a staged directory only when the target is absent."""
     if os.name == "nt":
+        if directory_descriptor is not None:
+            raise OSError(errno.EINVAL, "Windows publication uses a locked parent path")
         os.rename(source, target)
         return
     if sys.platform.startswith("linux"):
@@ -224,11 +237,56 @@ def _atomic_rename_no_replace(source: Path, target: Path) -> None:
             raise OSError(errno.ENOTSUP, "atomic no-replace rename is unavailable")
         renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
         renameat2.restype = ctypes.c_int
-        if renameat2(-100, os.fsencode(source), -100, os.fsencode(target), 1) != 0:
+        source_descriptor = directory_descriptor if directory_descriptor is not None else -100
+        target_descriptor = directory_descriptor if directory_descriptor is not None else -100
+        source_name = source.name if directory_descriptor is not None else source
+        target_name = target.name if directory_descriptor is not None else target
+        if renameat2(
+            source_descriptor,
+            os.fsencode(source_name),
+            target_descriptor,
+            os.fsencode(target_name),
+            1,
+        ) != 0:
             error = ctypes.get_errno()
             raise OSError(error, os.strerror(error), str(target))
         return
     raise OSError(errno.ENOTSUP, "atomic no-replace rename is unavailable")
+
+
+def _path_exists_in_directory(
+    parent: Path,
+    name: str,
+    directory_descriptor: int | None,
+) -> bool:
+    if directory_descriptor is None:
+        candidate = parent / name
+        return candidate.exists() or candidate.is_symlink()
+    try:
+        os.stat(name, dir_fd=directory_descriptor, follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def _create_staging_directory(
+    parent: Path,
+    output_name: str,
+    directory_descriptor: int | None,
+) -> Path:
+    if directory_descriptor is None:
+        return Path(tempfile.mkdtemp(prefix=f".{output_name}.syn-studios-", dir=parent))
+    descriptor_root = Path(f"/proc/self/fd/{directory_descriptor}")
+    if not descriptor_root.is_dir():
+        raise OSError(errno.ENOTSUP, "identity-bound directory staging requires /proc/self/fd")
+    for _ in range(100):
+        name = f".{output_name}.syn-studios-{secrets.token_hex(8)}"
+        try:
+            os.mkdir(name, mode=0o700, dir_fd=directory_descriptor)
+        except FileExistsError:
+            continue
+        return descriptor_root / name
+    raise FileExistsError("could not allocate a unique materialization staging directory")
 
 
 def _load_object(path: Path, label: str) -> dict[str, Any]:
@@ -514,32 +572,38 @@ def instantiate(
         target_names = [source.name for source in sources]
         if len(target_names) != len(set(target_names)):
             raise CatalogQueryError("native asset names collide at output location")
-        if output.exists() or output.is_symlink():
-            raise CatalogQueryError("instantiate requires a new output location and will not overwrite")
         if not output.parent.is_dir():
             raise CatalogQueryError("instantiate output parent must already exist")
-        staging = Path(tempfile.mkdtemp(prefix=f".{output.name}.syn-studios-", dir=output.parent))
-        committed = False
         try:
-            staged = []
-            for relative, source in zip(entry["native_assets"], sources):
-                target = staging / source.name
-                shutil.copy2(source, target)
-                target_hash = _sha256(target)
-                if target_hash != validation["validated_native_assets"][relative]:
-                    raise CatalogQueryError("materialized copy hash does not match source bytes")
-                staged.append((target.name, target_hash))
-            _atomic_rename_no_replace(staging, output)
-            committed = True
-            copies = [
-                {"path": str(output / name), "sha256": target_hash}
-                for name, target_hash in staged
-            ]
+            with locked_directory(output.parent) as directory_descriptor:
+                if _path_exists_in_directory(output.parent, output.name, directory_descriptor):
+                    raise CatalogQueryError("instantiate requires a new output location and will not overwrite")
+                staging = _create_staging_directory(
+                    output.parent,
+                    output.name,
+                    directory_descriptor,
+                )
+                committed = False
+                try:
+                    staged = []
+                    for relative, source in zip(entry["native_assets"], sources):
+                        target = staging / source.name
+                        shutil.copy2(source, target)
+                        target_hash = _sha256(target)
+                        if target_hash != validation["validated_native_assets"][relative]:
+                            raise CatalogQueryError("materialized copy hash does not match source bytes")
+                        staged.append((target.name, target_hash))
+                    _atomic_rename_no_replace(staging, output, directory_descriptor)
+                    committed = True
+                    copies = [
+                        {"path": str(output / name), "sha256": target_hash}
+                        for name, target_hash in staged
+                    ]
+                finally:
+                    if not committed and staging.exists():
+                        shutil.rmtree(staging)
         except OSError as exc:
             raise CatalogQueryError(f"materialization failed before commit: {exc}") from exc
-        finally:
-            if not committed and staging.exists():
-                shutil.rmtree(staging)
     return {
         "status": "ready",
         "operation": "instantiate",

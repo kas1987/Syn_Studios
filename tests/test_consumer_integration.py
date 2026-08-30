@@ -1,5 +1,6 @@
 import json
 import hashlib
+import os
 import re
 import shutil
 import subprocess
@@ -671,7 +672,7 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
     def test_target_appearance_during_commit_is_not_overwritten(self):
         output = self.package_root / "working_world"
 
-        def race_winner(_staging, target):
+        def race_winner(_staging, target, _directory_descriptor=None):
             target.mkdir()
             (target / "owned-by-racer.txt").write_text("preserve", encoding="utf-8")
             raise FileExistsError("injected target race")
@@ -694,6 +695,93 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
                 )
         self.assertEqual((output / "owned-by-racer.txt").read_text(encoding="utf-8"), "preserve")
         self.assertEqual(list(self.package_root.glob(".working_world.syn-studios-*")), [])
+
+    @unittest.skipIf(os.name == "nt", "POSIX dirfd race proof")
+    def test_parent_symlink_swap_cannot_redirect_materialization(self):
+        parent = self.package_root / "outputs"
+        parent.mkdir()
+        displaced = self.package_root / "outputs-displaced"
+        outside = Path(self.temporary.name) / "outside"
+        outside.mkdir()
+        real_mkdir = os.mkdir
+        swapped = False
+
+        def swap_parent_then_create(path, mode=0o777, *, dir_fd=None):
+            nonlocal swapped
+            if dir_fd is not None and not swapped:
+                swapped = True
+                parent.rename(displaced)
+                parent.symlink_to(outside, target_is_directory=True)
+                try:
+                    return real_mkdir(path, mode=mode, dir_fd=dir_fd)
+                finally:
+                    parent.unlink()
+                    displaced.rename(parent)
+            return real_mkdir(path, mode=mode, dir_fd=dir_fd)
+
+        with mock.patch("integrations.query_catalog.os.mkdir", side_effect=swap_parent_then_create):
+            handoff = instantiate(
+                root=self.root,
+                catalog=load_catalog(self.catalog_path),
+                template_id="TMPL-0001",
+                version="1.2.3",
+                consumer_id="anna",
+                package_root=self.package_root,
+                output_location=Path("outputs/working_world"),
+                manifest_approved=True,
+                write_authorized=True,
+                source_authorized=True,
+                provenance_reference="manifest.md#workbook",
+                materialize=True,
+            )
+
+        self.assertTrue(swapped)
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertEqual(_file_hash(parent / "working_world" / self.asset.name), _file_hash(self.asset))
+        self.assertEqual(handoff["mode"], "materialized_copy")
+
+    @unittest.skipUnless(os.name == "nt", "Windows locked-parent race proof")
+    def test_windows_parent_swap_is_refused_while_materialization_parent_is_locked(self):
+        parent = self.package_root / "outputs"
+        parent.mkdir()
+        displaced = self.package_root / "outputs-displaced"
+        outside = Path(self.temporary.name) / "outside"
+        outside.mkdir()
+        real_mkdtemp = tempfile.mkdtemp
+        attempted = False
+
+        def swap_parent_then_stage(*args, **kwargs):
+            nonlocal attempted
+            attempted = True
+            parent.rename(displaced)
+            parent.symlink_to(outside, target_is_directory=True)
+            try:
+                return real_mkdtemp(*args, **kwargs)
+            finally:
+                parent.unlink()
+                displaced.rename(parent)
+
+        with mock.patch("integrations.query_catalog.tempfile.mkdtemp", side_effect=swap_parent_then_stage):
+            with self.assertRaisesRegex(CatalogQueryError, "failed before commit"):
+                instantiate(
+                    root=self.root,
+                    catalog=load_catalog(self.catalog_path),
+                    template_id="TMPL-0001",
+                    version="1.2.3",
+                    consumer_id="anna",
+                    package_root=self.package_root,
+                    output_location=Path("outputs/working_world"),
+                    manifest_approved=True,
+                    write_authorized=True,
+                    source_authorized=True,
+                    provenance_reference="manifest.md#workbook",
+                    materialize=True,
+                )
+
+        self.assertTrue(attempted)
+        self.assertTrue(parent.is_dir())
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertFalse((parent / "working_world").exists())
 
     def test_atomic_publish_primitive_rejects_existing_target(self):
         source = self.package_root / "staged"

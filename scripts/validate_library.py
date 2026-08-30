@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import copy
 import csv
 import hashlib
@@ -676,7 +677,16 @@ def validate_native_asset_shape(path: Path, artifact_type: object, label: str, f
         required_member = "xl/workbook.xml" if artifact_type == "xlsx" else "word/document.xml"
         try:
             with zipfile.ZipFile(path) as package:
-                names = set(package.namelist())
+                member_names = package.namelist()
+                duplicates = sorted(
+                    name for name, count in Counter(member_names).items() if count > 1
+                )
+                if duplicates:
+                    findings.append(
+                        f"{label}: contains duplicate OOXML member names: {', '.join(duplicates)}"
+                    )
+                    return
+                names = set(member_names)
                 if "[Content_Types].xml" not in names or required_member not in names:
                     findings.append(f"{label}: is missing required {artifact_type} package members")
                     return
