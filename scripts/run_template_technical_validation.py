@@ -37,6 +37,11 @@ FORBIDDEN_TEXT = (
     "prior submission", "private grading", "answer key", "calibration target",
     "generator residue", "rubric answer", "evaluator-facing",
 )
+DOUBLE_BRACE_TOKEN = re.compile(r"\{\{(.*?)\}\}", re.DOTALL)
+EMPTY_STRING_FORMULA_GUARD = re.compile(
+    r'^\s*IF\(\s*(\$?[A-Z]{1,3}\$?\d+)\s*=\s*""\s*,\s*""\s*,',
+    re.IGNORECASE,
+)
 
 
 class ValidationFailed(RuntimeError):
@@ -90,6 +95,21 @@ def xml_surfaces(tree: ET.Element) -> list[str]:
     return surfaces
 
 
+def has_valid_empty_string_cache(formula: ET.Element, cell_values: dict[str, str]) -> bool:
+    match = EMPTY_STRING_FORMULA_GUARD.match(formula.text or "")
+    if match is None:
+        return False
+    guard_cell = match.group(1).replace("$", "").upper()
+    return not cell_values.get(guard_cell, "").strip()
+
+
+def cached_cell_text(cell: ET.Element) -> str:
+    value = cell.find(f"{{{MAIN}}}v")
+    if value is not None:
+        return value.text or ""
+    return "".join(node.text or "" for node in cell.findall(f"{{{MAIN}}}is//{{{MAIN}}}t"))
+
+
 def xlsx_inventory(path: Path) -> dict[str, Any]:
     try:
         with zipfile.ZipFile(path) as package:
@@ -114,20 +134,26 @@ def xlsx_inventory(path: Path) -> dict[str, Any]:
                     raise ValidationFailed(f"{path}: worksheet member is missing: {member}")
                 sheets.append((name, member, sheet.get("state")))
                 worksheet = ET.fromstring(package.read(member))
-                hidden_rows += sum(row.get("hidden") == "1" for row in worksheet.findall(f".//{{{MAIN}}}row"))
-                hidden_columns += sum(column.get("hidden") == "1" for column in worksheet.findall(f".//{{{MAIN}}}col"))
+                hidden_rows += sum(row.get("hidden") in {"1", "true"} for row in worksheet.findall(f".//{{{MAIN}}}row"))
+                hidden_columns += sum(column.get("hidden") in {"1", "true"} for column in worksheet.findall(f".//{{{MAIN}}}col"))
                 cells = worksheet.findall(f".//{{{MAIN}}}c")
+                cell_values = {
+                    str(cell.get("r", "")).upper(): cached_cell_text(cell)
+                    for cell in cells
+                }
                 cell_count += len(cells)
                 for cell in cells:
                     formula = cell.find(f"{{{MAIN}}}f")
                     value = cell.find(f"{{{MAIN}}}v")
-                    inline = cell.find(f"{{{MAIN}}}is/{{{MAIN}}}t")
                     if formula is not None:
                         formula_count += 1
                         formula_sheets.add(name)
-                        cached_formula_count += value is not None
+                        cached_formula_count += value is not None and (
+                            bool((value.text or "").strip())
+                            or (cell.get("t") == "str" and has_valid_empty_string_cache(formula, cell_values))
+                        )
                         extracted.append(formula.text or "")
-                    text = (value.text if value is not None else None) or (inline.text if inline is not None else "")
+                    text = cached_cell_text(cell)
                     extracted.append(text)
                     if cell.get("t") == "e" or text.startswith("#"):
                         error_count += 1
@@ -137,6 +163,10 @@ def xlsx_inventory(path: Path) -> dict[str, Any]:
             if shared in names:
                 tree = ET.fromstring(package.read(shared))
                 extracted.extend(item.text or "" for item in tree.findall(f".//{{{MAIN}}}t"))
+                extracted.extend(
+                    "".join(item.text or "" for item in shared_item.findall(f".//{{{MAIN}}}t"))
+                    for shared_item in tree.findall(f"{{{MAIN}}}si")
+                )
             calc = workbook.find(f"{{{MAIN}}}calcPr")
             external = {name for name in names if "externallink" in name.casefold()}
             for member in sorted(name for name in names if name.endswith(".rels")):
@@ -191,6 +221,10 @@ def docx_inventory(path: Path) -> dict[str, Any]:
                 tree = document if member == "word/document.xml" else ET.fromstring(package.read(member))
                 extracted.extend(xml_surfaces(tree))
                 if member.startswith("word/"):
+                    extracted.extend(
+                        "".join(node.text or "" for node in paragraph.findall(f".//{{{WORD}}}t"))
+                        for paragraph in tree.findall(f".//{{{WORD}}}p")
+                    )
                     hidden += len(tree.findall(f".//{{{WORD}}}vanish"))
             paragraphs = len(document.findall(f".//{{{WORD}}}p"))
             tables = len(document.findall(f".//{{{WORD}}}tbl"))
@@ -218,6 +252,7 @@ def eml_inventory(path: Path) -> dict[str, Any]:
     attachments = list(message.iter_attachments())
     text_parts: list[str] = []
     for part in parts:
+        text_parts.extend(f"{name}: {value}" for name, value in part.items())
         if part.get_content_maintype() == "text":
             try:
                 text_parts.append(part.get_content())
@@ -238,7 +273,9 @@ def eml_inventory(path: Path) -> dict[str, Any]:
         elif attachment.get_content_maintype() == "text":
             text_parts.append(payload.decode(attachment.get_content_charset() or "utf-8"))
         else:
-            text_parts.append(payload.decode("utf-8", errors="ignore"))
+            raise ValidationFailed(
+                f"{path}: unsupported binary attachment cannot be inspected safely: {attachment.get_filename()}"
+            )
     return {
         "message": message, "attachments": attachments, "parts": parts,
         "text": raw + "\n" + "\n".join(text_parts), "message_ids": message_ids,
@@ -421,11 +458,13 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
 
     text = "\n".join(str(item.get("text", "")) for _, _, item in inventories)
     slots = set(descriptor.get("slots", []))
-    unknown_slots = set(re.findall(r"\{\{([a-z0-9_]+)\}\}", text)) - slots
+    token_text = re.sub(r"=\r?\n", "", text)
+    observed_slots = set(DOUBLE_BRACE_TOKEN.findall(token_text))
+    unknown_slots = observed_slots - slots
     forbidden = [token for token in FORBIDDEN_TEXT if token in text.casefold()]
     if unknown_slots or forbidden:
         raise ValidationFailed(f"{release_id}: leakage scan found unknown slots or prohibited residue")
-    category_checks["leakage"].append(check("leakage:visible-hidden-scan", f"Scanned extracted content from all {len(inventories)} bound native assets for prohibited residue and verified all {len(set(re.findall(r'\{\{([a-z0-9_]+)\}\}', text)))} template tokens against the descriptor slot allowlist."))
+    category_checks["leakage"].append(check("leakage:visible-hidden-scan", f"Scanned extracted content from all {len(inventories)} bound native assets for prohibited residue and verified all {len(observed_slots)} template tokens against the descriptor slot allowlist."))
 
     authority = blueprint.get("authority") or {}
     if descriptor.get("authority") != authority.get("primary_class") or not authority.get("governing_scope") or not authority.get("non_governing_scope") or not descriptor.get("knowledge_and_authority_constraints"):

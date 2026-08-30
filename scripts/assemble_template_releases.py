@@ -9,9 +9,13 @@ import json
 import os
 import re
 import sys
-import unicodedata
 from pathlib import Path
 from typing import Any
+
+try:
+    from .identity_normalization import normalized_actor_identity
+except ImportError:  # Direct execution: python scripts/assemble_template_releases.py
+    from identity_normalization import normalized_actor_identity
 
 
 PROOF_CATEGORIES = (
@@ -66,9 +70,12 @@ def load_object(path: Path) -> dict[str, Any]:
 
 
 def normalized_actor(value: object) -> str:
-    if not isinstance(value, str) or len(value.strip()) < 3:
+    if not isinstance(value, str):
         raise AssemblyRefused("actor IDs and display names must contain at least three characters")
-    return unicodedata.normalize("NFKC", value).strip().casefold()
+    normalized = normalized_actor_identity(value)
+    if len(normalized) < 3:
+        raise AssemblyRefused("actor IDs and display names must contain at least three characters")
+    return normalized
 
 
 def repository_path(root: Path, value: object, label: str, required_root: Path | None = None) -> Path:
@@ -334,8 +341,22 @@ def assemble(root: Path, *, approved: bool, builder_id: str, builder_name: str, 
         release_id = f"REL-{index:04d}"
         template_id, version = entry.get("template_id"), entry.get("version")
         existing_release_path = root / "library/releases" / f"{release_id}.template.json"
+        existing_release_root = root / "evidence/template-releases" / release_id
+        assembly_evidence_markers = (
+            existing_release_root / "build.json",
+            existing_release_root / "sanitization.json",
+            existing_release_root / "conductor.json",
+            existing_release_root / "proofs" / "build.txt",
+            existing_release_root / "proofs" / "sanitization.txt",
+            existing_release_root / "proofs" / "conductor.txt",
+            *(existing_release_root / f"technical-{category}.json" for category in PROOF_CATEGORIES),
+        )
         published_statuses = {"released", "deprecated", "withdrawn"}
-        has_published_marker = existing_release_path.is_file() or isinstance(entry.get("release_record"), dict)
+        has_published_marker = (
+            existing_release_path.is_file()
+            or isinstance(entry.get("release_record"), dict)
+            or any(path.is_file() for path in assembly_evidence_markers)
+        )
         if has_published_marker and entry.get("release_status") not in published_statuses:
             raise AssemblyRefused(
                 f"{release_id} existing published release has a conflicting catalog status"

@@ -694,6 +694,28 @@ class LibraryControlPlaneTests(unittest.TestCase):
             self.make_catalog(root, release_path, release, descriptor)
             self.assert_finding(root, "build, sanitization, Terra, Sol, and conductor identities must be independent")
 
+    def test_default_ignorable_actor_alias_is_not_independent(self):
+        for actor_id in (
+            "reviewer:\u200bterra",
+            "reviewer:te\u034frra",
+            "reviewer:terr\ufe0fa",
+            "reviewer:te\ufff0rra",
+        ):
+            with self.subTest(actor_id=repr(actor_id)), tempfile.TemporaryDirectory() as temporary:
+                root, _, blueprint_path = self.make_minimal_root(temporary)
+                release_path, release, _, descriptor = self.make_release(root, blueprint_path)
+                sanitizer_reference = release["sanitization"]["evidence"]
+                sanitizer_path = root / sanitizer_reference["record_path"]
+                sanitizer = json.loads(sanitizer_path.read_text(encoding="utf-8"))
+                sanitizer["actor_id"] = actor_id
+                sanitizer["actor"] = "Terra reviewer"
+                write_json(sanitizer_path, sanitizer)
+                sanitizer_reference["record_sha256"] = file_hash(sanitizer_path)
+                write_json(release_path, release)
+                self.make_catalog(root, release_path, release, descriptor)
+
+                self.assert_finding(root, "identities must be independent")
+
     def test_actor_id_has_one_stable_display_identity(self):
         with tempfile.TemporaryDirectory() as temporary:
             root, _, blueprint_path = self.make_minimal_root(temporary)
@@ -710,6 +732,37 @@ class LibraryControlPlaneTests(unittest.TestCase):
             write_json(release_path, release)
             self.make_catalog(root, release_path, release, descriptor)
             self.assert_finding(root, "actor_id must map to one stable actor name")
+
+    def test_technical_validator_cannot_alias_conductor(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, _, descriptor = self.make_release(root, blueprint_path)
+            conductor_path = root / release["conductor_approval"]["record_path"]
+            conductor = json.loads(conductor_path.read_text(encoding="utf-8"))
+            reference = release["evidence"]["render"]
+            technical_path = root / reference["record_path"]
+            technical = json.loads(technical_path.read_text(encoding="utf-8"))
+            result_path = root / next(
+                artifact["path"]
+                for artifact in technical["artifacts"]
+                if artifact["path"].endswith("technical-results/render.json")
+            )
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            for record in (technical, result):
+                record["actor_id"] = conductor["actor_id"]
+                record["actor"] = conductor["actor"]
+            write_json(result_path, result)
+            next(
+                artifact
+                for artifact in technical["artifacts"]
+                if artifact["path"].endswith("technical-results/render.json")
+            )["sha256"] = file_hash(result_path)
+            write_json(technical_path, technical)
+            reference["record_sha256"] = file_hash(technical_path)
+            write_json(release_path, release)
+            self.make_catalog(root, release_path, release, descriptor)
+
+            self.assert_finding(root, "technical validator identity must be independent")
 
     def test_catalog_mismatched_id_descriptor_and_asset_hashes_fail(self):
         with tempfile.TemporaryDirectory() as temporary:

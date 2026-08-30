@@ -7,12 +7,12 @@ import argparse
 import copy
 import csv
 import hashlib
+import importlib.util
 import json
 import posixpath
 import re
 import struct
 import sys
-import unicodedata
 import zipfile
 import zlib
 from email import policy
@@ -21,6 +21,23 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
+
+try:
+    from .identity_normalization import normalized_actor_identity
+except ImportError:  # Direct execution: python scripts/validate_library.py
+    try:
+        from identity_normalization import normalized_actor_identity
+    except ModuleNotFoundError:  # Loaded from an exact path by the consumer resolver
+        identity_path = Path(__file__).with_name("identity_normalization.py")
+        identity_spec = importlib.util.spec_from_file_location(
+            "syn_studios_identity_normalization",
+            identity_path,
+        )
+        if identity_spec is None or identity_spec.loader is None:
+            raise ImportError(f"cannot load identity normalization from {identity_path}")
+        identity_module = importlib.util.module_from_spec(identity_spec)
+        identity_spec.loader.exec_module(identity_module)
+        normalized_actor_identity = identity_module.normalized_actor_identity
 
 try:
     from jsonschema import Draft202012Validator
@@ -53,6 +70,10 @@ MEDIA_SUFFIXES = {
     "image/png": {".png"},
     "application/pdf": {".pdf"},
 }
+
+
+def normalized_actor(value: str) -> str:
+    return normalized_actor_identity(value)
 
 
 def as_dict(value: object) -> dict[str, Any]:
@@ -748,8 +769,10 @@ def load_typed_evidence(
     findings.extend(schema_findings(record, schema, record_label))
     actor_id, actor = record.get("actor_id"), record.get("actor")
     if actor_names is not None and isinstance(actor_id, str) and isinstance(actor, str):
-        stable_id = unicodedata.normalize("NFKC", actor_id).strip().casefold()
-        stable_name = unicodedata.normalize("NFKC", actor).strip().casefold()
+        stable_id = normalized_actor(actor_id)
+        stable_name = normalized_actor(actor)
+        if len(stable_id) < 3 or len(stable_name) < 3:
+            findings.append(f"{label}:actor: normalized actor ID and name must contain at least three characters")
         previous_name = actor_names.get(stable_id)
         if previous_name is not None and previous_name != stable_name:
             findings.append(f"{label}:actor: actor_id must map to one stable actor name")
@@ -1029,13 +1052,16 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
         if len(review_paths) != len(set(review_paths)):
             findings.append(f"{label}:reviews: build, sanitization, Terra, Sol, and conductor record paths must be distinct")
         actor_ids = [typed[name][1].get("actor_id") for name in independent_lanes if isinstance(typed[name][1].get("actor_id"), str)]
-        normalized_actor_ids = [unicodedata.normalize("NFKC", actor_id).strip().casefold() for actor_id in actor_ids]
+        normalized_actor_ids = [normalized_actor(actor_id) for actor_id in actor_ids]
         if len(actor_ids) != len(independent_lanes) or len(normalized_actor_ids) != len(set(normalized_actor_ids)):
             findings.append(f"{label}:reviews: build, sanitization, Terra, Sol, and conductor identities must be independent")
         blueprint_gates = {gate.get("category"): gate for gate in as_list(blueprint_entry[1].get("proof_gates")) if blueprint_entry and isinstance(gate, dict) and isinstance(gate.get("category"), str)} if blueprint_entry else {}
+        technical_actor_ids: set[str] = set()
         for category in PROOF_CATEGORIES:
             reference = as_dict(as_dict(data.get("evidence")).get(category))
             _, record = load_typed_evidence(root, reference, schemas["release-evidence"], data, descriptor_hash, asset_hashes, "technical_validation", f"{label}:evidence.{category}", findings, evidence_ids, bound_evidence_files, category, actor_names)
+            if record and isinstance(record.get("actor_id"), str):
+                technical_actor_ids.add(normalized_actor(record["actor_id"]))
             expected_verdict = "VALIDATION_PASS" if as_dict(blueprint_gates.get(category)).get("applicable") is True else "VALIDATION_NOT_APPLICABLE"
             if record and record.get("verdict") != expected_verdict:
                 findings.append(f"{label}:evidence.{category}.verdict: must align with blueprint applicability")
@@ -1051,6 +1077,8 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
                     root, data, descriptor, record, category, as_dict(blueprint_gates.get(category)),
                     descriptor_hash, asset_hashes, f"{label}:evidence.{category}", findings,
                 )
+        if technical_actor_ids.intersection(normalized_actor_ids):
+            findings.append(f"{label}:evidence: technical validator identity must be independent of build, sanitization, Terra, Sol, and conductor identities")
 
     fixture_pairs: dict[str, list[tuple[str, str]]] = {}
     for path in fixture_paths:

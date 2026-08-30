@@ -70,12 +70,15 @@ def load_csv(path: Path, rule: dict, findings: list[str]) -> list[dict[str, str]
     if len(rows) < minimum:
         findings.append(f"{path.name}: {len(rows)} rows is below minimum {minimum}")
     identifier = rule.get("id_column")
-    if identifier in headers:
+    if identifier and identifier not in headers:
+        findings.append(f"{path.name}: configured id_column is missing: {identifier}")
+    elif identifier in headers:
         values = [row.get(identifier, "").strip() for row in rows]
         if any(not value for value in values) or len(values) != len(set(values)):
             findings.append(f"{path.name}: {identifier} must be populated and unique")
     for column, threshold in rule.get("minimum_unique", {}).items():
         if column not in headers:
+            findings.append(f"{path.name}: configured minimum_unique column is missing: {column}")
             continue
         observed = {row.get(column, "").strip() for row in rows if row.get(column, "").strip()}
         if len(observed) < int(threshold):
@@ -123,10 +126,12 @@ def audit_workbook(path: Path, rule: dict, findings: list[str]) -> dict[str, obj
                 if name.startswith("xl/worksheets/") and name.endswith(".xml"):
                     root = ElementTree.fromstring(package.read(name))
                     inventory["formula_count"] += len(root.findall(f".//{{{SHEET_NS}}}f"))
-                    for row in root.findall(f".//{{{SHEET_NS}}}row[@hidden='1']"):
-                        inventory["hidden_surfaces"].append(f"{name}:row:{row.get('r')}")
-                    for column in root.findall(f".//{{{SHEET_NS}}}col[@hidden='1']"):
-                        inventory["hidden_surfaces"].append(f"{name}:column:{column.get('min')}-{column.get('max')}")
+                    for row in root.findall(f".//{{{SHEET_NS}}}row"):
+                        if row.get("hidden") in {"1", "true"}:
+                            inventory["hidden_surfaces"].append(f"{name}:row:{row.get('r')}")
+                    for column in root.findall(f".//{{{SHEET_NS}}}col"):
+                        if column.get("hidden") in {"1", "true"}:
+                            inventory["hidden_surfaces"].append(f"{name}:column:{column.get('min')}-{column.get('max')}")
                     if root.findall(f".//{{{SHEET_NS}}}c[@t='e']"):
                         findings.append(f"{path.name}: formula error cells present in {name}")
                 if name.endswith(".rels"):
@@ -223,6 +228,11 @@ def audit(package_root: Path, policy: dict) -> dict[str, object]:
         right = {row.get(right_column, "").strip() for row in right_rows}
         left.discard("")
         right.discard("")
+        if not left or not right:
+            findings.append(
+                f"reconciliation {rule.get('id', 'unnamed')} has an empty operand population"
+            )
+            continue
         relation = rule.get("relationship")
         if relation not in RECONCILIATION_RELATIONSHIPS:
             findings.append(

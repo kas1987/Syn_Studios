@@ -1,4 +1,6 @@
+import base64
 import json
+import re
 import shutil
 import tempfile
 import unittest
@@ -69,6 +71,16 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             run(root, self.actor_id, self.actor, write=True)
         self.assertEqual(list(root.glob("evidence/template-releases/REL-*/technical-results/*.json")), [])
 
+    def mutate_zip_member(self, asset: Path, member: str, mutation) -> None:
+        with zipfile.ZipFile(asset) as package:
+            members = {info.filename: package.read(info.filename) for info in package.infolist()}
+        tree = ET.fromstring(members[member])
+        mutation(tree)
+        members[member] = ET.tostring(tree, encoding="utf-8", xml_declaration=True)
+        with zipfile.ZipFile(asset, "w") as package:
+            for name, payload in members.items():
+                package.writestr(name, payload)
+
     def test_real_release_inputs_dry_run_without_writes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self.copy_release_inputs(directory)
@@ -111,6 +123,45 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             with zipfile.ZipFile(asset, "w") as package:
                 for name, payload in members.items():
                     package.writestr(name, payload)
+            self.rebind_asset(root, "REL-0001")
+            self.assert_refused_without_results(root)
+
+    def test_empty_formula_cache_is_refused_before_any_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0001")
+
+            def empty_cache(tree):
+                formula_cell = next(cell for cell in tree.findall(f".//{{{MAIN}}}c") if cell.find(f"{{{MAIN}}}f") is not None)
+                formula_cell.find(f"{{{MAIN}}}v").text = None
+
+            self.mutate_zip_member(asset, "xl/worksheets/sheet6.xml", empty_cache)
+            self.rebind_asset(root, "REL-0001")
+            self.assert_refused_without_results(root)
+
+    def test_numeric_formula_cache_cannot_be_spoofed_as_empty_string(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0001")
+
+            def spoof_cache(tree):
+                formula_cell = next(cell for cell in tree.findall(f".//{{{MAIN}}}c") if cell.find(f"{{{MAIN}}}f") is not None)
+                formula_cell.set("t", "str")
+                formula_cell.find(f"{{{MAIN}}}v").text = None
+
+            self.mutate_zip_member(asset, "xl/worksheets/sheet6.xml", spoof_cache)
+            self.rebind_asset(root, "REL-0001")
+            self.assert_refused_without_results(root)
+
+    def test_true_lexical_hidden_row_is_refused_before_any_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0001")
+
+            def hide_row(tree):
+                tree.find(f".//{{{MAIN}}}row").set("hidden", "true")
+
+            self.mutate_zip_member(asset, "xl/worksheets/sheet1.xml", hide_row)
             self.rebind_asset(root, "REL-0001")
             self.assert_refused_without_results(root)
 
@@ -194,6 +245,24 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
                 self.rebind_asset(root, "REL-0001")
                 self.assert_refused_without_results(root)
 
+    def test_undeclared_token_split_across_xlsx_inline_runs_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0001")
+
+            def add_split_token(tree):
+                sheet_data = tree.find(f"{{{MAIN}}}sheetData")
+                row = ET.SubElement(sheet_data, f"{{{MAIN}}}row", {"r": "99"})
+                cell = ET.SubElement(row, f"{{{MAIN}}}c", {"r": "Z99", "t": "inlineStr"})
+                inline = ET.SubElement(cell, f"{{{MAIN}}}is")
+                for value in ("{", "{UNDECLARED_SECRET}}"):
+                    run_element = ET.SubElement(inline, f"{{{MAIN}}}r")
+                    ET.SubElement(run_element, f"{{{MAIN}}}t").text = value
+
+            self.mutate_zip_member(asset, "xl/worksheets/sheet1.xml", add_split_token)
+            self.rebind_asset(root, "REL-0001")
+            self.assert_refused_without_results(root)
+
     def test_prohibited_leakage_is_refused_before_any_write(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self.copy_release_inputs(directory)
@@ -220,6 +289,35 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
                     package.writestr(member, xml)
                 self.rebind_asset(root, "REL-0002")
                 self.assert_refused_without_results(root)
+
+    def test_undeclared_uppercase_token_is_refused_before_any_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0002")
+
+            def add_token(tree):
+                paragraph = ET.SubElement(tree, f"{{{WORD}}}p")
+                run_element = ET.SubElement(paragraph, f"{{{WORD}}}r")
+                ET.SubElement(run_element, f"{{{WORD}}}t").text = "{{UNDECLARED_SECRET}}"
+
+            self.mutate_zip_member(asset, "word/header1.xml", add_token)
+            self.rebind_asset(root, "REL-0002")
+            self.assert_refused_without_results(root)
+
+    def test_undeclared_token_split_across_docx_runs_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0002")
+
+            def add_split_token(tree):
+                paragraph = ET.SubElement(tree, f"{{{WORD}}}p")
+                for value in ("{", "{UNDECLARED_SECRET}}"):
+                    run_element = ET.SubElement(paragraph, f"{{{WORD}}}r")
+                    ET.SubElement(run_element, f"{{{WORD}}}t").text = value
+
+            self.mutate_zip_member(asset, "word/header1.xml", add_split_token)
+            self.rebind_asset(root, "REL-0002")
+            self.assert_refused_without_results(root)
 
     def test_prohibited_docx_custom_xml_or_hidden_header_is_refused_before_any_write(self):
         for member, payload in (
@@ -292,6 +390,37 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
                 filename="review-cache.bin",
             )
             asset.write_bytes(message.as_bytes(policy=policy.default))
+            self.rebind_asset(root, "REL-0003")
+            self.assert_refused_without_results(root)
+
+    def test_compressed_eml_attachment_is_refused_before_any_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0003")
+            message = BytesParser(policy=policy.default).parsebytes(asset.read_bytes())
+            message.add_attachment(
+                b"PK\x03\x04compressed review payload",
+                maintype="application",
+                subtype="zip",
+                filename="review-cache.zip",
+            )
+            asset.write_bytes(message.as_bytes(policy=policy.default))
+            self.rebind_asset(root, "REL-0003")
+            self.assert_refused_without_results(root)
+
+    def test_encoded_eml_subject_token_is_refused_before_any_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0003")
+            encoded = base64.b64encode(b"{{UNDECLARED_SECRET}}").decode("ascii")
+            payload, count = re.subn(
+                rb"(?im)^Subject:[^\r\n]*(?:\r?\n[ \t][^\r\n]*)*",
+                f"Subject: =?utf-8?B?{encoded}?=".encode("ascii"),
+                asset.read_bytes(),
+                count=1,
+            )
+            self.assertEqual(count, 1)
+            asset.write_bytes(payload)
             self.rebind_asset(root, "REL-0003")
             self.assert_refused_without_results(root)
 

@@ -223,12 +223,19 @@ class ReleaseAssemblyTests(unittest.TestCase):
             self.assertFalse((root / "library/releases").exists())
 
     def test_refuses_normalized_actor_reuse_before_writing(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = self.make_root(temporary)
-            self.add_reviews(root)
-            with self.assertRaisesRegex(AssemblyRefused, "actor aliases"):
-                self.assemble(root, conductor_id=" REVIEWER:TERRA ")
-            self.assertFalse((root / "library/releases").exists())
+        for actor_id in (
+            " REVIEWER:TERRA ",
+            "reviewer:\u200bterra",
+            "reviewer:te\u034frra",
+            "reviewer:terr\ufe0fa",
+            "reviewer:te\ufff0rra",
+        ):
+            with self.subTest(actor_id=repr(actor_id)), tempfile.TemporaryDirectory() as temporary:
+                root = self.make_root(temporary)
+                self.add_reviews(root)
+                with self.assertRaisesRegex(AssemblyRefused, "actor aliases"):
+                    self.assemble(root, conductor_id=actor_id)
+                self.assertFalse((root / "library/releases").exists())
 
     def test_requires_explicit_conductor_approval(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -347,6 +354,47 @@ class ReleaseAssemblyTests(unittest.TestCase):
             catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
             for entry in catalog["templates"]:
                 entry["release_status"] = "candidate"
+            write_json(catalog_path, catalog)
+
+            with self.assertRaisesRegex(AssemblyRefused, "conflicting catalog status"):
+                self.assemble(root, builder_id="release:replacement-builder", builder_name="Replacement Builder")
+
+    def test_deleting_release_pointer_cannot_hide_published_assembly_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_root(temporary)
+            self.add_reviews(root)
+            self.add_technical_results(root)
+            self.assemble(root)
+            for release_path in (root / "library/releases").glob("REL-*.template.json"):
+                release_path.unlink()
+            catalog_path = root / "library/catalog.json"
+            catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+            for entry in catalog["templates"]:
+                entry["release_status"] = "candidate"
+                entry.pop("release_record", None)
+            write_json(catalog_path, catalog)
+
+            with self.assertRaisesRegex(AssemblyRefused, "conflicting catalog status"):
+                self.assemble(root, builder_id="release:replacement-builder", builder_name="Replacement Builder")
+
+    def test_generated_proof_marker_preserves_published_state(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_root(temporary)
+            self.add_reviews(root)
+            self.add_technical_results(root)
+            self.assemble(root)
+            for release_path in (root / "library/releases").glob("REL-*.template.json"):
+                release_path.unlink()
+            for release_root in (root / "evidence/template-releases").glob("REL-*"):
+                for name in ("build.json", "sanitization.json", "conductor.json"):
+                    (release_root / name).unlink()
+                for technical in release_root.glob("technical-*.json"):
+                    technical.unlink()
+            catalog_path = root / "library/catalog.json"
+            catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+            for entry in catalog["templates"]:
+                entry["release_status"] = "candidate"
+                entry.pop("release_record", None)
             write_json(catalog_path, catalog)
 
             with self.assertRaisesRegex(AssemblyRefused, "conflicting catalog status"):

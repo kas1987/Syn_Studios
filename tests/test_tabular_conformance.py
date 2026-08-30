@@ -5,8 +5,9 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from xml.etree import ElementTree
 
-from scripts.audit_tabular_package import audit
+from scripts.audit_tabular_package import SHEET_NS, audit
 
 
 def workbook(path: Path, *, token=False, formula=True, hidden=False):
@@ -189,6 +190,50 @@ class TabularConformanceTests(unittest.TestCase):
                 result["findings"],
             )
 
+    def test_reconciliation_cannot_pass_with_blank_operand_populations(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy = self.build_package(root)
+            for filename in ("source.csv", "mapping.csv"):
+                path = root / filename
+                with path.open("r", encoding="utf-8", newline="") as source:
+                    rows = list(csv.DictReader(source))
+                    headers = list(rows[0])
+                for row in rows:
+                    row["Account"] = ""
+                with path.open("w", encoding="utf-8", newline="") as target:
+                    writer = csv.DictWriter(target, fieldnames=headers)
+                    writer.writeheader()
+                    writer.writerows(rows)
+            for carrier in policy["csv_carriers"]:
+                carrier.pop("id_column", None)
+                carrier.pop("minimum_unique", None)
+
+            result = audit(root, policy)
+
+            self.assertIn(
+                "reconciliation source-to-map has an empty operand population",
+                result["findings"],
+            )
+
+    def test_missing_configured_csv_control_columns_are_findings(self):
+        for control in ("id_column", "minimum_unique"):
+            with self.subTest(control=control), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                policy = self.build_package(root)
+                carrier = policy["csv_carriers"][0]
+                if control == "id_column":
+                    carrier[control] = "Typo Row ID"
+                else:
+                    carrier[control] = {"Typo Diversity Column": 2}
+
+                result = audit(root, policy)
+
+                self.assertTrue(
+                    any(f"configured {control}" in finding and "missing" in finding for finding in result["findings"]),
+                    result,
+                )
+
     def test_ntfs_alternate_data_stream_path_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -201,6 +246,26 @@ class TabularConformanceTests(unittest.TestCase):
                 any("declared workbook: path must remain within package root" in item for item in result["findings"]),
                 result,
             )
+
+    def test_true_lexical_hidden_workbook_row_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy = self.build_package(root)
+            workbook = root / policy["workbook"]["path"]
+            with zipfile.ZipFile(workbook) as package:
+                members = {item.filename: package.read(item.filename) for item in package.infolist()}
+            worksheet = ElementTree.fromstring(members["xl/worksheets/sheet1.xml"])
+            worksheet.find(f".//{{{SHEET_NS}}}row").set("hidden", "true")
+            members["xl/worksheets/sheet1.xml"] = ElementTree.tostring(
+                worksheet, encoding="utf-8", xml_declaration=True
+            )
+            with zipfile.ZipFile(workbook, "w") as package:
+                for name, payload in members.items():
+                    package.writestr(name, payload)
+
+            result = audit(root, policy)
+
+            self.assertTrue(any("hidden rows" in finding for finding in result["findings"]), result)
 
 
 if __name__ == "__main__":
