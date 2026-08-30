@@ -156,7 +156,7 @@ def xlsx_inventory(path: Path) -> dict[str, Any]:
             text_members = sorted(
                 name
                 for name in names
-                if name.endswith(".xml")
+                if name.casefold().endswith((".xml", ".rels", ".vml"))
             )
             for member in text_members:
                 extracted.extend(xml_surfaces(ET.fromstring(package.read(member))))
@@ -180,22 +180,21 @@ def docx_inventory(path: Path) -> dict[str, Any]:
         with zipfile.ZipFile(path) as package:
             names = set(package.namelist())
             document = ET.fromstring(package.read("word/document.xml"))
-            text_members = sorted(
+            surface_members = sorted(
                 name
                 for name in names
-                if name.startswith("word/") and name.endswith(".xml")
+                if name.casefold().endswith((".xml", ".rels", ".vml"))
             )
             extracted: list[str] = []
-            for member in text_members:
+            hidden = 0
+            for member in surface_members:
                 tree = document if member == "word/document.xml" else ET.fromstring(package.read(member))
-                extracted.extend(node.text for node in tree.iter() if node.text)
+                extracted.extend(xml_surfaces(tree))
+                if member.startswith("word/"):
+                    hidden += len(tree.findall(f".//{{{WORD}}}vanish"))
             paragraphs = len(document.findall(f".//{{{WORD}}}p"))
             tables = len(document.findall(f".//{{{WORD}}}tbl"))
-            hidden = len(document.findall(f".//{{{WORD}}}vanish"))
             comments = [name for name in names if name == "word/comments.xml"]
-            for member in ("docProps/core.xml", "docProps/custom.xml"):
-                if member in names:
-                    extracted.extend(node.text or "" for node in ET.fromstring(package.read(member)).iter())
             external: list[str] = []
             for name in names:
                 if name.endswith(".rels"):
@@ -238,6 +237,8 @@ def eml_inventory(path: Path) -> dict[str, Any]:
             text_parts.append(decoded)
         elif attachment.get_content_maintype() == "text":
             text_parts.append(payload.decode(attachment.get_content_charset() or "utf-8"))
+        else:
+            text_parts.append(payload.decode("utf-8", errors="ignore"))
     return {
         "message": message, "attachments": attachments, "parts": parts,
         "text": raw + "\n" + "\n".join(text_parts), "message_ids": message_ids,
@@ -375,7 +376,7 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
     if outputs:
         category_checks["render"].extend(output_checks)
     elif artifact_type == "eml":
-        category_checks["render"].append(check("render:mime-parts", f"Opened and parsed all {len(inventory['attachments'])} native MIME attachments; pagination is not the descriptor render surface."))
+        category_checks["render"].append(check("render:mime-parts", f"Opened and decoded all {len(inventory['attachments'])} native MIME attachment payloads; pagination is not the descriptor render surface."))
     else:
         raise ValidationFailed(f"{release_id}: applicable render gate has no render outputs")
 

@@ -10,7 +10,7 @@ import json
 import re
 import sys
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from xml.etree import ElementTree
 
 
@@ -30,8 +30,18 @@ def sha256(path: Path) -> str:
 
 def resolve_package_path(package_root: Path, value: object, label: str, findings: list[str]) -> Path | None:
     """Resolve one policy path without allowing it to leave the package."""
-    relative = Path(str(value))
-    if relative.is_absolute() or ".." in relative.parts:
+    raw = str(value)
+    windows_path = PureWindowsPath(raw)
+    posix_path = PurePosixPath(raw.replace("\\", "/"))
+    relative = Path(raw)
+    if (
+        not raw
+        or windows_path.drive
+        or windows_path.root
+        or posix_path.is_absolute()
+        or ":" in raw
+        or ".." in posix_path.parts
+    ):
         findings.append(f"{label}: path must remain within package root")
         return None
     try:
@@ -186,8 +196,15 @@ def audit(package_root: Path, policy: dict) -> dict[str, object]:
         carriers[relative] = rows
         carrier_metrics[relative] = {"sha256": sha256(path), "rows": len(rows)}
     for rule in policy.get("reconciliations", []):
-        left_rows = carriers.get(str(rule.get("left_path")), [])
-        right_rows = carriers.get(str(rule.get("right_path")), [])
+        left_path = str(rule.get("left_path"))
+        right_path = str(rule.get("right_path"))
+        if left_path not in carriers or right_path not in carriers:
+            findings.append(
+                f"reconciliation {rule.get('id', 'unnamed')} references an unavailable CSV carrier"
+            )
+            continue
+        left_rows = carriers[left_path]
+        right_rows = carriers[right_path]
         left = {row.get(str(rule.get("left_column")), "").strip() for row in left_rows}
         right = {row.get(str(rule.get("right_column")), "").strip() for row in right_rows}
         left.discard("")

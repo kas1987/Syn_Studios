@@ -161,6 +161,33 @@ class TabularConformanceTests(unittest.TestCase):
                 result["findings"],
             )
 
+    def test_reconciliation_cannot_pass_when_both_carrier_paths_are_unknown(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy = self.build_package(root)
+            policy["reconciliations"][0]["left_path"] = "missing-left.csv"
+            policy["reconciliations"][0]["right_path"] = "missing-right.csv"
+
+            result = audit(root, policy)
+
+            self.assertIn(
+                "reconciliation source-to-map references an unavailable CSV carrier",
+                result["findings"],
+            )
+
+    def test_ntfs_alternate_data_stream_path_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy = self.build_package(root)
+            policy["workbook"]["path"] = "carrier.bin:working.xlsx"
+
+            result = audit(root, policy)
+
+            self.assertTrue(
+                any("declared workbook: path must remain within package root" in item for item in result["findings"]),
+                result,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

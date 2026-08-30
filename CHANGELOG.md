@@ -19,7 +19,7 @@ proof remain in machine-readable release records.
 - Stabilize RFC-style EML checkout bytes across Linux and Windows and normalize temporary roots before deterministic path comparisons.
 - Add executable workflow-policy coverage for pinned actions, fail-closed matrix aggregation, permissions, timeouts, and known bypass controls.
 - Close publication-review portability and safety gaps: resolve Poppler executables across native and Windows names, accept platform-specific Git build suffixes, scan every DOCX `word/*.xml` part for prohibited text, and keep deprecated exact versions selectable while excluding withdrawn releases.
-- Close current-head adversarial review gaps: inspect every bound native asset, scan all XLSX XML and external-relationship surfaces, refuse mutation of an existing published exact release, confine audit-controlled paths to the package root, and reject unsupported reconciliation relationships.
+- Close current-head adversarial review gaps: inspect every bound native asset and DOCX/XLSX/EML package surface, refuse mutation or lifecycle revival of an existing published exact release, confine audit-controlled paths to the package root (including NTFS ADS), require declared reconciliation carriers, and reject unsupported relationships.
 
 GitHub publication and rules, downstream ANNA integration, and local skill
 installation remain external actions; repository release records do not imply

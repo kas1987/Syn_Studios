@@ -337,6 +337,38 @@ class ReleaseAssemblyTests(unittest.TestCase):
             }
             self.assertEqual(after, before)
 
+    def test_catalog_status_tampering_cannot_bypass_published_release_immutability(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_root(temporary)
+            self.add_reviews(root)
+            self.add_technical_results(root)
+            self.assemble(root)
+            catalog_path = root / "library/catalog.json"
+            catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+            for entry in catalog["templates"]:
+                entry["release_status"] = "candidate"
+            write_json(catalog_path, catalog)
+
+            with self.assertRaisesRegex(AssemblyRefused, "conflicting catalog status"):
+                self.assemble(root, builder_id="release:replacement-builder", builder_name="Replacement Builder")
+
+    def test_idempotent_reassembly_does_not_revive_withdrawn_releases(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_root(temporary)
+            self.add_reviews(root)
+            self.add_technical_results(root)
+            self.assemble(root)
+            catalog_path = root / "library/catalog.json"
+            catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+            for entry in catalog["templates"]:
+                entry["release_status"] = "withdrawn"
+            write_json(catalog_path, catalog)
+
+            self.assemble(root)
+
+            reloaded = json.loads(catalog_path.read_text(encoding="utf-8"))
+            self.assertTrue(all(entry["release_status"] == "withdrawn" for entry in reloaded["templates"]))
+
 
 if __name__ == "__main__":
     unittest.main()

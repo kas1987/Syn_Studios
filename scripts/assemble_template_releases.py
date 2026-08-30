@@ -333,6 +333,13 @@ def assemble(root: Path, *, approved: bool, builder_id: str, builder_name: str, 
             raise AssemblyRefused("catalog entries must be objects")
         release_id = f"REL-{index:04d}"
         template_id, version = entry.get("template_id"), entry.get("version")
+        existing_release_path = root / "library/releases" / f"{release_id}.template.json"
+        published_statuses = {"released", "deprecated", "withdrawn"}
+        has_published_marker = existing_release_path.is_file() or isinstance(entry.get("release_record"), dict)
+        if has_published_marker and entry.get("release_status") not in published_statuses:
+            raise AssemblyRefused(
+                f"{release_id} existing published release has a conflicting catalog status"
+            )
         descriptor_path = repository_path(root, entry.get("descriptor"), f"{release_id} descriptor", Path("library/templates"))
         descriptor = load_object(descriptor_path)
         if descriptor.get("template_id") != template_id or descriptor.get("version") != version or descriptor.get("release_status") != "released":
@@ -407,7 +414,7 @@ def assemble(root: Path, *, approved: bool, builder_id: str, builder_name: str, 
         }
         plans.append({
             "release_id": release_id, "template_id": str(template_id), "version": str(version), "entry": entry,
-            "was_published": entry.get("release_status") in {"released", "deprecated", "withdrawn"},
+            "was_published": has_published_marker or entry.get("release_status") in published_statuses,
             "descriptor_path": descriptor_path, "descriptor": descriptor, "descriptor_hash": descriptor_hash,
             "assets": assets, "asset_hashes": asset_hashes, "blueprint_path": blueprint_path, "blueprint": blueprint,
             "gate_map": gate_map, "foundation_ids": foundation_ids, "reviews": review_refs,
@@ -485,7 +492,9 @@ def assemble(root: Path, *, approved: bool, builder_id: str, builder_name: str, 
     for release_path, release, entry in release_records:
         payload = json_bytes(release)
         writes[release_path] = payload
-        entry["release_status"] = "released"
+        plan = next(item for item in plans if item["release_id"] == release["release_id"])
+        if not plan["was_published"]:
+            entry["release_status"] = "released"
         entry["release_record"] = {"path": release_path.relative_to(root).as_posix(), "sha256": hashlib.sha256(payload).hexdigest()}
     writes[catalog_path] = json_bytes(catalog)
 

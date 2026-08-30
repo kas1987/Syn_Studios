@@ -3,6 +3,8 @@ import shutil
 import tempfile
 import unittest
 import zipfile
+from email import policy
+from email.parser import BytesParser
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -168,6 +170,30 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
                 self.rebind_asset(root, "REL-0001")
                 self.assert_refused_without_results(root)
 
+    def test_prohibited_xlsx_relationship_or_vml_text_is_refused_before_any_write(self):
+        members = (
+            ("xl/worksheets/_rels/sheet1.xml.rels", "Relationships"),
+            ("xl/drawings/review-shape.vml", "xml"),
+        )
+        for member, root_name in members:
+            with self.subTest(member=member), tempfile.TemporaryDirectory() as directory:
+                root = self.copy_release_inputs(directory)
+                _, _, _, _, asset = self.release(root, "REL-0001")
+                with zipfile.ZipFile(asset) as package:
+                    package_members = {
+                        info.filename: package.read(info.filename)
+                        for info in package.infolist()
+                        if info.filename != member
+                    }
+                hidden = ET.Element(root_name)
+                hidden.set("review-note", "private grading answer key")
+                package_members[member] = ET.tostring(hidden, encoding="utf-8", xml_declaration=True)
+                with zipfile.ZipFile(asset, "w") as package:
+                    for name, payload in package_members.items():
+                        package.writestr(name, payload)
+                self.rebind_asset(root, "REL-0001")
+                self.assert_refused_without_results(root)
+
     def test_prohibited_leakage_is_refused_before_any_write(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self.copy_release_inputs(directory)
@@ -192,6 +218,33 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
                     for info, payload in members:
                         package.writestr(info, payload)
                     package.writestr(member, xml)
+                self.rebind_asset(root, "REL-0002")
+                self.assert_refused_without_results(root)
+
+    def test_prohibited_docx_custom_xml_or_hidden_header_is_refused_before_any_write(self):
+        for member, payload in (
+            ("customXml/item1.xml", b'<review note="private grading answer key"/>'),
+            (
+                "word/header1.xml",
+                (
+                    f'<w:root xmlns:w="{WORD}"><w:r><w:rPr><w:vanish/></w:rPr>'
+                    '<w:t>concealed review note</w:t></w:r></w:root>'
+                ).encode("utf-8"),
+            ),
+        ):
+            with self.subTest(member=member), tempfile.TemporaryDirectory() as directory:
+                root = self.copy_release_inputs(directory)
+                _, _, _, _, asset = self.release(root, "REL-0002")
+                with zipfile.ZipFile(asset) as package:
+                    package_members = {
+                        info.filename: package.read(info.filename)
+                        for info in package.infolist()
+                        if info.filename != member
+                    }
+                package_members[member] = payload
+                with zipfile.ZipFile(asset, "w") as package:
+                    for name, member_payload in package_members.items():
+                        package.writestr(name, member_payload)
                 self.rebind_asset(root, "REL-0002")
                 self.assert_refused_without_results(root)
 
@@ -225,6 +278,21 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             release["descriptor"]["sha256"] = sha256(descriptor_path)
             release["native_assets"].append({"path": relative, "sha256": digest})
             write_json(release_path, release)
+            self.assert_refused_without_results(root)
+
+    def test_prohibited_binary_eml_attachment_is_refused_before_any_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0003")
+            message = BytesParser(policy=policy.default).parsebytes(asset.read_bytes())
+            message.add_attachment(
+                b"private grading answer key",
+                maintype="application",
+                subtype="octet-stream",
+                filename="review-cache.bin",
+            )
+            asset.write_bytes(message.as_bytes(policy=policy.default))
+            self.rebind_asset(root, "REL-0003")
             self.assert_refused_without_results(root)
 
     def test_stale_foundation_provenance_is_refused_before_any_write(self):
