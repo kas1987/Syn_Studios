@@ -23,10 +23,15 @@ def workbook(path: Path, *, token=False, formula=True, hidden=False):
         package.writestr("xl/worksheets/sheet1.xml", f'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{sheet_data}</sheetData></worksheet>')
 
 
-def rewrite_workbook(path: Path, replacements: dict[str, str]):
+def rewrite_workbook(path: Path, replacements: dict[str, str | bytes]):
     with zipfile.ZipFile(path) as package:
         members = {item.filename: package.read(item.filename) for item in package.infolist()}
-    members.update({name: payload.encode("utf-8") for name, payload in replacements.items()})
+    members.update(
+        {
+            name: payload.encode("utf-8") if isinstance(payload, str) else payload
+            for name, payload in replacements.items()
+        }
+    )
     with zipfile.ZipFile(path, "w") as package:
         for name, payload in members.items():
             package.writestr(name, payload)
@@ -144,6 +149,89 @@ class TabularConformanceTests(unittest.TestCase):
                 "working.xlsx: unresolved build token in xl/sharedStrings.xml",
                 result["findings"],
             )
+
+    def test_numeric_entity_token_in_odd_header_is_reconstructed_before_scanning(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy = self.build_package(root)
+            worksheet = (
+                f'<worksheet xmlns="{SHEET_NS}"><sheetData><row r="1">'
+                '<c r="A1" t="n"><f>1+1</f><v>2</v></c>'
+                '</row></sheetData><headerFooter>'
+                '<oddHeader>&#123;&#123;organization_name&#125;&#125;</oddHeader>'
+                '</headerFooter></worksheet>'
+            )
+            rewrite_workbook(
+                root / policy["workbook"]["path"],
+                {"xl/worksheets/sheet1.xml": worksheet},
+            )
+
+            result = audit(root, policy)
+
+            self.assertIn(
+                "working.xlsx: unresolved build token in xl/worksheets/sheet1.xml",
+                result["findings"],
+            )
+
+    def test_numeric_entity_tokens_in_xml_attributes_and_tails_are_rejected(self):
+        for surface, styles in [
+            (
+                "attribute",
+                f'<styleSheet xmlns="{SHEET_NS}" '
+                'buildRef="&#123;&#123;organization_name&#125;&#125;"/>',
+            ),
+            (
+                "tail",
+                f'<styleSheet xmlns="{SHEET_NS}"><ext/>'
+                '&#123;&#123;organization_name&#125;&#125;</styleSheet>',
+            ),
+        ]:
+            with self.subTest(surface=surface), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                policy = self.build_package(root)
+                rewrite_workbook(
+                    root / policy["workbook"]["path"],
+                    {"xl/styles.xml": styles},
+                )
+
+                result = audit(root, policy)
+
+                self.assertIn(
+                    "working.xlsx: unresolved build token in xl/styles.xml",
+                    result["findings"],
+                )
+
+    def test_malformed_unselected_ooxml_xml_is_an_explicit_finding(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy = self.build_package(root)
+            rewrite_workbook(
+                root / policy["workbook"]["path"],
+                {"xl/styles.xml": f'<styleSheet xmlns="{SHEET_NS}"><cellXfs>'},
+            )
+
+            result = audit(root, policy)
+
+            self.assertTrue(
+                any(
+                    "malformed OOXML XML in xl/styles.xml" in finding
+                    for finding in result["findings"]
+                ),
+                result,
+            )
+
+    def test_literal_token_bytes_in_non_xml_member_are_not_visible_tokens(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy = self.build_package(root)
+            rewrite_workbook(
+                root / policy["workbook"]["path"],
+                {"xl/media/image1.bin": b"synthetic-binary-prefix{{not-visible}}suffix"},
+            )
+
+            result = audit(root, policy)
+
+            self.assertEqual(result["status"], "pass", result)
 
     def test_malformed_relationship_xml_is_an_explicit_finding(self):
         with tempfile.TemporaryDirectory() as temporary:

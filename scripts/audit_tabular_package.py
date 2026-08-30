@@ -28,15 +28,24 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def has_reconstructed_token(root: ElementTree.Element, container: str) -> bool:
-    """Scan one logical rich-text string at a time across its XML runs."""
-    for item in root.findall(f".//{{{SHEET_NS}}}{container}"):
-        visible_text = "".join(
-            node.text or "" for node in item.findall(f".//{{{SHEET_NS}}}t")
-        )
-        if TOKEN.search(visible_text.encode("utf-8")):
+def has_reconstructed_token(root: ElementTree.Element) -> bool:
+    """Scan parser-decoded XML values and logical spreadsheet rich text."""
+    for node in root.iter():
+        values = (node.text, node.tail, *node.attrib.values())
+        if any(value and TOKEN.search(value.encode("utf-8")) for value in values):
             return True
+    for container in ("is", "si"):
+        for item in root.findall(f".//{{{SHEET_NS}}}{container}"):
+            visible_text = "".join(
+                node.text or "" for node in item.findall(f".//{{{SHEET_NS}}}t")
+            )
+            if TOKEN.search(visible_text.encode("utf-8")):
+                return True
     return False
+
+
+def is_ooxml_xml_member(name: str) -> bool:
+    return PurePosixPath(name).suffix.lower() in {".xml", ".rels"}
 
 
 def resolve_package_path(package_root: Path, value: object, label: str, findings: list[str]) -> Path | None:
@@ -124,22 +133,39 @@ def audit_workbook(path: Path, rule: dict, findings: list[str]) -> dict[str, obj
         with zipfile.ZipFile(path) as package:
             names = package.namelist()
             token_members: set[str] = set()
+            xml_roots: dict[str, ElementTree.Element] = {}
             for name in names:
+                if name.startswith(("customXml/", "xl/comments", "xl/threadedComments", "xl/embeddings/")):
+                    inventory["embedded_objects"].append(name)
+                if not is_ooxml_xml_member(name):
+                    continue
                 payload = package.read(name)
                 if TOKEN.search(payload):
                     findings.append(f"{path.name}: unresolved build token in {name}")
                     token_members.add(name)
-                if name.startswith(("customXml/", "xl/comments", "xl/threadedComments", "xl/embeddings/")):
-                    inventory["embedded_objects"].append(name)
-            workbook = ElementTree.fromstring(package.read("xl/workbook.xml"))
+                try:
+                    root = ElementTree.fromstring(payload)
+                except ElementTree.ParseError as error:
+                    label = "malformed relationship XML" if name.endswith(".rels") else "malformed OOXML XML"
+                    findings.append(f"{path.name}: {label} in {name}: {error}")
+                    continue
+                xml_roots[name] = root
+                if name not in token_members and has_reconstructed_token(root):
+                    findings.append(f"{path.name}: unresolved build token in {name}")
+                    token_members.add(name)
+            workbook = xml_roots.get("xl/workbook.xml")
+            if workbook is None:
+                if "xl/workbook.xml" not in names:
+                    findings.append(f"{path.name}: workbook XML is missing")
+                return inventory
             for sheet in workbook.findall(f"{{{SHEET_NS}}}sheets/{{{SHEET_NS}}}sheet"):
                 if sheet.get("state", "visible") != "visible":
                     inventory["hidden_surfaces"].append(f"sheet:{sheet.get('name')}")
             for name in names:
                 if name.startswith("xl/worksheets/") and name.endswith(".xml"):
-                    root = ElementTree.fromstring(package.read(name))
-                    if name not in token_members and has_reconstructed_token(root, "is"):
-                        findings.append(f"{path.name}: unresolved build token in {name}")
+                    root = xml_roots.get(name)
+                    if root is None:
+                        continue
                     inventory["formula_count"] += len(root.findall(f".//{{{SHEET_NS}}}f"))
                     for row in root.findall(f".//{{{SHEET_NS}}}row"):
                         if row.get("hidden") in {"1", "true"}:
@@ -149,17 +175,9 @@ def audit_workbook(path: Path, rule: dict, findings: list[str]) -> dict[str, obj
                             inventory["hidden_surfaces"].append(f"{name}:column:{column.get('min')}-{column.get('max')}")
                     if root.findall(f".//{{{SHEET_NS}}}c[@t='e']"):
                         findings.append(f"{path.name}: formula error cells present in {name}")
-                if name == "xl/sharedStrings.xml":
-                    root = ElementTree.fromstring(package.read(name))
-                    if name not in token_members and has_reconstructed_token(root, "si"):
-                        findings.append(f"{path.name}: unresolved build token in {name}")
                 if name.endswith(".rels"):
-                    try:
-                        relationships = ElementTree.fromstring(package.read(name))
-                    except ElementTree.ParseError as error:
-                        findings.append(
-                            f"{path.name}: malformed relationship XML in {name}: {error}"
-                        )
+                    relationships = xml_roots.get(name)
+                    if relationships is None:
                         continue
                     for relationship in relationships.findall(f"{{{REL_NS}}}Relationship"):
                         if relationship.get("TargetMode") == "External":
