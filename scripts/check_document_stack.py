@@ -15,6 +15,8 @@ import sys
 import tomllib
 from typing import Any
 
+from document_stack_paths import poppler_executable
+
 
 IMPORT_NAMES = {
     "python-docx": "docx",
@@ -119,9 +121,9 @@ def main() -> int:
         if name == "git":
             return executable_status(env.get("SYN_STUDIOS_GIT", ""), "--version", accepted=accepted["git"])
         if name == "pdfinfo":
-            return executable_status(str(poppler / "pdfinfo.exe"), "-v", accepted=accepted["pdfinfo"])
+            return executable_status(str(poppler_executable(poppler, "pdfinfo")), "-v", accepted=accepted["pdfinfo"])
         if name == "pdftoppm":
-            return executable_status(str(poppler / "pdftoppm.exe"), "-v", accepted=accepted["pdftoppm"])
+            return executable_status(str(poppler_executable(poppler, "pdftoppm")), "-v", accepted=accepted["pdftoppm"])
         if name == "libreoffice":
             return executable_status(env.get("SYN_STUDIOS_SOFFICE", ""), "--headless", "--version", accepted=accepted["libreoffice"])
         if name == "artifact_tool":

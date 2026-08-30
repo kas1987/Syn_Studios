@@ -18,6 +18,7 @@ proof remain in machine-readable release records.
 - Add a self-contained repository-root Codex skill package and enforce its runtime dependencies with a repository contract test.
 - Stabilize RFC-style EML checkout bytes across Linux and Windows and normalize temporary roots before deterministic path comparisons.
 - Add executable workflow-policy coverage for pinned actions, fail-closed matrix aggregation, permissions, timeouts, and known bypass controls.
+- Close publication-review portability and safety gaps: resolve Poppler executables across native and Windows names, accept platform-specific Git build suffixes, scan every DOCX `word/*.xml` part for prohibited text, and keep deprecated exact versions selectable while excluding withdrawn releases.
 
 GitHub publication and rules, downstream ANNA integration, and local skill
 installation remain external actions; repository release records do not imply

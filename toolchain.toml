@@ -20,7 +20,7 @@ pywin32 = "311"
 [executables.accepted]
 node = "v24.19.0"
 pnpm = "11.19.0"
-git = "git version 2.53.0.windows.3"
+git = "git version 2.53.0"
 pdfinfo = "pdfinfo version 26.05.0"
 pdftoppm = "pdftoppm version 26.05.0"
 libreoffice = "LibreOffice 26.2.5.2"

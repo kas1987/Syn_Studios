@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Discover or select exact released Syn Studios template versions."""
+"""Discover or select exact released or deprecated Syn Studios versions."""
 
 from __future__ import annotations
 
@@ -152,22 +152,22 @@ def load_catalog(path: Path) -> dict[str, Any]:
         raise CatalogQueryError("unexpected catalog_id")
     if not isinstance(data.get("templates"), list):
         raise CatalogQueryError("catalog templates must be an array")
-    released_keys = set()
+    selectable_keys = set()
     for entry in data["templates"]:
         if not isinstance(entry, dict):
             raise CatalogQueryError("catalog entries must be objects")
-        if not _released(entry):
+        if not _selectable(entry):
             continue
-        _validate_released_entry(entry)
+        _validate_selectable_entry(entry)
         key = (entry["template_id"], entry["version"])
-        if key in released_keys:
-            raise CatalogQueryError("catalog contains duplicate released template_id/version entries")
-        released_keys.add(key)
+        if key in selectable_keys:
+            raise CatalogQueryError("catalog contains duplicate selectable template_id/version entries")
+        selectable_keys.add(key)
     return data
 
 
-def _released(entry: dict[str, Any]) -> bool:
-    return entry.get("release_status") == "released"
+def _selectable(entry: dict[str, Any]) -> bool:
+    return entry.get("release_status") in {"released", "deprecated"}
 
 
 def _safe_repo_path(value: Any) -> bool:
@@ -273,29 +273,29 @@ def _compatible_context(
     return True
 
 
-def _validate_released_entry(entry: dict[str, Any]) -> None:
+def _validate_selectable_entry(entry: dict[str, Any]) -> None:
     missing = sorted(RELEASED_REQUIRED_FIELDS - entry.keys())
     if missing:
-        raise CatalogQueryError(f"released entry missing fields: {', '.join(missing)}")
+        raise CatalogQueryError(f"selectable entry missing fields: {', '.join(missing)}")
     if entry["kind"] != "artifact_template":
-        raise CatalogQueryError("released entry has invalid kind")
+        raise CatalogQueryError("selectable entry has invalid kind")
     if not re.fullmatch(r"TMPL-[0-9]{4}", entry["template_id"]):
-        raise CatalogQueryError("released entry has invalid template_id")
+        raise CatalogQueryError("selectable entry has invalid template_id")
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", entry["version"]):
-        raise CatalogQueryError("released entry version must be exact semantic version")
+        raise CatalogQueryError("selectable entry version must be exact semantic version")
     if not re.fullmatch(r"BP-[0-9]{4}", entry["blueprint_id"]):
-        raise CatalogQueryError("released entry has invalid blueprint_id")
+        raise CatalogQueryError("selectable entry has invalid blueprint_id")
     if entry["authority"] not in AUTHORITY_CLASSES:
-        raise CatalogQueryError("released entry has unsupported authority class")
+        raise CatalogQueryError("selectable entry has unsupported authority class")
     if not _safe_repo_path(entry["descriptor"]):
-        raise CatalogQueryError("released entry descriptor must be a safe repository-relative path")
+        raise CatalogQueryError("selectable entry descriptor must be a safe repository-relative path")
     if not isinstance(entry["native_assets"], list) or not entry["native_assets"]:
-        raise CatalogQueryError("released entry native_assets must be a non-empty array")
+        raise CatalogQueryError("selectable entry native_assets must be a non-empty array")
     if not all(_safe_repo_path(value) for value in entry["native_assets"]):
-        raise CatalogQueryError("released entry native_assets must use safe repository-relative paths")
+        raise CatalogQueryError("selectable entry native_assets must use safe repository-relative paths")
     for field in ("supported_consumers", "capabilities"):
         if not isinstance(entry[field], list) or not all(isinstance(value, str) and value for value in entry[field]):
-            raise CatalogQueryError(f"released entry {field} must be an array of non-empty strings")
+            raise CatalogQueryError(f"selectable entry {field} must be an array of non-empty strings")
     release_record = entry["release_record"]
     if (
         not isinstance(release_record, dict)
@@ -303,7 +303,7 @@ def _validate_released_entry(entry: dict[str, Any]) -> None:
         or not _safe_repo_path(release_record.get("path"))
         or not re.fullmatch(r"[a-f0-9]{64}", str(release_record.get("sha256", "")))
     ):
-        raise CatalogQueryError("released entry release_record must be a bound repository-relative path")
+        raise CatalogQueryError("selectable entry release_record must be a bound repository-relative path")
 
 
 def _contains_all(entry: dict[str, Any], field: str, requested: Iterable[str]) -> bool:
@@ -326,7 +326,7 @@ def discover(
     prohibited_knowledge: Iterable[str] = (),
     repository_root: Path,
 ) -> list[dict[str, Any]]:
-    """Return released entries matching every supplied constraint."""
+    """Return released or deprecated entries matching every supplied constraint."""
     repository_root = repository_root.resolve()
     _canonical_validate_repository(repository_root)
     canonical_catalog = load_catalog(repository_root / "library" / "catalog.json")
@@ -344,7 +344,7 @@ def discover(
     }
     matches = []
     for entry in catalog["templates"]:
-        if not isinstance(entry, dict) or not _released(entry):
+        if not isinstance(entry, dict) or not _selectable(entry):
             continue
         if any(value is not None and entry.get(field) != value for field, value in scalar_filters.items()):
             continue
@@ -382,7 +382,7 @@ def select_exact(
     prohibited_knowledge: Iterable[str] = (),
     repository_root: Path,
 ) -> dict[str, Any] | None:
-    """Select one released version; never resolve a floating version label."""
+    """Select one released or deprecated version; never resolve a floating label."""
     normalized = version.strip().lower()
     if not normalized or normalized in FLOATING_VERSIONS:
         raise CatalogQueryError("version must be an exact value; floating versions are forbidden")
@@ -491,7 +491,7 @@ def instantiate(
         repository_root=root,
     )
     if entry is None:
-        raise CatalogQueryError("exact released template selection not found")
+        raise CatalogQueryError("exact selectable template version not found")
     validation = validate_release(root, entry)
 
     package_root = package_root.resolve()
@@ -573,7 +573,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--catalog", type=Path)
     subparsers = parser.add_subparsers(dest="operation", required=True)
 
-    discover_parser = subparsers.add_parser("discover", help="list compatible released templates")
+    discover_parser = subparsers.add_parser("discover", help="list compatible released or deprecated templates")
     discover_parser.add_argument("--consumer-id", required=True)
     discover_parser.add_argument("--artifact-type")
     discover_parser.add_argument("--blueprint-id")
@@ -585,7 +585,7 @@ def _parser() -> argparse.ArgumentParser:
     discover_parser.add_argument("--required-knowledge", action="append", default=[])
     discover_parser.add_argument("--prohibited-knowledge", action="append", default=[])
 
-    select_parser = subparsers.add_parser("select", help="select one exact released version")
+    select_parser = subparsers.add_parser("select", help="select one exact released or deprecated version")
     select_parser.add_argument("--consumer-id", required=True)
     select_parser.add_argument("--template-id", required=True)
     select_parser.add_argument("--version", required=True)

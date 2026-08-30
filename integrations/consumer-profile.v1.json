@@ -77,7 +77,7 @@
         "release_status"
       ],
       "returns": "catalog_entries",
-      "release_policy": "released_only",
+      "release_policy": "released_or_deprecated_exact_versions",
       "side_effects": false
     },
     "select": {
@@ -91,7 +91,7 @@
       "requires": [
         "canonical_consumer_id",
         "canonical_repository_validation",
-        "release_status_is_released",
+        "release_status_is_selectable",
         "blueprint_compatible",
         "capabilities_satisfy_request",
         "provenance_boundary_compatible"
@@ -133,8 +133,8 @@
     "validate": {
       "accepts": [
         "consumer_id",
-        "exact_released_template_id",
-        "exact_released_version",
+        "exact_selectable_template_id",
+        "exact_selectable_version",
         "canonical_catalog_entry"
       ],
       "required_check_families": [

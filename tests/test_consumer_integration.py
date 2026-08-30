@@ -57,7 +57,7 @@ class ConsumerIntegrationTests(unittest.TestCase):
     def test_operations_define_a_release_safe_handoff(self):
         operations = self.profile["operations"]
         self.assertEqual(set(operations), {"discover", "select", "instantiate", "validate"})
-        self.assertIn("release_status_is_released", operations["select"]["requires"])
+        self.assertIn("release_status_is_selectable", operations["select"]["requires"])
         self.assertEqual(operations["select"]["no_match_behavior"], "return_constraints_and_stop")
         self.assertIn("consumer_write_authorization", operations["instantiate"]["requires"])
         self.assertIn("library/templates", operations["instantiate"]["must_not_write"])
@@ -222,7 +222,7 @@ class CatalogResolverTests(unittest.TestCase):
         self.assertEqual([(item["template_id"], item["version"]) for item in matches], [("TMPL-0001", "1.2.3")])
         self.assertEqual(discover(self.catalog, consumer_id="anna", artifact_type="docx", repository_root=self.root), [])
 
-    def test_select_requires_exact_released_version(self):
+    def test_select_requires_exact_selectable_version(self):
         base = {"catalog": self.catalog, "template_id": "TMPL-0001", "consumer_id": "anna", "repository_root": self.root}
         selected = select_exact(**base, version="1.2.3")
         self.assertEqual(selected["blueprint_id"], "BP-0001")
@@ -231,6 +231,32 @@ class CatalogResolverTests(unittest.TestCase):
         self.assertIsNone(select_exact(**base, version="9.9.9"))
         with self.assertRaisesRegex(CatalogQueryError, "floating versions are forbidden"):
             select_exact(**base, version="latest")
+
+    def test_deprecated_versions_remain_selectable_and_withdrawn_do_not(self):
+        self.catalog["templates"][1]["release_status"] = "deprecated"
+        self.catalog_path.write_text(json.dumps(self.catalog), encoding="utf-8")
+        catalog = load_catalog(self.catalog_path)
+        selected = select_exact(
+            catalog,
+            template_id="TMPL-0001",
+            version="1.2.3",
+            consumer_id="anna",
+            repository_root=self.root,
+        )
+        self.assertEqual(selected["release_status"], "deprecated")
+
+        catalog["templates"][1]["release_status"] = "withdrawn"
+        self.catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+        withdrawn = load_catalog(self.catalog_path)
+        self.assertIsNone(
+            select_exact(
+                withdrawn,
+                template_id="TMPL-0001",
+                version="1.2.3",
+                consumer_id="anna",
+                repository_root=self.root,
+            )
+        )
 
     def test_cli_returns_machine_readable_json(self):
         command = [
@@ -819,7 +845,7 @@ class FullConsumerTrajectoryTests(unittest.TestCase):
         )
         for mismatch in mismatches:
             with self.subTest(mismatch=mismatch):
-                with self.assertRaisesRegex(CatalogQueryError, "exact released template selection not found"):
+                with self.assertRaisesRegex(CatalogQueryError, "exact selectable template version not found"):
                     instantiate(
                         **common,
                         provenance_reference="manifest.md#workbook",

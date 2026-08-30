@@ -4,7 +4,11 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
+import tomllib
 import unittest
+
+from scripts.document_stack_paths import poppler_executable
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -77,6 +81,23 @@ class DocumentStackContractTests(unittest.TestCase):
         payload = json.loads(completed.stdout)
         self.assertNotEqual(payload["status"], "PASS")
 
+    def test_poppler_resolution_accepts_native_and_windows_names(self):
+        with tempfile.TemporaryDirectory() as temp_name:
+            root = Path(temp_name)
+            native = root / "pdfinfo"
+            native.write_bytes(b"")
+            self.assertEqual(poppler_executable(root, "pdfinfo"), native)
+            native.unlink()
+            windows = root / "pdfinfo.exe"
+            windows.write_bytes(b"")
+            self.assertEqual(poppler_executable(root, "pdfinfo"), windows)
+
+    def test_git_version_contract_is_cross_platform(self):
+        manifest = tomllib.loads((ROOT / "toolchain.toml").read_text(encoding="utf-8"))
+        accepted = manifest["executables"]["accepted"]["git"]
+        self.assertEqual(accepted, "git version 2.53.0")
+        self.assertTrue("git version 2.53.0.windows.3".startswith(accepted))
+
     def test_executable_identity_rejects_zero_exit_impostors(self):
         environment = dict(os.environ)
         environment.update(
@@ -113,8 +134,6 @@ class DocumentStackContractTests(unittest.TestCase):
         self.assertEqual(found, [])
 
     def test_dirty_render_output_is_rejected_before_tool_use(self):
-        import tempfile
-
         with tempfile.TemporaryDirectory() as temp_name:
             temp = Path(temp_name)
             source = temp / "input.pdf"

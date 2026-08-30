@@ -155,13 +155,19 @@ def docx_inventory(path: Path) -> dict[str, Any]:
         with zipfile.ZipFile(path) as package:
             names = set(package.namelist())
             document = ET.fromstring(package.read("word/document.xml"))
-            extracted = [node.text or "" for node in document.findall(f".//{{{WORD}}}t")]
+            text_members = sorted(
+                name
+                for name in names
+                if name.startswith("word/") and name.endswith(".xml")
+            )
+            extracted: list[str] = []
+            for member in text_members:
+                tree = document if member == "word/document.xml" else ET.fromstring(package.read(member))
+                extracted.extend(node.text for node in tree.iter() if node.text)
             paragraphs = len(document.findall(f".//{{{WORD}}}p"))
             tables = len(document.findall(f".//{{{WORD}}}tbl"))
             hidden = len(document.findall(f".//{{{WORD}}}vanish"))
             comments = [name for name in names if name == "word/comments.xml"]
-            for member in comments:
-                extracted.extend(node.text or "" for node in ET.fromstring(package.read(member)).findall(f".//{{{WORD}}}t"))
             for member in ("docProps/core.xml", "docProps/custom.xml"):
                 if member in names:
                     extracted.extend(node.text or "" for node in ET.fromstring(package.read(member)).iter())

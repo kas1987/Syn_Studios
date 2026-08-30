@@ -11,6 +11,7 @@ from scripts.run_template_technical_validation import ValidationFailed, run, sha
 
 ROOT = Path(__file__).resolve().parents[1]
 MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+WORD = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
 
 def write_json(path: Path, value: object) -> None:
@@ -126,6 +127,25 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             asset.write_bytes(asset.read_bytes() + b"\nX-Note: private grading residue\n")
             self.rebind_asset(root, "REL-0003")
             self.assert_refused_without_results(root)
+
+    def test_prohibited_docx_text_part_is_refused_before_any_write(self):
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            f'<w:root xmlns:w="{WORD}">'
+            '<w:p><w:r><w:t>private grading answer key</w:t></w:r></w:p></w:root>'
+        ).encode("utf-8")
+        for member in ("word/header1.xml", "word/footer1.xml", "word/footnotes.xml", "word/endnotes.xml"):
+            with self.subTest(member=member), tempfile.TemporaryDirectory() as directory:
+                root = self.copy_release_inputs(directory)
+                _, _, _, _, asset = self.release(root, "REL-0002")
+                with zipfile.ZipFile(asset) as package:
+                    members = [(info, package.read(info.filename)) for info in package.infolist() if info.filename != member]
+                with zipfile.ZipFile(asset, "w") as package:
+                    for info, payload in members:
+                        package.writestr(info, payload)
+                    package.writestr(member, xml)
+                self.rebind_asset(root, "REL-0002")
+                self.assert_refused_without_results(root)
 
     def test_stale_foundation_provenance_is_refused_before_any_write(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -13,6 +13,8 @@ import shutil
 import subprocess
 import tempfile
 
+from document_stack_paths import poppler_executable
+
 
 OFFICE_SUFFIXES = {".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp"}
 
@@ -56,8 +58,8 @@ def main() -> int:
     before = sha256(source)
 
     poppler = Path(os.environ.get("SYN_STUDIOS_POPPLER_BIN", ""))
-    pdfinfo = require_file(str(poppler / "pdfinfo.exe"), "pdfinfo")
-    pdftoppm = require_file(str(poppler / "pdftoppm.exe"), "pdftoppm")
+    pdfinfo = require_file(str(poppler_executable(poppler, "pdfinfo")), "pdfinfo")
+    pdftoppm = require_file(str(poppler_executable(poppler, "pdftoppm")), "pdftoppm")
 
     try:
         with tempfile.TemporaryDirectory(prefix="syn-studios-render-") as temp_name:
