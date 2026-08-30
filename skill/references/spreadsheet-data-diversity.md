@@ -59,4 +59,3 @@ population. Include at least one incomplete-row arm, one over-capacity arm, one
 formula-propagation arm, one cross-file reconciliation arm, and fresh rendered
 evidence for the expanded footprint. Package review must also check value,
 formatting, and voice convergence across otherwise independent sources.
-

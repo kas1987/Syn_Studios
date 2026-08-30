@@ -16,4 +16,3 @@ record. World facts, task answers, private manifests, and build residue belong
 outside this library.
 
 Versioning and lifecycle behavior are defined in `docs/VERSIONING.md`.
-
