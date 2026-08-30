@@ -45,7 +45,7 @@ def has_reconstructed_token(root: ElementTree.Element) -> bool:
 
 
 def is_ooxml_xml_member(name: str) -> bool:
-    return PurePosixPath(name).suffix.lower() in {".xml", ".rels"}
+    return PurePosixPath(name).suffix.lower() in {".xml", ".rels", ".vml"}
 
 
 def resolve_package_path(package_root: Path, value: object, label: str, findings: list[str]) -> Path | None:

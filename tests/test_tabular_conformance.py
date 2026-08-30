@@ -220,6 +220,73 @@ class TabularConformanceTests(unittest.TestCase):
                 result,
             )
 
+    def test_numeric_entity_token_in_vml_is_reconstructed_before_scanning(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy = self.build_package(root)
+            rewrite_workbook(
+                root / policy["workbook"]["path"],
+                {
+                    "xl/drawings/vmlDrawing1.vml": (
+                        '<xml xmlns:v="urn:schemas-microsoft-com:vml">'
+                        '<v:shape title="&#123;&#123;organization_name&#125;&#125;"/>'
+                        '</xml>'
+                    )
+                },
+            )
+
+            result = audit(root, policy)
+
+            self.assertIn(
+                "working.xlsx: unresolved build token in xl/drawings/vmlDrawing1.vml",
+                result["findings"],
+            )
+
+    def test_literal_token_in_vml_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy = self.build_package(root)
+            rewrite_workbook(
+                root / policy["workbook"]["path"],
+                {
+                    "xl/drawings/vmlDrawing1.vml": (
+                        '<xml xmlns:v="urn:schemas-microsoft-com:vml">'
+                        '<v:textbox>{{organization_name}}</v:textbox>'
+                        '</xml>'
+                    )
+                },
+            )
+
+            result = audit(root, policy)
+
+            self.assertIn(
+                "working.xlsx: unresolved build token in xl/drawings/vmlDrawing1.vml",
+                result["findings"],
+            )
+
+    def test_malformed_vml_is_an_explicit_finding(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy = self.build_package(root)
+            rewrite_workbook(
+                root / policy["workbook"]["path"],
+                {
+                    "xl/drawings/vmlDrawing1.vml": (
+                        '<xml xmlns:v="urn:schemas-microsoft-com:vml"><v:shape>'
+                    )
+                },
+            )
+
+            result = audit(root, policy)
+
+            self.assertTrue(
+                any(
+                    "malformed OOXML XML in xl/drawings/vmlDrawing1.vml" in finding
+                    for finding in result["findings"]
+                ),
+                result,
+            )
+
     def test_literal_token_bytes_in_non_xml_member_are_not_visible_tokens(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
