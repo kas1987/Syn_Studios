@@ -459,7 +459,7 @@ def validate_png_shape(payload: bytes, label: str, findings: list[str]) -> None:
         findings.append(f"{label}: PNG proof has nonconsecutive image-data chunks")
         return
     palette_chunks = [data for kind, data in chunks if kind == b"PLTE"]
-    palette_entries = 0
+    palette_entries = len(palette_chunks[0]) // 3 if palette_chunks else 0
     if len(palette_chunks) > 1 or (
         palette_chunks and chunk_types.index(b"PLTE") > idat_indexes[0]
     ):
@@ -479,8 +479,6 @@ def validate_png_shape(payload: bytes, label: str, findings: list[str]) -> None:
         if len(palette_chunks) != 1:
             findings.append(f"{label}: indexed PNG proof lacks one palette before image data")
             return
-        palette = palette_chunks[0]
-        palette_entries = len(palette) // 3
         if palette_entries > 2**bit_depth:
             findings.append(f"{label}: indexed PNG proof has an invalid palette")
             return
@@ -504,6 +502,15 @@ def validate_png_shape(payload: bytes, label: str, findings: list[str]) -> None:
         ):
             findings.append(f"{label}: PNG proof has invalid transparency data")
             return
+        sample_limit = (1 << bit_depth) - 1
+        if color_type == 0 and struct.unpack(">H", transparency)[0] > sample_limit:
+            findings.append(f"{label}: PNG proof has invalid transparency data")
+            return
+        if color_type == 2 and any(
+            sample > sample_limit for sample in struct.unpack(">HHH", transparency)
+        ):
+            findings.append(f"{label}: PNG proof has invalid transparency data")
+            return
     histogram_chunks = [data for kind, data in chunks if kind == b"hIST"]
     if len(histogram_chunks) > 1:
         findings.append(f"{label}: PNG proof has duplicate histogram chunks")
@@ -517,6 +524,47 @@ def validate_png_shape(payload: bytes, label: str, findings: list[str]) -> None:
             or len(histogram_chunks[0]) != palette_entries * 2
         ):
             findings.append(f"{label}: PNG proof has invalid histogram data")
+            return
+    background_chunks = [data for kind, data in chunks if kind == b"bKGD"]
+    if len(background_chunks) > 1:
+        findings.append(f"{label}: PNG proof has duplicate background chunks")
+        return
+    if background_chunks:
+        background_index = chunk_types.index(b"bKGD")
+        if background_index > idat_indexes[0] or (
+            palette_chunks and background_index < chunk_types.index(b"PLTE")
+        ):
+            findings.append(f"{label}: PNG proof has an invalid background layout")
+            return
+        background = background_chunks[0]
+        sample_limit = (1 << bit_depth) - 1
+        if (
+            (color_type in {0, 4} and (
+                len(background) != 2
+                or struct.unpack(">H", background)[0] > sample_limit
+            ))
+            or (color_type in {2, 6} and (
+                len(background) != 6
+                or any(sample > sample_limit for sample in struct.unpack(">HHH", background))
+            ))
+            or (color_type == 3 and (
+                len(background) != 1 or background[0] >= palette_entries
+            ))
+        ):
+            findings.append(f"{label}: PNG proof has invalid background data")
+            return
+    physical_chunks = [data for kind, data in chunks if kind == b"pHYs"]
+    if len(physical_chunks) > 1:
+        findings.append(f"{label}: PNG proof has duplicate physical-dimension chunks")
+        return
+    if physical_chunks:
+        physical_index = chunk_types.index(b"pHYs")
+        physical = physical_chunks[0]
+        if physical_index > idat_indexes[0]:
+            findings.append(f"{label}: PNG proof has an invalid physical-dimension layout")
+            return
+        if len(physical) != 9 or physical[8] not in {0, 1}:
+            findings.append(f"{label}: PNG proof has invalid physical-dimension data")
             return
     known_critical = {b"IHDR", b"PLTE", b"IDAT", b"IEND"}
     if any(kind[0] & 0x20 == 0 and kind not in known_critical for kind in chunk_types):

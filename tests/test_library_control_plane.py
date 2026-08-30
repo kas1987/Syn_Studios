@@ -1280,6 +1280,93 @@ class LibraryControlPlaneTests(unittest.TestCase):
 
                 self.assertIn(expected, "\n".join(findings))
 
+    def test_truecolor_png_may_bind_palette_histogram_and_bounded_transparency(self):
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+        header = chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 2, 0, 0, 0))
+        palette = chunk(b"PLTE", b"\x00\x00\x00")
+        histogram = chunk(b"hIST", b"\x00\x01")
+        raster = chunk(b"IDAT", zlib.compress(b"".join(b"\x00" + b"\x00" * 48 for _ in range(16))))
+        valid = b"\x89PNG\r\n\x1a\n" + header + palette + histogram + raster + chunk(b"IEND", b"")
+        findings = []
+
+        validate_png_shape(valid, "valid", findings)
+
+        self.assertEqual(findings, [])
+        invalid = (
+            b"\x89PNG\r\n\x1a\n"
+            + header
+            + chunk(b"tRNS", struct.pack(">HHH", 256, 0, 0))
+            + raster
+            + chunk(b"IEND", b"")
+        )
+        findings = []
+
+        validate_png_shape(invalid, "invalid", findings)
+
+        self.assertIn("invalid transparency data", "\n".join(findings))
+
+    def test_low_bit_depth_transparency_sample_is_bounded(self):
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+        payload = (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 1, 0, 0, 0, 0))
+            + chunk(b"tRNS", struct.pack(">H", 2))
+            + chunk(b"IDAT", zlib.compress(b"".join(b"\x00\x00\x00" for _ in range(16))))
+            + chunk(b"IEND", b"")
+        )
+        findings = []
+
+        validate_png_shape(payload, "invalid", findings)
+
+        self.assertIn("invalid transparency data", "\n".join(findings))
+
+    def test_png_background_chunk_is_palette_bound_and_ordered(self):
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+        header = chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 3, 0, 0, 0))
+        palette = chunk(b"PLTE", b"\x00\x00\x00")
+        raster = chunk(b"IDAT", zlib.compress(b"".join(b"\x00" + b"\x00" * 16 for _ in range(16))))
+        cases = (
+            (chunk(b"bKGD", b"\x00") + palette + raster, "invalid background layout"),
+            (palette + chunk(b"bKGD", b"\x01") + raster, "invalid background data"),
+            (palette + raster + chunk(b"bKGD", b"\x00"), "invalid background layout"),
+        )
+        for body, expected in cases:
+            with self.subTest(expected=expected):
+                payload = b"\x89PNG\r\n\x1a\n" + header + body + chunk(b"IEND", b"")
+                findings = []
+
+                validate_png_shape(payload, "invalid", findings)
+
+                self.assertIn(expected, "\n".join(findings))
+
+    def test_png_physical_dimension_chunk_is_unique_ordered_and_well_formed(self):
+        def chunk(kind, data):
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+        header = chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 0, 0, 0, 0))
+        physical = chunk(b"pHYs", struct.pack(">IIB", 3779, 3779, 1))
+        raster = chunk(b"IDAT", zlib.compress(b"".join(b"\x00" + b"\x00" * 16 for _ in range(16))))
+        cases = (
+            (chunk(b"pHYs", b"\x00" * 8) + raster, "invalid physical-dimension data"),
+            (physical + physical + raster, "duplicate physical-dimension chunks"),
+            (raster + physical, "invalid physical-dimension layout"),
+            (chunk(b"pHYs", struct.pack(">IIB", 3779, 3779, 2)) + raster, "invalid physical-dimension data"),
+        )
+        for body, expected in cases:
+            with self.subTest(expected=expected):
+                payload = b"\x89PNG\r\n\x1a\n" + header + body + chunk(b"IEND", b"")
+                findings = []
+
+                validate_png_shape(payload, "invalid", findings)
+
+                self.assertIn(expected, "\n".join(findings))
+
     def test_png_chunk_types_require_letters_and_uppercase_reserved_byte(self):
         def chunk(kind, data):
             return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
