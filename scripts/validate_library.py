@@ -40,6 +40,43 @@ except ImportError:  # Direct execution: python scripts/validate_library.py
         normalized_actor_identity = identity_module.normalized_actor_identity
 
 try:
+    from .pdf_structure import inspect_pdf
+except ImportError:  # Direct execution: python scripts/validate_library.py
+    try:
+        from pdf_structure import inspect_pdf
+    except ModuleNotFoundError:  # Loaded from an exact path by the consumer resolver
+        pdf_structure_path = Path(__file__).with_name("pdf_structure.py")
+        pdf_structure_spec = importlib.util.spec_from_file_location(
+            "syn_studios_pdf_structure",
+            pdf_structure_path,
+        )
+        if pdf_structure_spec is None or pdf_structure_spec.loader is None:
+            raise ImportError(f"cannot load PDF structure parser from {pdf_structure_path}")
+        pdf_structure_module = importlib.util.module_from_spec(pdf_structure_spec)
+        sys.modules[pdf_structure_spec.name] = pdf_structure_module
+        pdf_structure_spec.loader.exec_module(pdf_structure_module)
+        inspect_pdf = pdf_structure_module.inspect_pdf
+
+try:
+    from .workbook_recalculation import recalculation_proof_findings, workbook_formula_evidence
+except ImportError:  # Direct execution: python scripts/validate_library.py
+    try:
+        from workbook_recalculation import recalculation_proof_findings, workbook_formula_evidence
+    except ModuleNotFoundError:  # Loaded from an exact path by the consumer resolver
+        recalculation_path = Path(__file__).with_name("workbook_recalculation.py")
+        recalculation_spec = importlib.util.spec_from_file_location(
+            "syn_studios_workbook_recalculation",
+            recalculation_path,
+        )
+        if recalculation_spec is None or recalculation_spec.loader is None:
+            raise ImportError(f"cannot load workbook recalculation verifier from {recalculation_path}")
+        recalculation_module = importlib.util.module_from_spec(recalculation_spec)
+        sys.modules[recalculation_spec.name] = recalculation_module
+        recalculation_spec.loader.exec_module(recalculation_module)
+        recalculation_proof_findings = recalculation_module.recalculation_proof_findings
+        workbook_formula_evidence = recalculation_module.workbook_formula_evidence
+
+try:
     from jsonschema import Draft202012Validator
 except ImportError:
     print("FAIL: jsonschema is required to validate the library", file=sys.stderr)
@@ -53,6 +90,7 @@ SCHEMA_NAMES = (
     "release-evidence",
     "template-release",
     "artifact-catalog",
+    "workbook-recalculation-proof",
 )
 LAYER_ORDER = {name: index for index, name in enumerate(("core", "operational_depth", "adjacent_context", "working_residue", "handling_history"))}
 PROOF_CATEGORIES = {"core_integrity", "render", "metadata", "computational", "provenance", "leakage", "authority_separation", "anti_filler"}
@@ -275,7 +313,7 @@ def inspect_xlsx_contract(path: Path, descriptor: dict[str, Any], label: str, fi
 
 
 def pdf_page_count(payload: bytes) -> int:
-    return len(re.findall(rb"/Type\s*/Page\b", payload))
+    return int(inspect_pdf(payload)["page_count"])
 
 
 def validate_blueprint_data(data: dict[str, Any], schema: dict[str, Any], label: str) -> list[str]:
@@ -343,11 +381,17 @@ def bound_pairs(value: object) -> list[tuple[str, str]]:
 
 
 def validate_pdf_shape(payload: bytes, label: str, findings: list[str]) -> None:
-    if len(payload) < 128 or not payload.startswith(b"%PDF-") or b"%%EOF" not in payload[-1024:]:
-        findings.append(f"{label}: is not a structurally valid PDF")
+    try:
+        structure = inspect_pdf(payload)
+    except ValueError as error:
+        findings.append(f"{label}: is not a structurally valid PDF: {error}")
         return
-    media_box = re.search(rb"/MediaBox\s*\[\s*0(?:\.0+)?\s+0(?:\.0+)?\s+([0-9]+(?:\.[0-9]+)?)\s+([0-9]+(?:\.[0-9]+)?)\s*\]", payload)
-    if media_box is None or float(media_box.group(1)) < 16 or float(media_box.group(2)) < 16 or b"stream" not in payload or re.search(rb"/Type\s*/Page\b", payload) is None:
+    meaningful = all(
+        abs(float(page["media_box"][2]) - float(page["media_box"][0])) >= 16
+        and abs(float(page["media_box"][3]) - float(page["media_box"][1])) >= 16
+        for page in structure["pages"]
+    )
+    if not meaningful:
         findings.append(f"{label}: PDF lacks meaningful page dimensions or content")
 
 
@@ -466,11 +510,11 @@ def validate_native_asset_shape(path: Path, artifact_type: object, label: str, f
         except (OSError, ValueError) as error:
             findings.append(f"{label}: is not a parseable EML message: {error}")
             return
-        required_headers = ("From", "To", "Date", "Subject")
+        required_headers = ("From", "To", "Date", "Message-ID", "Subject")
         body = message.get_body(preferencelist=("plain", "html")) if message.is_multipart() else message
         content = body.get_content() if body is not None else ""
         if message.defects or any(not message.get(header) for header in required_headers) or not str(content).strip():
-            findings.append(f"{label}: EML must have valid From, To, Date, Subject, MIME structure, and body")
+            findings.append(f"{label}: EML must have valid From, To, Date, Message-ID, Subject, MIME structure, and body")
 
 
 def validate_proof_artifact(
@@ -572,7 +616,7 @@ def validate_render_outputs(root: Path, descriptor: dict[str, Any], outputs: obj
         if index == 0:
             try:
                 observed_pages = pdf_page_count(path.read_bytes())
-            except OSError:
+            except (OSError, ValueError):
                 continue
             if observed_pages != page_count:
                 findings.append(f"{label}.0: PDF page count {observed_pages} does not match render contract {page_count}")
@@ -625,6 +669,80 @@ def validate_release_render_evidence(root: Path, descriptor: dict[str, Any], rec
     validate_render_outputs(root, descriptor, render_artifacts, f"{label}:artifacts", findings)
 
 
+def validate_machine_recalculation_binding(
+    root: Path,
+    release: dict[str, Any],
+    descriptor: dict[str, Any],
+    record: dict[str, Any],
+    result: dict[str, Any],
+    descriptor_hash: object,
+    proof_schema: dict[str, Any],
+    label: str,
+    findings: list[str],
+) -> None:
+    release_id = release.get("release_id")
+    binding = result.get("machine_proof")
+    if not isinstance(release_id, str) or not isinstance(binding, dict):
+        findings.append(f"{label}: applicable workbook computational result lacks a machine recalculation proof binding")
+        return
+    expected_path = (EVIDENCE_ROOT / release_id / "machine-proofs/workbook-recalculation.json").as_posix()
+    expected_binding_fields = {"path", "sha256", "media_type", "proof_type"}
+    if set(binding) != expected_binding_fields:
+        findings.append(f"{label}: machine recalculation proof binding is malformed")
+    if (
+        binding.get("path") != expected_path
+        or binding.get("media_type") != "application/json"
+        or binding.get("proof_type") != "workbook_recalculation_result"
+    ):
+        findings.append(f"{label}: machine recalculation proof binding has the wrong path or type")
+    proof_artifacts = [
+        artifact
+        for artifact in as_list(record.get("artifacts"))
+        if isinstance(artifact, dict) and artifact.get("path") == expected_path
+    ]
+    expected_artifact = {
+        "path": binding.get("path"),
+        "sha256": binding.get("sha256"),
+        "media_type": binding.get("media_type"),
+        "category": "computational",
+    }
+    if proof_artifacts != [expected_artifact]:
+        findings.append(f"{label}: technical record does not exactly bind the machine recalculation proof")
+    proof_path = resolve_bound_path(root, binding.get("path"), f"{label}:machine_proof.path", findings, EVIDENCE_ROOT / release_id)
+    if proof_path is None:
+        return
+    if binding.get("sha256") != sha256_file(proof_path):
+        findings.append(f"{label}: machine recalculation proof hash is stale")
+    proof = load_json(proof_path, root, findings)
+    if proof is None:
+        return
+    findings.extend(schema_findings(proof, proof_schema, display_path(proof_path, root)))
+    assets = [item for item in as_list(descriptor.get("native_assets")) if isinstance(item, dict)]
+    if descriptor.get("artifact_type") != "xlsx" or len(assets) != 1:
+        findings.append(f"{label}: machine recalculation proof requires exactly one XLSX native asset")
+        return
+    workbook_binding = assets[0]
+    workbook_path = resolve_bound_path(root, workbook_binding.get("path"), f"{label}:machine_proof.source_workbook", findings, Path("library/templates"))
+    if workbook_path is None:
+        return
+    try:
+        evidence = workbook_formula_evidence(workbook_path)
+    except ValueError as error:
+        findings.append(f"{label}: cannot verify machine recalculation proof: {error}")
+        return
+    for finding in recalculation_proof_findings(
+        proof,
+        release_id=release_id,
+        template_id=str(release.get("template_id")),
+        version=str(release.get("version")),
+        descriptor_sha256=str(descriptor_hash),
+        workbook_path=str(workbook_binding.get("path")),
+        workbook_sha256=str(workbook_binding.get("sha256")),
+        current_evidence=evidence,
+    ):
+        findings.append(f"{label}: {finding}")
+
+
 def validate_technical_result_binding(
     root: Path,
     release: dict[str, Any],
@@ -634,6 +752,7 @@ def validate_technical_result_binding(
     gate: dict[str, Any],
     descriptor_hash: object,
     asset_hashes: set[str],
+    proof_schema: dict[str, Any],
     label: str,
     findings: list[str],
 ) -> None:
@@ -661,7 +780,7 @@ def validate_technical_result_binding(
         "schema_version", "result_type", "result_id", "release_id", "template_id", "version",
         "category", "result_artifact_category", "descriptor_sha256", "native_asset_sha256s",
         "applicable", "verdict", "procedure", "actor_id", "actor", "checks",
-        "rendered_outputs", "observations", "summary",
+        "machine_proof", "rendered_outputs", "observations", "summary",
     }
     if set(result) != required_fields:
         findings.append(f"{label}: technical result fields are incomplete or unexpected")
@@ -695,15 +814,35 @@ def validate_technical_result_binding(
     if not isinstance(checks, list) or not checks:
         findings.append(f"{label}: technical result has no structured checks")
     else:
+        check_ids: set[str] = set()
         for index, check in enumerate(checks):
             if not isinstance(check, dict) or set(check) != {"id", "status", "detail"}:
                 findings.append(f"{label}: technical result check {index} is malformed")
                 continue
             check_id, status, detail = check.get("id"), check.get("status"), check.get("detail")
+            if isinstance(check_id, str):
+                check_ids.add(check_id)
             if not isinstance(check_id, str) or not check_id.startswith(f"{category}:"):
                 findings.append(f"{label}: technical result check {index} is not category-specific")
             if status != expected_status or not isinstance(detail, str) or len(detail.strip()) < 12:
                 findings.append(f"{label}: technical result check {index} is not substantive or has the wrong status")
+        if category == "computational" and applicable and descriptor.get("artifact_type") == "xlsx":
+            required_ids = {
+                "computational:recalculation-proof",
+                "computational:formula-cache-state",
+                "computational:control-checks",
+            }
+            if not required_ids <= check_ids:
+                findings.append(f"{label}: computational result lacks the required machine recalculation checks")
+            details = " ".join(str(check.get("detail", "")) for check in checks if isinstance(check, dict)).casefold()
+            if "machine" not in details or "proof-bound cached results" not in details or "proof-bound control results" not in details:
+                findings.append(f"{label}: computational result lacks proof-bound machine cache/control wording")
+    if category == "computational" and applicable and descriptor.get("artifact_type") == "xlsx":
+        validate_machine_recalculation_binding(
+            root, release, descriptor, record, result, descriptor_hash, proof_schema, label, findings,
+        )
+    elif result.get("machine_proof") is not None:
+        findings.append(f"{label}: non-workbook technical result must not bind a machine recalculation proof")
     expected_rendered_outputs = []
     if render_required:
         expected_rendered_outputs = [
@@ -995,6 +1134,11 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
         asset_pairs = bound_pairs(data.get("native_assets"))
         if len(asset_pairs) != len(set(asset_pairs)) or len({path_value for path_value, _ in asset_pairs}) != len(asset_pairs):
             findings.append(f"{label}:native_assets: duplicate asset path or binding")
+        descriptor_type = descriptor.get("artifact_type") if descriptor else None
+        expected_suffix = {"xlsx": ".xlsx", "docx": ".docx", "eml": ".eml"}.get(descriptor_type)
+        if descriptor_type in {"xlsx", "docx"} and len(asset_pairs) != 1:
+            findings.append(f"{label}:native_assets: {descriptor_type} descriptor must bind exactly one native asset")
+        message_ids: list[str] = []
         for index, asset in enumerate(as_list(data.get("native_assets"))):
             if isinstance(asset, dict):
                 asset_path = check_bound_file(root, asset, "path", "sha256", f"{label}:native_assets.{index}", findings, Path("library/templates"))
@@ -1002,9 +1146,21 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
                     if asset_path != version_root and version_root not in asset_path.parents:
                         findings.append(f"{label}:native_assets.{index}.path: must be under its template version directory")
                     release_version_files[version_root].add(asset_path)
+                    if expected_suffix is not None and asset_path.suffix.casefold() != expected_suffix:
+                        findings.append(f"{label}:native_assets.{index}.path: native asset type does not match {descriptor_type} descriptor")
                     validate_native_asset_shape(asset_path, descriptor.get("artifact_type") if descriptor else None, f"{label}:native_assets.{index}", findings)
+                    if descriptor_type == "eml" and asset_path.suffix.casefold() == ".eml":
+                        try:
+                            message = BytesParser(policy=policy.default).parsebytes(asset_path.read_bytes())
+                            message_id = message.get("Message-ID")
+                            if isinstance(message_id, str):
+                                message_ids.append(message_id)
+                        except (OSError, ValueError):
+                            pass
                     if descriptor and (descriptor.get("artifact_type") == "xlsx" or (descriptor.get("artifact_type") == "mixed_package" and asset_path.suffix.casefold() == ".xlsx")):
                         inspect_xlsx_contract(asset_path, descriptor, display_path(descriptor_path, root) if descriptor_path else label, findings)
+        if descriptor_type == "eml" and len(message_ids) != len(set(message_ids)):
+            findings.append(f"{label}:native_assets: duplicate Message-ID values occur across bound email assets")
         asset_hashes = {hash_value for _, hash_value in asset_pairs}
         if descriptor is not None:
             validate_descriptor_render_manifest(root, descriptor, display_path(descriptor_path, root) if descriptor_path else label, findings, bound_evidence_files)
@@ -1075,7 +1231,8 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
             if record and descriptor is not None:
                 validate_technical_result_binding(
                     root, data, descriptor, record, category, as_dict(blueprint_gates.get(category)),
-                    descriptor_hash, asset_hashes, f"{label}:evidence.{category}", findings,
+                    descriptor_hash, asset_hashes, schemas["workbook-recalculation-proof"],
+                    f"{label}:evidence.{category}", findings,
                 )
         if technical_actor_ids.intersection(normalized_actor_ids):
             findings.append(f"{label}:evidence: technical validator identity must be independent of build, sanitization, Terra, Sol, and conductor identities")

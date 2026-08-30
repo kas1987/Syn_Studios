@@ -24,6 +24,16 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
 
+try:
+    from .pdf_structure import PDF_HEADER, PDF_TRAILER, inspect_pdf
+except ImportError:  # Direct execution: python scripts/run_template_technical_validation.py
+    from pdf_structure import PDF_HEADER, PDF_TRAILER, inspect_pdf
+
+try:
+    from .workbook_recalculation import recalculation_proof_findings, workbook_formula_evidence
+except ImportError:  # Direct execution: python scripts/run_template_technical_validation.py
+    from workbook_recalculation import recalculation_proof_findings, workbook_formula_evidence
+
 
 CATEGORIES = (
     "core_integrity", "render", "metadata", "computational", "provenance",
@@ -51,14 +61,11 @@ BINARY_ATTACHMENT_PREFIXES = (
     b"\xfd7zXZ\x00", b"7z\xbc\xaf\x27\x1c", b"\xd0\xcf\x11\xe0",
     b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff",
 )
-PDF_HEADER = re.compile(rb"%PDF-(?:1\.[0-7]|2\.0)(?:\r\n|\r|\n)")
 PDF_OBJECT = re.compile(
     rb"(?:\A|(?<=[\x00\x09\x0a\x0c\x0d\x20()<>\[\]{}/%]))"
     rb"\d+[\x00\x09\x0a\x0c\x0d\x20]+\d+[\x00\x09\x0a\x0c\x0d\x20]+"
     rb"obj(?=[\x00\x09\x0a\x0c\x0d\x20()<>\[\]{}/%]|\Z)"
 )
-PDF_TRAILER = re.compile(rb"startxref\s+(\d+)\s+%%EOF\s*\Z")
-PDF_REFERENCE = re.compile(rb"(\d+)\s+(\d+)\s+R\b")
 AUTHORITY_MARKERS = (
     "approval", "governing", "supporting", "contextual", "question", "superseded",
 )
@@ -364,167 +371,48 @@ def native_asset_inventory(path: Path) -> tuple[str, dict[str, Any]]:
     raise ValidationFailed(f"{path}: unsupported bound native asset type {suffix or '<none>'}")
 
 
-def trusted_recalculation_proof(
+def machine_recalculation_proof(
     root: Path,
     release: dict[str, Any],
     descriptor_hash: str,
     assets: list[tuple[Path, str]],
-) -> tuple[str, str]:
+) -> dict[str, str]:
     release_id = str(release.get("release_id"))
-    reference = ((release.get("reviews") or {}).get("terra") or {})
-    review_path = repository_path(root, reference.get("record_path"), f"{release_id} trusted recalculation review")
-    if sha256(review_path) != reference.get("record_sha256"):
-        raise ValidationFailed(f"{release_id}: trusted recalculation proof review hash is stale")
-    review = load_json(review_path)
-    asset_hashes = [digest for _, digest in assets]
-    if (
-        review.get("release_id") != release_id
-        or review.get("template_id") != release.get("template_id")
-        or review.get("version") != release.get("version")
-        or review.get("descriptor_sha256") != descriptor_hash
-        or review.get("native_asset_sha256s") != asset_hashes
-        or review.get("verdict") != "USABILITY_PASS"
-    ):
-        raise ValidationFailed(f"{release_id}: trusted recalculation proof does not bind the current release inputs")
-    artifacts = [
-        artifact
-        for artifact in review.get("artifacts", [])
-        if isinstance(artifact, dict) and artifact.get("category") == "computational"
-    ]
-    if len(artifacts) != 1 or len(asset_hashes) != 1:
-        raise ValidationFailed(f"{release_id}: trusted recalculation proof must bind exactly one workbook")
-    artifact = artifacts[0]
-    proof_path = repository_path(root, artifact.get("path"), f"{release_id} trusted recalculation proof")
+    if len(assets) != 1:
+        raise ValidationFailed(f"{release_id}: machine recalculation proof must bind exactly one workbook")
+    relative = f"evidence/template-releases/{release_id}/machine-proofs/workbook-recalculation.json"
+    proof_path = repository_path(root, relative, f"{release_id} machine recalculation proof")
     proof_hash = sha256(proof_path)
-    if proof_hash != artifact.get("sha256") or artifact.get("media_type") != "text/plain":
-        raise ValidationFailed(f"{release_id}: trusted recalculation proof artifact is stale or incorrectly typed")
-    proof_text = proof_path.read_text(encoding="utf-8")
-    required = (
-        f"{release_id} | {release.get('template_id')} | computational",
-        f"Descriptor SHA-256: {descriptor_hash}",
-        f"Native asset SHA-256: {asset_hashes[0]}",
-        "independently recalculated",
+    proof = load_json(proof_path)
+    workbook, workbook_hash = assets[0]
+    try:
+        current_evidence = workbook_formula_evidence(workbook)
+    except ValueError as error:
+        raise ValidationFailed(f"{release_id}: cannot verify machine recalculation proof: {error}") from error
+    findings = recalculation_proof_findings(
+        proof,
+        release_id=release_id,
+        template_id=str(release.get("template_id")),
+        version=str(release.get("version")),
+        descriptor_sha256=descriptor_hash,
+        workbook_path=workbook.relative_to(root).as_posix(),
+        workbook_sha256=workbook_hash,
+        current_evidence=current_evidence,
     )
-    if any(item.casefold() not in proof_text.casefold() for item in required):
-        raise ValidationFailed(f"{release_id}: trusted recalculation proof lacks the required hash-bound result")
-    return proof_path.relative_to(root).as_posix(), proof_hash
-
-
-def pdf_xref(payload: bytes, offset: int) -> tuple[dict[tuple[int, int], int], tuple[int, int]]:
-    section = payload[offset:]
-    if not section.startswith(b"xref"):
-        raise ValueError("startxref does not point to a classic xref table")
-    trailer_line = re.search(rb"(?m)^trailer[\t ]*\r?$", section)
-    if trailer_line is None:
-        raise ValueError("xref table has no trailer")
-    lines = section[len(b"xref"):trailer_line.start()].splitlines()
-    entries: dict[tuple[int, int], int] = {}
-    index = 0
-    while index < len(lines):
-        line = lines[index].strip()
-        index += 1
-        if not line:
-            continue
-        header = re.fullmatch(rb"(\d+)\s+(\d+)", line)
-        if header is None:
-            raise ValueError("malformed xref subsection")
-        first, count = (int(value) for value in header.groups())
-        if count < 1 or index + count > len(lines):
-            raise ValueError("truncated xref subsection")
-        for number in range(first, first + count):
-            entry = re.fullmatch(rb"(\d{10})\s+(\d{5})\s+([fn])", lines[index].strip())
-            index += 1
-            if entry is None:
-                raise ValueError("malformed xref entry")
-            object_offset, generation, state = entry.groups()
-            if state == b"n":
-                key = (number, int(generation))
-                if key in entries:
-                    raise ValueError("duplicate in-use xref entry")
-                entries[key] = int(object_offset)
-    trailer = section[trailer_line.end():]
-    root = re.search(rb"/Root\s+(\d+)\s+(\d+)\s+R\b", trailer)
-    if root is None:
-        raise ValueError("trailer has no catalog root")
-    root_ref = tuple(int(value) for value in root.groups())
-    if root_ref not in entries:
-        raise ValueError("catalog root is absent from xref")
-    for (number, generation), object_offset in entries.items():
-        if object_offset < 0 or object_offset >= offset:
-            raise ValueError("xref object offset is outside the object section")
-        header = re.match(rb"(\d+)\s+(\d+)\s+obj\b", payload[object_offset:])
-        if header is None or (int(header.group(1)), int(header.group(2))) != (number, generation):
-            raise ValueError("xref entry does not point to its object header")
-    return entries, root_ref
-
-
-def pdf_object_body(payload: bytes, entries: dict[tuple[int, int], int], reference: tuple[int, int]) -> bytes:
-    offset = entries.get(reference)
-    if offset is None:
-        raise ValueError("page tree references a missing object")
-    header = re.match(rb"\d+\s+\d+\s+obj\b", payload[offset:])
-    if header is None:
-        raise ValueError("object header is malformed")
-    body_start = offset + header.end()
-    body_end = payload.find(b"endobj", body_start)
-    if body_end < 0:
-        raise ValueError("object is not terminated")
-    return payload[body_start:body_end]
-
-
-def pdf_named_reference(body: bytes, name: bytes) -> tuple[int, int]:
-    match = re.search(rb"/" + name + rb"\s+(\d+)\s+(\d+)\s+R\b", body)
-    if match is None:
-        raise ValueError(f"PDF dictionary lacks /{name.decode('ascii')} reference")
-    return tuple(int(value) for value in match.groups())
-
-
-def pdf_page_tree_count(payload: bytes, entries: dict[tuple[int, int], int], root_ref: tuple[int, int]) -> int:
-    catalog = pdf_object_body(payload, entries, root_ref)
-    if re.search(rb"/Type\s*/Catalog\b", catalog) is None:
-        raise ValueError("root object is not a catalog")
-    pages_ref = pdf_named_reference(catalog, b"Pages")
-    visited: set[tuple[int, int]] = set()
-
-    def visit(reference: tuple[int, int], parent: tuple[int, int] | None) -> int:
-        if reference in visited:
-            raise ValueError("page tree contains a cycle or duplicate child")
-        visited.add(reference)
-        body = pdf_object_body(payload, entries, reference)
-        if re.search(rb"/Type\s*/Pages\b", body):
-            count_match = re.search(rb"/Count\s+(\d+)\b", body)
-            kids_match = re.search(rb"/Kids\s*\[(.*?)\]", body, re.DOTALL)
-            if count_match is None or kids_match is None:
-                raise ValueError("pages node lacks Count or Kids")
-            kids = [tuple(int(value) for value in match) for match in PDF_REFERENCE.findall(kids_match.group(1))]
-            residual = PDF_REFERENCE.sub(b"", kids_match.group(1)).strip()
-            if not kids or residual:
-                raise ValueError("pages node has malformed Kids")
-            actual = sum(visit(child, reference) for child in kids)
-            if actual != int(count_match.group(1)):
-                raise ValueError("pages node Count does not match its page tree")
-            return actual
-        if re.search(rb"/Type\s*/Page\b", body) is None:
-            raise ValueError("page tree child is neither Page nor Pages")
-        if parent is None or pdf_named_reference(body, b"Parent") != parent:
-            raise ValueError("page Parent does not match its containing Pages node")
-        return 1
-
-    return visit(pages_ref, None)
+    if findings:
+        raise ValidationFailed(f"{release_id}: machine recalculation proof failed: {'; '.join(findings)}")
+    return {
+        "path": relative,
+        "sha256": proof_hash,
+        "media_type": "application/json",
+        "proof_type": "workbook_recalculation_result",
+    }
 
 
 def pdf_pages(path: Path) -> int:
     payload = path.read_bytes()
     try:
-        header = PDF_HEADER.search(payload[:1024])
-        trailer = PDF_TRAILER.search(payload)
-        if header is None or trailer is None:
-            raise ValueError("missing PDF header or final startxref trailer")
-        xref_offset = int(trailer.group(1))
-        if xref_offset < header.end() or xref_offset >= trailer.start():
-            raise ValueError("startxref offset is outside the PDF body")
-        entries, root_ref = pdf_xref(payload, xref_offset)
-        return pdf_page_tree_count(payload, entries, root_ref)
+        return int(inspect_pdf(payload)["page_count"])
     except (OSError, ValueError) as error:
         raise ValidationFailed(f"{path}: render is not a structurally valid PDF: {error}") from error
 
@@ -620,6 +508,10 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
         raise ValidationFailed(f"{release_id}: unsupported technical runner artifact type {artifact_type}")
     if primary_type != artifact_type:
         raise ValidationFailed(f"{release_id}: primary native asset type does not match {artifact_type}")
+    if any(asset_type != artifact_type for _, asset_type, _ in inventories):
+        raise ValidationFailed(f"{release_id}: non-mixed descriptor contains heterogeneous native asset types")
+    if artifact_type in {"xlsx", "docx"} and len(inventories) != 1:
+        raise ValidationFailed(f"{release_id}: {artifact_type} descriptor must bind exactly one native asset")
     outputs, output_checks = render_outputs(root, descriptor, release_id, assets[0][1])
 
     category_checks: dict[str, list[dict[str, str]]] = {name: [] for name in CATEGORIES}
@@ -631,6 +523,8 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
         if asset_type == "eml" and (
             not asset_inventory["message"].get("From")
             or not asset_inventory["message"].get("To")
+            or not asset_inventory["message"].get("Date")
+            or not asset_inventory["message"].get("Message-ID")
             or asset_inventory["message_count"] < 1
         ):
             raise ValidationFailed(f"{release_id}: email {asset_path.name} lacks required headers or message content")
@@ -688,6 +582,7 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
         category_checks["metadata"].append(check("metadata:mime-headers", f"Inspected MIME encodings, attachment names, timestamps, and {len(all_message_ids)} globally unique message identifiers."))
     category_checks["metadata"].append(check("metadata:bound-native-assets", f"Parsed metadata and relationship surfaces across all {len(inventories)} bound native assets."))
 
+    machine_proof: dict[str, str] | None = None
     if gates["computational"].get("applicable") is True:
         if artifact_type != "xlsx" or inventory["formulas"] < 1 or inventory["cached_formulas"] != inventory["formulas"] or inventory["errors"]:
             raise ValidationFailed(f"{release_id}: live formula structure, cached results, or error states failed")
@@ -697,10 +592,10 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
             raise ValidationFailed(f"{release_id}: workbook calculation controls or live checks failed")
         if len(inventory["formula_sheets"]) < 3:
             raise ValidationFailed(f"{release_id}: formulas do not span the expected workbook calculation layers")
-        proof_path, proof_hash = trusted_recalculation_proof(root, release, descriptor_hash, assets)
-        category_checks["computational"].append(check("computational:recalculation-proof", f"Verified trusted independent recalculation proof {proof_path} ({proof_hash}) against the exact descriptor and workbook hash."))
+        machine_proof = machine_recalculation_proof(root, release, descriptor_hash, assets)
+        category_checks["computational"].append(check("computational:recalculation-proof", f"Verified machine LibreOffice recalculation proof {machine_proof['path']} ({machine_proof['sha256']}) against the exact descriptor, workbook, formula, cache, and control hashes."))
         category_checks["computational"].append(check("computational:formula-cache-state", f"Parsed {inventory['formulas']} formulas and their proof-bound cached results across {len(inventory['formula_sheets'])} sheets with no recorded formula errors."))
-        category_checks["computational"].append(check("computational:control-checks", f"Inspected {len(inventory['check_values'])} proof-bound control results; none report FAIL."))
+        category_checks["computational"].append(check("computational:control-checks", f"Inspected {len(inventory['check_values'])} proof-bound control results from the machine recalculation evidence; none report FAIL."))
 
     for lineage in blueprint.get("foundation_lineage", []):
         card_id = lineage.get("card_id")
@@ -779,6 +674,7 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
             "descriptor_sha256": descriptor_hash, "native_asset_sha256s": [digest for _, digest in assets],
             "applicable": applicable, "verdict": "VALIDATION_PASS" if applicable else "VALIDATION_NOT_APPLICABLE",
             "procedure": gate.get("procedure"), "actor_id": actor_id, "actor": actor,
+            "machine_proof": machine_proof if category == "computational" and applicable else None,
             "checks": checks, "rendered_outputs": outputs if category == "render" else [],
             "observations": [f"Deterministic {category} checks inspected the frozen descriptor and all {len(inventories)} bound native assets."],
             "summary": f"Category-specific {category} validation completed against the frozen release inputs.",

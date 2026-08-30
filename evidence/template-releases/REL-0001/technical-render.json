@@ -13,12 +13,12 @@
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
   "observations": [
-    "Deterministic render checks inspected the frozen descriptor and every native asset byte."
+    "Deterministic render checks inspected the frozen descriptor and all 1 bound native assets."
   ],
   "artifacts": [
     {
       "path": "evidence/template-releases/REL-0001/technical-results/render.json",
-      "sha256": "c0111fd0eb202dad6d6ba67ad1ebcf963c0de218e01265329feae98f833d5191",
+      "sha256": "aaf308ef197626070f4edebb711ad342b7fc15a4ea451ff4be340fe8a50cbeee",
       "media_type": "application/json",
       "category": "provenance"
     },

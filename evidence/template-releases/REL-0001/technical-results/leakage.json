@@ -16,16 +16,17 @@
   "procedure": "Scan visible and hidden content for prior-world, generator, and evaluation residue.",
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
+  "machine_proof": null,
   "checks": [
     {
       "id": "leakage:visible-hidden-scan",
       "status": "PASS",
-      "detail": "Scanned extracted native content for prohibited residue and verified all 4 template tokens against the descriptor slot allowlist."
+      "detail": "Scanned extracted content from all 1 bound native assets for prohibited residue and verified all 4 template tokens against the descriptor slot allowlist."
     }
   ],
   "rendered_outputs": [],
   "observations": [
-    "Deterministic leakage checks inspected the frozen descriptor and every native asset byte."
+    "Deterministic leakage checks inspected the frozen descriptor and all 1 bound native assets."
   ],
   "summary": "Category-specific leakage validation completed against the frozen release inputs."
 }

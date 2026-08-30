@@ -16,16 +16,22 @@
   "procedure": "Parse MIME structure and verify thread order, headers, attachments, and correction state.",
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
+  "machine_proof": null,
   "checks": [
     {
       "id": "core_integrity:mime-structure",
       "status": "PASS",
-      "detail": "Parsed 4 MIME parts, 6 messages, and 2 attachments."
+      "detail": "Parsed 4 MIME parts, 6 messages, and 2 attachments across 1 bound email assets."
+    },
+    {
+      "id": "core_integrity:bound-native-assets",
+      "status": "PASS",
+      "detail": "Parsed and checked native structure for all 1 bound assets."
     }
   ],
   "rendered_outputs": [],
   "observations": [
-    "Deterministic core_integrity checks inspected the frozen descriptor and every native asset byte."
+    "Deterministic core_integrity checks inspected the frozen descriptor and all 1 bound native assets."
   ],
   "summary": "Category-specific core_integrity validation completed against the frozen release inputs."
 }

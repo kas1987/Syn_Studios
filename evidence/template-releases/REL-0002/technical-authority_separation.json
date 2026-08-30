@@ -13,12 +13,12 @@
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
   "observations": [
-    "Deterministic authority_separation checks inspected the frozen descriptor and every native asset byte."
+    "Deterministic authority_separation checks inspected the frozen descriptor and all 1 bound native assets."
   ],
   "artifacts": [
     {
       "path": "evidence/template-releases/REL-0002/technical-results/authority_separation.json",
-      "sha256": "9c462a5309517399506f9bc771c5a08bca2670afcf7b2fe7ce0036f7da037a49",
+      "sha256": "ae8fe4a9cb8d590b736f4f67274042467fc60a4578af44ba98e1ce0722ae7076",
       "media_type": "application/json",
       "category": "authority_separation"
     }

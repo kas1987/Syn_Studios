@@ -16,21 +16,32 @@
   "procedure": "Recalculate every formula and verify material totals and error states.",
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
+  "machine_proof": {
+    "path": "evidence/template-releases/REL-0001/machine-proofs/workbook-recalculation.json",
+    "sha256": "9feedb2bded3c4af6b6acb081396d190ced61139ce0127dcc77857e112c9ab53",
+    "media_type": "application/json",
+    "proof_type": "workbook_recalculation_result"
+  },
   "checks": [
     {
-      "id": "computational:live-formulas",
+      "id": "computational:recalculation-proof",
       "status": "PASS",
-      "detail": "Parsed 99 live formulas with cached values across 3 sheets, automatic full recalculation, and no formula errors."
+      "detail": "Verified machine LibreOffice recalculation proof evidence/template-releases/REL-0001/machine-proofs/workbook-recalculation.json (9feedb2bded3c4af6b6acb081396d190ced61139ce0127dcc77857e112c9ab53) against the exact descriptor, workbook, formula, cache, and control hashes."
+    },
+    {
+      "id": "computational:formula-cache-state",
+      "status": "PASS",
+      "detail": "Parsed 99 formulas and their proof-bound cached results across 3 sheets with no recorded formula errors."
     },
     {
       "id": "computational:control-checks",
       "status": "PASS",
-      "detail": "Inspected 10 cached control results; none report FAIL."
+      "detail": "Inspected 10 proof-bound control results from the machine recalculation evidence; none report FAIL."
     }
   ],
   "rendered_outputs": [],
   "observations": [
-    "Deterministic computational checks inspected the frozen descriptor and every native asset byte."
+    "Deterministic computational checks inspected the frozen descriptor and all 1 bound native assets."
   ],
   "summary": "Category-specific computational validation completed against the frozen release inputs."
 }

@@ -16,6 +16,7 @@
   "procedure": "Trace participants, attachment versions, and known facts to the approved world manifest.",
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
+  "machine_proof": null,
   "checks": [
     {
       "id": "provenance:lineage-hashes",
@@ -25,7 +26,7 @@
   ],
   "rendered_outputs": [],
   "observations": [
-    "Deterministic provenance checks inspected the frozen descriptor and every native asset byte."
+    "Deterministic provenance checks inspected the frozen descriptor and all 1 bound native assets."
   ],
   "summary": "Category-specific provenance validation completed against the frozen release inputs."
 }

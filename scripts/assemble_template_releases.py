@@ -17,6 +17,11 @@ try:
 except ImportError:  # Direct execution: python scripts/assemble_template_releases.py
     from identity_normalization import normalized_actor_identity
 
+try:
+    from .workbook_recalculation import recalculation_proof_findings, workbook_formula_evidence
+except ImportError:  # Direct execution: python scripts/assemble_template_releases.py
+    from workbook_recalculation import recalculation_proof_findings, workbook_formula_evidence
+
 
 PROOF_CATEGORIES = (
     "core_integrity",
@@ -219,6 +224,7 @@ def validate_technical_result(
     release_id: str,
     template_id: str,
     version: str,
+    descriptor: dict[str, Any],
     descriptor_hash: str,
     asset_hashes: list[str],
     category: str,
@@ -226,7 +232,7 @@ def validate_technical_result(
     technical_id: str,
     technical_name: str,
     expected_rendered_outputs: list[dict[str, str]],
-) -> tuple[dict[str, Any], dict[str, str]]:
+) -> tuple[dict[str, Any], dict[str, str], dict[str, str] | None]:
     release_root = root / "evidence/template-releases" / release_id
     path = release_root / "technical-results" / f"{category}.json"
     if not path.is_file():
@@ -236,7 +242,7 @@ def validate_technical_result(
         "schema_version", "result_type", "result_id", "release_id", "template_id", "version",
         "category", "result_artifact_category", "descriptor_sha256", "native_asset_sha256s",
         "applicable", "verdict", "procedure", "actor_id", "actor", "checks",
-        "rendered_outputs", "observations", "summary",
+        "machine_proof", "rendered_outputs", "observations", "summary",
     }
     if set(result) != required_fields:
         raise AssemblyRefused(f"{release_id} {category} technical result fields are incomplete or unexpected")
@@ -268,14 +274,67 @@ def validate_technical_result(
     expected_status = "PASS" if applicable else "NOT_APPLICABLE"
     if not isinstance(checks, list) or not checks:
         raise AssemblyRefused(f"{release_id} {category} technical result has no structured checks")
+    check_ids: set[str] = set()
     for index, check in enumerate(checks):
         if not isinstance(check, dict) or set(check) != {"id", "status", "detail"}:
             raise AssemblyRefused(f"{release_id} {category} technical result check {index} is malformed")
         check_id, status, detail = check.get("id"), check.get("status"), check.get("detail")
+        if isinstance(check_id, str):
+            check_ids.add(check_id)
         if not isinstance(check_id, str) or not check_id.startswith(f"{category}:"):
             raise AssemblyRefused(f"{release_id} {category} technical result check {index} is not category-specific")
         if status != expected_status or not isinstance(detail, str) or len(detail.strip()) < 12:
             raise AssemblyRefused(f"{release_id} {category} technical result check {index} is not substantive or has the wrong status")
+    proof_artifact: dict[str, str] | None = None
+    if category == "computational" and applicable and descriptor.get("artifact_type") == "xlsx":
+        required_ids = {
+            "computational:recalculation-proof",
+            "computational:formula-cache-state",
+            "computational:control-checks",
+        }
+        details = " ".join(str(check.get("detail", "")) for check in checks if isinstance(check, dict)).casefold()
+        if not required_ids <= check_ids or "machine" not in details or "proof-bound cached results" not in details or "proof-bound control results" not in details:
+            raise AssemblyRefused(f"{release_id} computational technical result lacks proof-bound machine checks")
+        binding = result.get("machine_proof")
+        expected_path = f"evidence/template-releases/{release_id}/machine-proofs/workbook-recalculation.json"
+        if not isinstance(binding, dict) or set(binding) != {"path", "sha256", "media_type", "proof_type"}:
+            raise AssemblyRefused(f"{release_id} computational machine recalculation proof binding is malformed")
+        if binding.get("path") != expected_path or binding.get("media_type") != "application/json" or binding.get("proof_type") != "workbook_recalculation_result":
+            raise AssemblyRefused(f"{release_id} computational machine recalculation proof has the wrong path or type")
+        proof_path = repository_path(root, binding.get("path"), f"{release_id} machine recalculation proof", release_root)
+        if binding.get("sha256") != sha256_file(proof_path):
+            raise AssemblyRefused(f"{release_id} computational machine recalculation proof hash is stale")
+        assets = descriptor.get("native_assets")
+        if not isinstance(assets, list) or len(assets) != 1 or not isinstance(assets[0], dict):
+            raise AssemblyRefused(f"{release_id} machine recalculation proof requires exactly one workbook")
+        workbook_binding = assets[0]
+        workbook_path = repository_path(root, workbook_binding.get("path"), f"{release_id} workbook", Path("library/templates"))
+        try:
+            formula_evidence = workbook_formula_evidence(workbook_path)
+        except ValueError as error:
+            raise AssemblyRefused(f"{release_id} cannot verify machine recalculation proof: {error}") from error
+        proof = load_object(proof_path)
+        proof_findings = recalculation_proof_findings(
+            proof,
+            release_id=release_id,
+            template_id=template_id,
+            version=version,
+            descriptor_sha256=descriptor_hash,
+            workbook_path=str(workbook_binding.get("path")),
+            workbook_sha256=str(workbook_binding.get("sha256")),
+            current_evidence=formula_evidence,
+        )
+        if proof_findings:
+            raise AssemblyRefused(f"{release_id} machine recalculation proof failed: {'; '.join(proof_findings)}")
+        proof_artifact = {
+            "path": expected_path,
+            "sha256": str(binding["sha256"]),
+            "media_type": "application/json",
+            "category": "computational",
+        }
+        validate_review_artifact(root, release_root, release_id, template_id, set(asset_hashes), proof_artifact, f"{release_id}.computational.machine_proof")
+    elif result.get("machine_proof") is not None:
+        raise AssemblyRefused(f"{release_id} {category} must not bind a machine recalculation proof")
     observations, summary = result.get("observations"), result.get("summary")
     if not isinstance(observations, list) or not observations or not all(isinstance(item, str) and len(item.strip()) >= 12 for item in observations):
         raise AssemblyRefused(f"{release_id} {category} technical result observations are missing or not meaningful")
@@ -293,7 +352,7 @@ def validate_technical_result(
         "category": expected_artifact_category,
     }
     validate_review_artifact(root, release_root, release_id, template_id, set(asset_hashes), artifact, f"{release_id}.{category}.technical_result")
-    return result, artifact
+    return result, artifact, proof_artifact
 
 
 def evidence_record(record_id: str, record_type: str, verdict: str, release_id: str, template_id: str, version: str, descriptor_hash: str, asset_hashes: list[str], actor_id: str, actor: str, observations: list[str], artifacts: list[dict[str, str]], summary: str, *, categories: list[str] | None = None, procedures: dict[str, str] | None = None, render_contract_hash: str | None = None) -> dict[str, Any]:
@@ -427,7 +486,7 @@ def assemble(root: Path, *, approved: bool, builder_id: str, builder_name: str, 
         planned_render = render_artifacts(root, descriptor, release_id)
         technical_results = {
             category: validate_technical_result(
-                root, release_id, str(template_id), str(version), descriptor_hash, asset_hashes,
+                root, release_id, str(template_id), str(version), descriptor, descriptor_hash, asset_hashes,
                 category, gate_map[category], technical_id, technical_name,
                 planned_render if category == "render" else [],
             )
@@ -471,8 +530,10 @@ def assemble(root: Path, *, approved: bool, builder_id: str, builder_name: str, 
         ))
         for category in PROOF_CATEGORIES:
             gate = plan["gate_map"][category]
-            technical_result, result_artifact = plan["technical_results"][category]
+            technical_result, result_artifact, machine_proof_artifact = plan["technical_results"][category]
             artifacts = [result_artifact]
+            if machine_proof_artifact is not None:
+                artifacts.append(machine_proof_artifact)
             if category == "render" and plan["render_artifacts"]:
                 artifacts.extend(plan["render_artifacts"])
             record = evidence_record(

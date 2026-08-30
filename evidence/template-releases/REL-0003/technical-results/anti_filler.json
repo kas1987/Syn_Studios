@@ -16,6 +16,7 @@
   "procedure": "Map each message and attachment to a credible operational communication event.",
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
+  "machine_proof": null,
   "checks": [
     {
       "id": "anti_filler:footprint",
@@ -25,7 +26,7 @@
   ],
   "rendered_outputs": [],
   "observations": [
-    "Deterministic anti_filler checks inspected the frozen descriptor and every native asset byte."
+    "Deterministic anti_filler checks inspected the frozen descriptor and all 1 bound native assets."
   ],
   "summary": "Category-specific anti_filler validation completed against the frozen release inputs."
 }

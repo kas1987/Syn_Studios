@@ -13,12 +13,18 @@
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
   "observations": [
-    "Deterministic computational checks inspected the frozen descriptor and every native asset byte."
+    "Deterministic computational checks inspected the frozen descriptor and all 1 bound native assets."
   ],
   "artifacts": [
     {
       "path": "evidence/template-releases/REL-0001/technical-results/computational.json",
-      "sha256": "e29c8db6f6e971291d142a40431561021fd1eafc0e36a8e52b2c2a2f9015162b",
+      "sha256": "5282a96d9a3726b2a16ccd27577543acbd8ca0d0b671252285682ce84c4360ae",
+      "media_type": "application/json",
+      "category": "computational"
+    },
+    {
+      "path": "evidence/template-releases/REL-0001/machine-proofs/workbook-recalculation.json",
+      "sha256": "9feedb2bded3c4af6b6acb081396d190ced61139ce0127dcc77857e112c9ab53",
       "media_type": "application/json",
       "category": "computational"
     }

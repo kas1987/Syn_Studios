@@ -13,12 +13,12 @@
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
   "observations": [
-    "Deterministic anti_filler checks inspected the frozen descriptor and every native asset byte."
+    "Deterministic anti_filler checks inspected the frozen descriptor and all 1 bound native assets."
   ],
   "artifacts": [
     {
       "path": "evidence/template-releases/REL-0002/technical-results/anti_filler.json",
-      "sha256": "1ce92db37c860b05ff174a0a86c1fa55a318aa6bf111d656fbaed2f47b4a1189",
+      "sha256": "696b56deb8e1b68a4772684cc7fd54280b4ef3b900baa4dd6501b9d983f4e7bf",
       "media_type": "application/json",
       "category": "anti_filler"
     }

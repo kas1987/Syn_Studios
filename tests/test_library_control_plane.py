@@ -9,10 +9,12 @@ import unicodedata
 import zipfile
 import zlib
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 from jsonschema import Draft202012Validator
 
-from scripts.validate_library import SCHEMA_NAMES, canonical_json_sha256, validate_expansion_resources, validate_native_asset_shape, validate_proof_artifact, validate_repository
+from scripts.validate_library import SCHEMA_NAMES, canonical_json_sha256, validate_expansion_resources, validate_native_asset_shape, validate_pdf_shape, validate_proof_artifact, validate_repository
+from scripts.workbook_recalculation import workbook_formula_evidence
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,13 +30,54 @@ def file_hash(path):
 
 
 def write_render_pdf(path, pages=1):
-    page_objects = b"\n".join(
-        f"{index} 0 obj <</Type /Page /MediaBox [0 0 612 792] /Contents 99 0 R>> endobj".encode()
-        for index in range(1, pages + 1)
-    )
-    payload = b"%PDF-1.7\n" + page_objects + b"\n99 0 obj <</Length 18>> stream\nBT (proof) Tj ET\nendstream endobj\n%%EOF\n"
+    content_number = pages + 3
+    kids = " ".join(f"{number} 0 R" for number in range(3, pages + 3))
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        f"<< /Type /Pages /Kids [{kids}] /Count {pages} >>".encode(),
+        *(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {content_number} 0 R >>".encode() for _ in range(pages)),
+        b"<< /Length 18 >>\nstream\nBT (proof) Tj ET\nendstream",
+    ]
+    payload = bytearray(b"%PDF-1.7\n")
+    offsets = []
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(payload))
+        payload.extend(f"{number} 0 obj\n".encode() + body + b"\nendobj\n")
+    xref_offset = len(payload)
+    payload.extend(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode())
+    for offset in offsets:
+        payload.extend(f"{offset:010d} 00000 n \n".encode())
+    payload.extend(f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n".encode())
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(payload)
+    path.write_bytes(bytes(payload))
+
+
+def spoof_pdf(*, literal_strings=False):
+    if literal_strings:
+        objects = (
+            b"<< /Dummy (/Type /Catalog /Pages 2 0 R) >>",
+            b"<< /Dummy (/Type /Pages /Count 1 /Kids [3 0 R]) >>",
+            b"<< /Dummy (/Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Contents 4 0 R) >>",
+            b"<< /Length 4 >>\nstream\njunk\nendstream",
+        )
+    else:
+        objects = (
+            b"/Type /Catalog /Pages 2 0 R",
+            b"/Type /Pages /Count 1 /Kids [3 0 R]",
+            b"/Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Contents 4 0 R",
+            b"/Length 4 stream\njunk\nendstream",
+        )
+    payload = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(payload))
+        payload.extend(f"{number} 0 obj\n".encode() + body + b"\nendobj\n")
+    xref_offset = len(payload)
+    payload.extend(b"xref\n0 5\n0000000000 65535 f \n")
+    for offset in offsets:
+        payload.extend(f"{offset:010d} 00000 n \n".encode())
+    payload.extend(f"trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n".encode())
+    return bytes(payload)
 
 
 def write_render_png(path, marker=0):
@@ -80,10 +123,15 @@ class LibraryControlPlaneTests(unittest.TestCase):
         asset.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(asset, "w") as package:
             package.writestr("[Content_Types].xml", '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/></Types>')
-            package.writestr("xl/workbook.xml", '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>')
-            package.writestr("xl/_rels/workbook.xml.rels", '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>')
+            package.writestr("xl/workbook.xml", '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/><sheet name="Checks" sheetId="2" r:id="rId2"/></sheets><calcPr calcMode="auto" fullCalcOnLoad="1"/></workbook>')
+            package.writestr("xl/_rels/workbook.xml.rels", '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>')
             sheet_data = "" if empty_workbook else '<row r="1"><c r="A1" t="inlineStr"><is><t>{{organization_name}}</t></is></c></row>'
             package.writestr("xl/worksheets/sheet1.xml", f'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{sheet_data}</sheetData></worksheet>')
+            checks = "" if empty_workbook else "".join(
+                f'<row r="{row}"><c r="B{row}" t="str"><f>IF(1=1,&quot;PASS&quot;,&quot;FAIL&quot;)</f><v>PASS</v></c></row>'
+                for row in (5, 6, 7, 8, 9, 10, 11, 12, 13, 16)
+            )
+            package.writestr("xl/worksheets/sheet2.xml", f'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{checks}</sheetData></worksheet>')
         asset_binding = {"path": asset.relative_to(root).as_posix(), "sha256": file_hash(asset)}
         descriptor = {
             "schema_version": "1.0.0",
@@ -100,7 +148,7 @@ class LibraryControlPlaneTests(unittest.TestCase):
             "authority": blueprint["authority"]["primary_class"],
             "slots": ["organization_name"],
             "slot_contract": {"token_format": "{{slot_name}}", "required": True, "instantiated_artifact_policy": "reject unresolved tokens", "value_source": "authorized world facts only"},
-            "render_contract": {"required": True, "evidence_manifest": "evidence/template-releases/REL-0001/render-manifest.json", "expected_page_count": 1, "expected_sheet_names": ["Sheet1"], "expected_pdf_path": "evidence/template-releases/REL-0001/render.pdf", "expected_page_image_pattern": "evidence/template-releases/REL-0001/page-{page}.png", "print_policy": "Render the bounded worksheet as one readable page."},
+            "render_contract": {"required": True, "evidence_manifest": "evidence/template-releases/REL-0001/render-manifest.json", "expected_page_count": 1, "expected_sheet_names": ["Sheet1", "Checks"], "expected_pdf_path": "evidence/template-releases/REL-0001/render.pdf", "expected_page_image_pattern": "evidence/template-releases/REL-0001/page-{page}.png", "print_policy": "Render the bounded worksheet as one readable page."},
             "knowledge_and_authority_constraints": ["Source rows cannot manufacture conclusions."],
             "prohibited_content": ["prior submission facts"],
             "supported_consumers": ["anna-holodeck-bridge"],
@@ -123,7 +171,7 @@ class LibraryControlPlaneTests(unittest.TestCase):
             "schema_version": "1.0.0",
             "templates": {"TMPL-0001": {
                 "asset_path": asset_binding["path"], "asset_sha256": asset_binding["sha256"],
-                "page_count": 1, "sheet_names": ["Sheet1"], "rendered_outputs": render_outputs,
+                "page_count": 1, "sheet_names": ["Sheet1", "Checks"], "rendered_outputs": render_outputs,
             }},
         })
 
@@ -173,6 +221,38 @@ class LibraryControlPlaneTests(unittest.TestCase):
         terra = evidence("terra", "terra_review", "USABILITY_PASS", "reviewer:terra", "Terra reviewer")
         sol = evidence("sol", "sol_review", "INTEGRITY_PASS", "reviewer:sol", "Sol reviewer")
         conductor = evidence("conductor", "conductor_approval", "APPROVED", "reviewer:conductor", "Conductor")
+        formula_evidence = workbook_formula_evidence(asset)
+        proof_path = root / "evidence/template-releases/REL-0001/machine-proofs/workbook-recalculation.json"
+        write_json(proof_path, {
+            "schema_version": "1.0.0",
+            "proof_type": "workbook_recalculation_result",
+            "proof_id": "RECALC-REL-0001",
+            "release_id": "REL-0001",
+            "template_id": "TMPL-0001",
+            "version": "1.0.0",
+            "category": "computational",
+            "descriptor_sha256": descriptor_binding["sha256"],
+            "source_workbook": asset_binding,
+            "engine": {"name": "LibreOffice Calc", "version": "LibreOffice 26.2.5.2 fixture"},
+            "execution": {
+                "mode": "headless_cache_stripped_copy",
+                "output_format": "xlsx",
+                "cache_reset": "remove_all_formula_cached_values",
+                "cleared_formula_cache_count": formula_evidence["formula_count"],
+                "prepared_cached_formula_count": 0,
+                "source_before_sha256": asset_binding["sha256"],
+                "source_after_sha256": asset_binding["sha256"],
+                "source_unchanged": True,
+            },
+            "formula_evidence": formula_evidence,
+            "verdict": "RECALCULATION_PASS",
+        })
+        proof_binding = {
+            "path": proof_path.relative_to(root).as_posix(),
+            "sha256": file_hash(proof_path),
+            "media_type": "application/json",
+            "proof_type": "workbook_recalculation_result",
+        }
         technical = {}
         for gate in blueprint["proof_gates"]:
             category = gate["category"]
@@ -187,6 +267,17 @@ class LibraryControlPlaneTests(unittest.TestCase):
             observations = [f"Observed category-specific machine output for the {category} gate."]
             summary = f"Machine-readable result for the {category} release gate."
             result_path = root / f"evidence/template-releases/REL-0001/technical-results/{category}.json"
+            checks = [{
+                "id": f"{category}:fixture-result",
+                "status": "PASS" if applicable else "NOT_APPLICABLE",
+                "detail": f"Fixture runner recorded category-specific {category} output against the frozen hashes.",
+            }]
+            if category == "computational" and applicable:
+                checks = [
+                    {"id": "computational:recalculation-proof", "status": "PASS", "detail": "Verified machine LibreOffice recalculation proof against the exact workbook formula structure."},
+                    {"id": "computational:formula-cache-state", "status": "PASS", "detail": "Verified proof-bound cached results for every formula with no recorded errors."},
+                    {"id": "computational:control-checks", "status": "PASS", "detail": "Verified proof-bound control results from the machine recalculation evidence."},
+                ]
             write_json(result_path, {
                 "schema_version": "1.0.0",
                 "result_type": "template_technical_validation_result",
@@ -203,11 +294,8 @@ class LibraryControlPlaneTests(unittest.TestCase):
                 "procedure": gate["procedure"],
                 "actor_id": "runner:validation",
                 "actor": "Validation runner",
-                "checks": [{
-                    "id": f"{category}:fixture-result",
-                    "status": "PASS" if applicable else "NOT_APPLICABLE",
-                    "detail": f"Fixture runner recorded category-specific {category} output against the frozen hashes.",
-                }],
+                "machine_proof": proof_binding if category == "computational" and applicable else None,
+                "checks": checks,
                 "rendered_outputs": rendered_outputs,
                 "observations": observations,
                 "summary": summary,
@@ -231,7 +319,11 @@ class LibraryControlPlaneTests(unittest.TestCase):
                 "actor_id": "runner:validation",
                 "actor": "Validation runner",
                 "observations": observations,
-                "artifacts": [result_artifact, *rendered_outputs],
+                "artifacts": [
+                    result_artifact,
+                    *([{"path": proof_binding["path"], "sha256": proof_binding["sha256"], "media_type": "application/json", "category": "computational"}] if category == "computational" and applicable else []),
+                    *rendered_outputs,
+                ],
                 "categories": [category],
                 "procedures": {category: gate["procedure"]},
                 "summary": summary,
@@ -440,6 +532,56 @@ class LibraryControlPlaneTests(unittest.TestCase):
             self.mutate_technical_result(root, release_path, release, "leakage", lambda result: result.update({"descriptor_sha256": "0" * 64}))
             self.make_catalog(root, release_path, release, descriptor)
             self.assert_finding(root, "technical result descriptor_sha256 does not agree")
+
+    def test_formula_mutation_with_rebound_prose_cannot_replace_machine_recalculation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, descriptor_path, descriptor = self.make_release(root, blueprint_path)
+            asset_path = root / release["native_assets"][0]["path"]
+            with zipfile.ZipFile(asset_path) as package:
+                members = {item.filename: package.read(item.filename) for item in package.infolist()}
+            checks = ET.fromstring(members["xl/worksheets/sheet2.xml"])
+            formula = checks.find(f".//{{http://schemas.openxmlformats.org/spreadsheetml/2006/main}}f")
+            self.assertIsNotNone(formula)
+            formula.text = "1/0"
+            members["xl/worksheets/sheet2.xml"] = ET.tostring(checks, encoding="utf-8", xml_declaration=True)
+            with zipfile.ZipFile(asset_path, "w") as package:
+                for name, payload in members.items():
+                    package.writestr(name, payload)
+
+            self.rebind_native_asset(root, release_path, release, descriptor_path, descriptor)
+            new_asset_hash = release["native_assets"][0]["sha256"]
+            new_descriptor_hash = release["descriptor"]["sha256"]
+            terra_reference = release["reviews"]["terra"]
+            terra_path = root / terra_reference["record_path"]
+            terra = json.loads(terra_path.read_text(encoding="utf-8"))
+            terra_proof = root / terra["artifacts"][0]["path"]
+            terra_proof.write_text(
+                terra_proof.read_text(encoding="utf-8") + "observation=Independently recalculated after formula review.\n",
+                encoding="utf-8",
+            )
+            terra["artifacts"][0]["sha256"] = file_hash(terra_proof)
+            write_json(terra_path, terra)
+            terra_reference["record_sha256"] = file_hash(terra_path)
+
+            for category, reference in release["evidence"].items():
+                technical_path = root / reference["record_path"]
+                technical = json.loads(technical_path.read_text(encoding="utf-8"))
+                result_artifact = next(
+                    item for item in technical["artifacts"]
+                    if item["path"].endswith(f"technical-results/{category}.json")
+                )
+                result_path = root / result_artifact["path"]
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+                result["descriptor_sha256"] = new_descriptor_hash
+                result["native_asset_sha256s"] = [new_asset_hash]
+                write_json(result_path, result)
+                result_artifact["sha256"] = file_hash(result_path)
+                write_json(technical_path, technical)
+                reference["record_sha256"] = file_hash(technical_path)
+            write_json(release_path, release)
+            self.make_catalog(root, release_path, release, descriptor)
+            self.assert_finding(root, "machine recalculation proof source_workbook does not bind the current workbook result")
 
     def test_manual_release_cannot_bind_forged_technical_procedure(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -794,6 +936,7 @@ class LibraryControlPlaneTests(unittest.TestCase):
                     evidence_path.unlink()
             shutil.rmtree(evidence_root / "proofs")
             shutil.rmtree(evidence_root / "technical-results")
+            shutil.rmtree(evidence_root / "machine-proofs")
             entry = catalog["templates"][0]
             entry["release_status"] = "candidate"
             entry.pop("release_record")
@@ -899,6 +1042,34 @@ class LibraryControlPlaneTests(unittest.TestCase):
             validate_native_asset_shape(path, "eml", "impostor", findings)
             self.assertIn("EML must have valid", "\n".join(findings))
 
+    def test_eml_without_message_id_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "missing-id.eml"
+            path.write_bytes(
+                b"From: sender@example.test\r\nTo: recipient@example.test\r\n"
+                b"Date: Sat, 30 Aug 2026 10:00:00 -0400\r\nSubject: Status\r\n\r\n"
+                b"This contextual supporting note has a body.\r\n"
+            )
+            findings = []
+            validate_native_asset_shape(path, "eml", "missing-id", findings)
+            self.assertIn("Message-ID", "\n".join(findings))
+
+    def test_xlsx_release_cannot_bind_uncontracted_second_workbook(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, descriptor_path, descriptor = self.make_release(root, blueprint_path)
+            primary = root / release["native_assets"][0]["path"]
+            secondary = primary.with_name("uncontracted-secondary.xlsx")
+            shutil.copy2(primary, secondary)
+            binding = {"path": secondary.relative_to(root).as_posix(), "sha256": file_hash(secondary)}
+            release["native_assets"].append(binding)
+            descriptor["native_assets"].append({**binding, "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})
+            write_json(descriptor_path, descriptor)
+            release["descriptor"]["sha256"] = file_hash(descriptor_path)
+            write_json(release_path, release)
+            self.make_catalog(root, release_path, release, descriptor)
+            self.assert_finding(root, "xlsx descriptor must bind exactly one native asset")
+
     def test_binary_render_impostors_are_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -912,7 +1083,17 @@ class LibraryControlPlaneTests(unittest.TestCase):
             validate_proof_artifact(pdf, {"media_type": "application/pdf", "category": "render"}, release, set(), "pdf", findings)
             rendered = "\n".join(findings)
             self.assertIn("PNG proof", rendered)
-            self.assertIn("PDF lacks meaningful", rendered)
+            self.assertIn("not a structurally valid PDF", rendered)
+
+    def test_bare_object_pdf_spoof_is_rejected(self):
+        findings = []
+        validate_pdf_shape(spoof_pdf(), "spoof", findings)
+        self.assertIn("not a structurally valid PDF", "\n".join(findings))
+
+    def test_literal_string_pdf_spoof_is_rejected(self):
+        findings = []
+        validate_pdf_shape(spoof_pdf(literal_strings=True), "spoof", findings)
+        self.assertIn("not a structurally valid PDF", "\n".join(findings))
 
     def test_one_byte_generic_evidence_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:

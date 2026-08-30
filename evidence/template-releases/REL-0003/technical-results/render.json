@@ -16,16 +16,17 @@
   "procedure": "Render every message body and open and inspect every attachment.",
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
+  "machine_proof": null,
   "checks": [
     {
       "id": "render:mime-parts",
       "status": "PASS",
-      "detail": "Opened and parsed all 2 native MIME attachments; pagination is not the descriptor render surface."
+      "detail": "Opened and decoded all 2 native MIME attachment payloads across every bound email asset; pagination is not the descriptor render surface."
     }
   ],
   "rendered_outputs": [],
   "observations": [
-    "Deterministic render checks inspected the frozen descriptor and every native asset byte."
+    "Deterministic render checks inspected the frozen descriptor and all 1 bound native assets."
   ],
   "summary": "Category-specific render validation completed against the frozen release inputs."
 }

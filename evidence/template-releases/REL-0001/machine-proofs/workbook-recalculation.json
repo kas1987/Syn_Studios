@@ -1,0 +1,1144 @@
+{
+  "schema_version": "1.0.0",
+  "proof_type": "workbook_recalculation_result",
+  "proof_id": "RECALC-REL-0001",
+  "release_id": "REL-0001",
+  "template_id": "TMPL-0001",
+  "version": "1.0.0",
+  "category": "computational",
+  "descriptor_sha256": "642d3c4d81d898667606140d4f50ca0c040f66c2bf602312bc57a40aea318c7c",
+  "source_workbook": {
+    "path": "library/templates/TMPL-0001/1.0.0/internal-close-reconciliation.xlsx",
+    "sha256": "2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66"
+  },
+  "engine": {
+    "name": "LibreOffice Calc",
+    "version": "LibreOffice 26.2.5.2 cd7284b4cbbfeb507e630c1aac019f4157393acb"
+  },
+  "execution": {
+    "mode": "headless_cache_stripped_copy",
+    "output_format": "xlsx",
+    "cache_reset": "remove_all_formula_cached_values",
+    "cleared_formula_cache_count": 99,
+    "prepared_cached_formula_count": 0,
+    "source_before_sha256": "2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66",
+    "source_after_sha256": "2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66",
+    "source_unchanged": true
+  },
+  "formula_evidence": {
+    "formula_count": 99,
+    "cached_formula_count": 99,
+    "formula_sheets": [
+      "Reconciliation",
+      "Prior_Period",
+      "Checks"
+    ],
+    "error_count": 0,
+    "control_cells": {
+      "B10": "NOT APPLICABLE",
+      "B11": "NOT READY",
+      "B12": "NOT READY",
+      "B13": "PASS",
+      "B16": "NOT READY",
+      "B5": "NOT READY",
+      "B6": "NOT READY",
+      "B7": "NOT READY",
+      "B8": "NOT READY",
+      "B9": "NOT READY"
+    },
+    "formula_results": [
+      {
+        "sheet": "Reconciliation",
+        "cell": "C5",
+        "formula": "IF(A5=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A5)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A5))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E5",
+        "formula": "IF(A5=\"\",\"\",C5-D5)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G5",
+        "formula": "IF(A5=\"\",\"\",IF(OR(D5=\"\",F5=\"\"),\"NOT READY\",IF(ABS(E5)<=F5,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C6",
+        "formula": "IF(A6=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A6)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A6))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E6",
+        "formula": "IF(A6=\"\",\"\",C6-D6)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G6",
+        "formula": "IF(A6=\"\",\"\",IF(OR(D6=\"\",F6=\"\"),\"NOT READY\",IF(ABS(E6)<=F6,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C7",
+        "formula": "IF(A7=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A7)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A7))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E7",
+        "formula": "IF(A7=\"\",\"\",C7-D7)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G7",
+        "formula": "IF(A7=\"\",\"\",IF(OR(D7=\"\",F7=\"\"),\"NOT READY\",IF(ABS(E7)<=F7,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C8",
+        "formula": "IF(A8=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A8)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A8))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E8",
+        "formula": "IF(A8=\"\",\"\",C8-D8)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G8",
+        "formula": "IF(A8=\"\",\"\",IF(OR(D8=\"\",F8=\"\"),\"NOT READY\",IF(ABS(E8)<=F8,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C9",
+        "formula": "IF(A9=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A9)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A9))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E9",
+        "formula": "IF(A9=\"\",\"\",C9-D9)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G9",
+        "formula": "IF(A9=\"\",\"\",IF(OR(D9=\"\",F9=\"\"),\"NOT READY\",IF(ABS(E9)<=F9,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C10",
+        "formula": "IF(A10=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A10)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A10))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E10",
+        "formula": "IF(A10=\"\",\"\",C10-D10)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G10",
+        "formula": "IF(A10=\"\",\"\",IF(OR(D10=\"\",F10=\"\"),\"NOT READY\",IF(ABS(E10)<=F10,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C11",
+        "formula": "IF(A11=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A11)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A11))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E11",
+        "formula": "IF(A11=\"\",\"\",C11-D11)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G11",
+        "formula": "IF(A11=\"\",\"\",IF(OR(D11=\"\",F11=\"\"),\"NOT READY\",IF(ABS(E11)<=F11,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C12",
+        "formula": "IF(A12=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A12)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A12))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E12",
+        "formula": "IF(A12=\"\",\"\",C12-D12)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G12",
+        "formula": "IF(A12=\"\",\"\",IF(OR(D12=\"\",F12=\"\"),\"NOT READY\",IF(ABS(E12)<=F12,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C13",
+        "formula": "IF(A13=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A13)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A13))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E13",
+        "formula": "IF(A13=\"\",\"\",C13-D13)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G13",
+        "formula": "IF(A13=\"\",\"\",IF(OR(D13=\"\",F13=\"\"),\"NOT READY\",IF(ABS(E13)<=F13,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C14",
+        "formula": "IF(A14=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A14)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A14))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E14",
+        "formula": "IF(A14=\"\",\"\",C14-D14)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G14",
+        "formula": "IF(A14=\"\",\"\",IF(OR(D14=\"\",F14=\"\"),\"NOT READY\",IF(ABS(E14)<=F14,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C15",
+        "formula": "IF(A15=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A15)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A15))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E15",
+        "formula": "IF(A15=\"\",\"\",C15-D15)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G15",
+        "formula": "IF(A15=\"\",\"\",IF(OR(D15=\"\",F15=\"\"),\"NOT READY\",IF(ABS(E15)<=F15,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C16",
+        "formula": "IF(A16=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A16)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A16))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E16",
+        "formula": "IF(A16=\"\",\"\",C16-D16)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G16",
+        "formula": "IF(A16=\"\",\"\",IF(OR(D16=\"\",F16=\"\"),\"NOT READY\",IF(ABS(E16)<=F16,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C17",
+        "formula": "IF(A17=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A17)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A17))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E17",
+        "formula": "IF(A17=\"\",\"\",C17-D17)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G17",
+        "formula": "IF(A17=\"\",\"\",IF(OR(D17=\"\",F17=\"\"),\"NOT READY\",IF(ABS(E17)<=F17,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C18",
+        "formula": "IF(A18=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A18)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A18))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E18",
+        "formula": "IF(A18=\"\",\"\",C18-D18)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G18",
+        "formula": "IF(A18=\"\",\"\",IF(OR(D18=\"\",F18=\"\"),\"NOT READY\",IF(ABS(E18)<=F18,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C19",
+        "formula": "IF(A19=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A19)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A19))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E19",
+        "formula": "IF(A19=\"\",\"\",C19-D19)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G19",
+        "formula": "IF(A19=\"\",\"\",IF(OR(D19=\"\",F19=\"\"),\"NOT READY\",IF(ABS(E19)<=F19,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C20",
+        "formula": "IF(A20=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A20)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A20))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E20",
+        "formula": "IF(A20=\"\",\"\",C20-D20)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G20",
+        "formula": "IF(A20=\"\",\"\",IF(OR(D20=\"\",F20=\"\"),\"NOT READY\",IF(ABS(E20)<=F20,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C21",
+        "formula": "IF(A21=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A21)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A21))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E21",
+        "formula": "IF(A21=\"\",\"\",C21-D21)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G21",
+        "formula": "IF(A21=\"\",\"\",IF(OR(D21=\"\",F21=\"\"),\"NOT READY\",IF(ABS(E21)<=F21,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C22",
+        "formula": "IF(A22=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A22)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A22))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E22",
+        "formula": "IF(A22=\"\",\"\",C22-D22)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G22",
+        "formula": "IF(A22=\"\",\"\",IF(OR(D22=\"\",F22=\"\"),\"NOT READY\",IF(ABS(E22)<=F22,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C23",
+        "formula": "IF(A23=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A23)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A23))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E23",
+        "formula": "IF(A23=\"\",\"\",C23-D23)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G23",
+        "formula": "IF(A23=\"\",\"\",IF(OR(D23=\"\",F23=\"\"),\"NOT READY\",IF(ABS(E23)<=F23,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "C24",
+        "formula": "IF(A24=\"\",\"\",SUMIFS(Source_Data!$F$5:$F$29,Source_Data!$C$5:$C$29,A24)-SUMIFS(Source_Data!$G$5:$G$29,Source_Data!$C$5:$C$29,A24))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "E24",
+        "formula": "IF(A24=\"\",\"\",C24-D24)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Reconciliation",
+        "cell": "G24",
+        "formula": "IF(A24=\"\",\"\",IF(OR(D24=\"\",F24=\"\"),\"NOT READY\",IF(ABS(E24)<=F24,\"PASS\",\"REVIEW\")))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D5",
+        "formula": "B5-C5",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D6",
+        "formula": "B6-C6",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D7",
+        "formula": "B7-C7",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D8",
+        "formula": "B8-C8",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D9",
+        "formula": "B9-C9",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D10",
+        "formula": "B10-C10",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D11",
+        "formula": "B11-C11",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D12",
+        "formula": "B12-C12",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D13",
+        "formula": "B13-C13",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D14",
+        "formula": "B14-C14",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D15",
+        "formula": "B15-C15",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D16",
+        "formula": "B16-C16",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D17",
+        "formula": "B17-C17",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D18",
+        "formula": "B18-C18",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D19",
+        "formula": "B19-C19",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D20",
+        "formula": "B20-C20",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D21",
+        "formula": "B21-C21",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D22",
+        "formula": "B22-C22",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D23",
+        "formula": "B23-C23",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Prior_Period",
+        "cell": "D24",
+        "formula": "B24-C24",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "B5",
+        "formula": "IF(SUMPRODUCT(--(((Source_Data!$A$5:$A$29<>\"\")+(Source_Data!$B$5:$B$29<>\"\")+(Source_Data!$C$5:$C$29<>\"\")+(Source_Data!$D$5:$D$29<>\"\")+(Source_Data!$E$5:$E$29<>\"\")+(Source_Data!$F$5:$F$29<>\"\")+(Source_Data!$G$5:$G$29<>\"\")+(Source_Data!$H$5:$H$29<>\"\"))>0))=0,\"NOT READY\",IF(C5=0,\"PASS\",\"FAIL\"))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "NOT READY",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "C5",
+        "formula": "SUMPRODUCT(--(((Source_Data!$A$5:$A$29<>\"\")+(Source_Data!$B$5:$B$29<>\"\")+(Source_Data!$C$5:$C$29<>\"\")+(Source_Data!$D$5:$D$29<>\"\")+(Source_Data!$E$5:$E$29<>\"\")+(Source_Data!$F$5:$F$29<>\"\")+(Source_Data!$G$5:$G$29<>\"\")+(Source_Data!$H$5:$H$29<>\"\"))>0))-SUMPRODUCT(--(Source_Data!$A$5:$A$29<>\"\"),--(Source_Data!$B$5:$B$29<>\"\"),--(Source_Data!$C$5:$C$29<>\"\"),--ISNUMBER(Source_Data!$D$5:$D$29),--(Source_Data!$E$5:$E$29<>\"\"),--ISNUMBER(Source_Data!$F$5:$F$29),--ISNUMBER(Source_Data!$G$5:$G$29),--(Source_Data!$H$5:$H$29<>\"\"))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "B6",
+        "formula": "IF(B5<>\"PASS\",\"NOT READY\",IF(C6>0,\"PASS\",\"FAIL\"))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "NOT READY",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "C6",
+        "formula": "SUMPRODUCT(IFERROR(ABS(Source_Data!$F$5:$F$29),0))+SUMPRODUCT(IFERROR(ABS(Source_Data!$G$5:$G$29),0))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "B7",
+        "formula": "IF(B5<>\"PASS\",\"NOT READY\",IF(ABS(C7)<0.005,\"PASS\",\"FAIL\"))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "NOT READY",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "C7",
+        "formula": "SUM(Source_Data!$F$5:$F$29)-SUM(Source_Data!$G$5:$G$29)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "B8",
+        "formula": "IF(SUMPRODUCT(--(((Account_Map!$A$5:$A$29<>\"\")+(Account_Map!$B$5:$B$29<>\"\")+(Account_Map!$C$5:$C$29<>\"\")+(Account_Map!$D$5:$D$29<>\"\")+(Account_Map!$E$5:$E$29<>\"\"))>0))=0,\"NOT READY\",IF(C8=0,\"PASS\",\"FAIL\"))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "NOT READY",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "C8",
+        "formula": "SUMPRODUCT(--(((Account_Map!$A$5:$A$29<>\"\")+(Account_Map!$B$5:$B$29<>\"\")+(Account_Map!$C$5:$C$29<>\"\")+(Account_Map!$D$5:$D$29<>\"\")+(Account_Map!$E$5:$E$29<>\"\"))>0))-SUMPRODUCT(--(Account_Map!$A$5:$A$29<>\"\"),--(Account_Map!$B$5:$B$29<>\"\"),--(Account_Map!$C$5:$C$29<>\"\"),--(Account_Map!$D$5:$D$29<>\"\"),--(((Account_Map!$E$5:$E$29=\"Yes\")+(Account_Map!$E$5:$E$29=\"No\"))>0))+SUMPRODUCT(--(Source_Data!$C$5:$C$29<>\"\"),--(COUNTIFS(Account_Map!$A$5:$A$29,Source_Data!$C$5:$C$29,Account_Map!$E$5:$E$29,\"Yes\")<>1))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "B9",
+        "formula": "IF(SUMPRODUCT(--(((Reconciliation!$A$5:$A$24<>\"\")+(Reconciliation!$B$5:$B$24<>\"\")+(Reconciliation!$D$5:$D$24<>\"\")+(Reconciliation!$F$5:$F$24<>\"\")+(Reconciliation!$H$5:$H$24<>\"\"))>0))=0,\"NOT READY\",IF(C9=0,\"PASS\",\"FAIL\"))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "NOT READY",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "C9",
+        "formula": "SUMPRODUCT(--(((Reconciliation!$A$5:$A$24<>\"\")+(Reconciliation!$B$5:$B$24<>\"\")+(Reconciliation!$D$5:$D$24<>\"\")+(Reconciliation!$F$5:$F$24<>\"\")+(Reconciliation!$H$5:$H$24<>\"\"))>0))-SUMPRODUCT(--(Reconciliation!$A$5:$A$24<>\"\"),--(Reconciliation!$B$5:$B$24<>\"\"),--ISNUMBER(Reconciliation!$D$5:$D$24),--ISNUMBER(Reconciliation!$F$5:$F$24),--(Reconciliation!$G$5:$G$24=\"PASS\"))+SUMPRODUCT(--(Source_Data!$C$5:$C$29<>\"\"),--(COUNTIF(Reconciliation!$A$5:$A$24,Source_Data!$C$5:$C$29)<>1))+SUMPRODUCT(--(Reconciliation!$A$5:$A$24<>\"\"),--(COUNTIFS(Account_Map!$A$5:$A$29,Reconciliation!$A$5:$A$24,Account_Map!$E$5:$E$29,\"Yes\")<>1))+SUMPRODUCT(--(Reconciliation!$A$5:$A$24<>\"\"),--(COUNTIF(Source_Data!$C$5:$C$29,Reconciliation!$A$5:$A$24)=0))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "B10",
+        "formula": "IF(SUMPRODUCT(--(((Proposed_Entries!$A$5:$A$19<>\"\")+(Proposed_Entries!$B$5:$B$19<>\"\")+(Proposed_Entries!$C$5:$C$19<>\"\")+(Proposed_Entries!$D$5:$D$19<>\"\")+(Proposed_Entries!$E$5:$E$19<>\"\")+(Proposed_Entries!$F$5:$F$19<>\"\")+(Proposed_Entries!$G$5:$G$19<>\"\")+(Proposed_Entries!$H$5:$H$19<>\"\"))>0))=0,\"NOT APPLICABLE\",IF(C10=0,\"PASS\",\"FAIL\"))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "NOT APPLICABLE",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "C10",
+        "formula": "SUMPRODUCT(--(((Proposed_Entries!$A$5:$A$19<>\"\")+(Proposed_Entries!$B$5:$B$19<>\"\")+(Proposed_Entries!$C$5:$C$19<>\"\")+(Proposed_Entries!$D$5:$D$19<>\"\")+(Proposed_Entries!$E$5:$E$19<>\"\")+(Proposed_Entries!$F$5:$F$19<>\"\")+(Proposed_Entries!$G$5:$G$19<>\"\")+(Proposed_Entries!$H$5:$H$19<>\"\"))>0))-SUMPRODUCT(--(Proposed_Entries!$A$5:$A$19<>\"\"),--(Proposed_Entries!$B$5:$B$19<>\"\"),--(Proposed_Entries!$C$5:$C$19<>\"\"),--ISNUMBER(Proposed_Entries!$D$5:$D$19),--ISNUMBER(Proposed_Entries!$E$5:$E$19),--(Proposed_Entries!$F$5:$F$19<>\"\"),--(((Proposed_Entries!$G$5:$G$19=\"Draft\")+(Proposed_Entries!$G$5:$G$19=\"Ready for review\")+(Proposed_Entries!$G$5:$G$19=\"Hold\"))>0))+IF(ABS(SUM(Proposed_Entries!$D$5:$D$19)-SUM(Proposed_Entries!$E$5:$E$19))<0.005,0,1)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "B11",
+        "formula": "IF(B9<>\"PASS\",\"NOT READY\",IF(C11=0,\"PASS\",\"FAIL\"))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "NOT READY",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "C11",
+        "formula": "SUMPRODUCT(--(((Exceptions!$A$5:$A$19<>\"\")+(Exceptions!$B$5:$B$19<>\"\")+(Exceptions!$C$5:$C$19<>\"\")+(Exceptions!$D$5:$D$19<>\"\")+(Exceptions!$E$5:$E$19<>\"\")+(Exceptions!$F$5:$F$19<>\"\")+(Exceptions!$G$5:$G$19<>\"\")+(Exceptions!$H$5:$H$19<>\"\"))>0))-SUMPRODUCT(--(Exceptions!$A$5:$A$19<>\"\"),--(Exceptions!$B$5:$B$19<>\"\"),--(Exceptions!$C$5:$C$19<>\"\"),--(((Exceptions!$D$5:$D$19=\"supporting\")+(Exceptions!$D$5:$D$19=\"contextual\")+(Exceptions!$D$5:$D$19=\"question-only\")+(Exceptions!$D$5:$D$19=\"superseded\"))>0),--(Exceptions!$E$5:$E$19<>\"\"),--ISNUMBER(Exceptions!$F$5:$F$19),--(((Exceptions!$G$5:$G$19=\"Open\")+(Exceptions!$G$5:$G$19=\"Resolved\")+(Exceptions!$G$5:$G$19=\"Retained\"))>0),--(((Exceptions!$G$5:$G$19<>\"Resolved\")+(Exceptions!$H$5:$H$19<>\"\"))>0))+COUNTIF(Exceptions!$G$5:$G$19,\"Open\")",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "B12",
+        "formula": "IF(C12=0,\"PASS\",\"NOT READY\")",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "NOT READY",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "C12",
+        "formula": "IF(OR(COUNTBLANK(Close_Control!B5:B8)>0,LEFT(Close_Control!B5,1)=\"{\",LEFT(Close_Control!B6,1)=\"{\",LEFT(Close_Control!B7,1)=\"{\",LEFT(Close_Control!B8,1)=\"{\"),1,0)",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "n",
+        "cached_value": "1",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "B13",
+        "formula": "IF(C13=0,\"PASS\",\"FAIL\")",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "PASS",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "C13",
+        "formula": "COUNTA(INDIRECT(\"'Source_Data'!A30:H1048576\"))+COUNTA(INDIRECT(\"'Account_Map'!A30:E1048576\"))+COUNTA(INDIRECT(\"'Reconciliation'!A25:H1048576\"))+COUNTA(INDIRECT(\"'Proposed_Entries'!A20:H1048576\"))+COUNTA(INDIRECT(\"'Prior_Period'!A25:E1048576\"))+COUNTA(INDIRECT(\"'Exceptions'!A20:H1048576\"))",
+        "formula_attributes": {
+          "aca": "true"
+        },
+        "cell_type": "n",
+        "cached_value": "0",
+        "cache_present": true
+      },
+      {
+        "sheet": "Checks",
+        "cell": "B16",
+        "formula": "IF(COUNTIF(B5:B13,\"FAIL\")>0,\"FAIL\",IF(COUNTIF(B5:B13,\"NOT READY\")>0,\"NOT READY\",\"PASS\"))",
+        "formula_attributes": {
+          "aca": "false"
+        },
+        "cell_type": "str",
+        "cached_value": "NOT READY",
+        "cache_present": true
+      }
+    ],
+    "formula_structure_sha256": "2119e3b96012d2db9d31cfac0fb79c9a2984ed8915d687097b848dcfc1e8e927",
+    "formula_results_sha256": "53ae375a05b7f4c1f41c96eacb073be2ced2f5fa6363e9249d1cef88d964a6a9"
+  },
+  "verdict": "RECALCULATION_PASS"
+}

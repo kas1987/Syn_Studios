@@ -13,12 +13,12 @@
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
   "observations": [
-    "Deterministic core_integrity checks inspected the frozen descriptor and every native asset byte."
+    "Deterministic core_integrity checks inspected the frozen descriptor and all 1 bound native assets."
   ],
   "artifacts": [
     {
       "path": "evidence/template-releases/REL-0003/technical-results/core_integrity.json",
-      "sha256": "a9a75e0a9439b7db189d3c548939654a5f1216cbeb05f83800179aa5a2a7c7c6",
+      "sha256": "80ba84cbe48ab3418eabe3e57061674498ec2849b92344e011eb9cd67c53666c",
       "media_type": "application/json",
       "category": "core_integrity"
     }

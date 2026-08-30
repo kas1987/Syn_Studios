@@ -16,6 +16,7 @@
   "procedure": "Confirm the email body contains no material calculation contract.",
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
+  "machine_proof": null,
   "checks": [
     {
       "id": "computational:blueprint-rationale",
@@ -25,7 +26,7 @@
   ],
   "rendered_outputs": [],
   "observations": [
-    "Deterministic computational checks inspected the frozen descriptor and every native asset byte."
+    "Deterministic computational checks inspected the frozen descriptor and all 1 bound native assets."
   ],
   "summary": "Category-specific computational validation completed against the frozen release inputs."
 }

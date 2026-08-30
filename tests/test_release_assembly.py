@@ -7,6 +7,7 @@ from pathlib import Path
 
 from scripts.assemble_template_releases import AssemblyRefused, assemble
 from scripts.validate_library import validate_repository
+from scripts.workbook_recalculation import workbook_formula_evidence
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -135,6 +136,41 @@ class ReleaseAssemblyTests(unittest.TestCase):
             asset_hashes = [item["sha256"] for item in descriptor["native_assets"]]
             blueprint_path = next((root / "examples/blueprints").glob(f"{descriptor['blueprint_id']}.*.json"))
             blueprint = json.loads(blueprint_path.read_text(encoding="utf-8"))
+            proof_binding = None
+            if descriptor["artifact_type"] == "xlsx":
+                workbook_binding = descriptor["native_assets"][0]
+                formula_evidence = workbook_formula_evidence(root / workbook_binding["path"])
+                proof_path = root / f"evidence/template-releases/{release_id}/machine-proofs/workbook-recalculation.json"
+                write_json(proof_path, {
+                    "schema_version": "1.0.0",
+                    "proof_type": "workbook_recalculation_result",
+                    "proof_id": f"RECALC-{release_id}",
+                    "release_id": release_id,
+                    "template_id": entry["template_id"],
+                    "version": entry["version"],
+                    "category": "computational",
+                    "descriptor_sha256": descriptor_hash,
+                    "source_workbook": {"path": workbook_binding["path"], "sha256": workbook_binding["sha256"]},
+                    "engine": {"name": "LibreOffice Calc", "version": "LibreOffice 26.2.5.2 fixture"},
+                    "execution": {
+                        "mode": "headless_cache_stripped_copy",
+                        "output_format": "xlsx",
+                        "cache_reset": "remove_all_formula_cached_values",
+                        "cleared_formula_cache_count": formula_evidence["formula_count"],
+                        "prepared_cached_formula_count": 0,
+                        "source_before_sha256": workbook_binding["sha256"],
+                        "source_after_sha256": workbook_binding["sha256"],
+                        "source_unchanged": True,
+                    },
+                    "formula_evidence": formula_evidence,
+                    "verdict": "RECALCULATION_PASS",
+                })
+                proof_binding = {
+                    "path": proof_path.relative_to(root).as_posix(),
+                    "sha256": sha256(proof_path),
+                    "media_type": "application/json",
+                    "proof_type": "workbook_recalculation_result",
+                }
             for gate in blueprint["proof_gates"]:
                 category = gate["category"]
                 applicable = gate["applicable"] is True
@@ -155,6 +191,17 @@ class ReleaseAssemblyTests(unittest.TestCase):
                         for output_index, relative in enumerate(paths)
                     ]
                 result_artifact_category = "provenance" if category == "render" and rendered_outputs else category
+                checks = [{
+                    "id": f"{category}:fixture-result",
+                    "status": "PASS" if applicable else "NOT_APPLICABLE",
+                    "detail": f"Fixture runner recorded a category-specific {category} result against the frozen hashes.",
+                }]
+                if category == "computational" and applicable and proof_binding is not None:
+                    checks = [
+                        {"id": "computational:recalculation-proof", "status": "PASS", "detail": "Verified machine LibreOffice recalculation proof against the exact workbook formula structure."},
+                        {"id": "computational:formula-cache-state", "status": "PASS", "detail": "Verified proof-bound cached results for every formula with no recorded errors."},
+                        {"id": "computational:control-checks", "status": "PASS", "detail": "Verified proof-bound control results from the machine recalculation evidence."},
+                    ]
                 write_json(root / f"evidence/template-releases/{release_id}/technical-results/{category}.json", {
                     "schema_version": "1.0.0",
                     "result_type": "template_technical_validation_result",
@@ -171,11 +218,8 @@ class ReleaseAssemblyTests(unittest.TestCase):
                     "procedure": gate["procedure"],
                     "actor_id": self.actor_arguments["technical_id"],
                     "actor": self.actor_arguments["technical_name"],
-                    "checks": [{
-                        "id": f"{category}:fixture-result",
-                        "status": "PASS" if applicable else "NOT_APPLICABLE",
-                        "detail": f"Fixture runner recorded a category-specific {category} result against the frozen hashes.",
-                    }],
+                    "machine_proof": proof_binding if category == "computational" and applicable else None,
+                    "checks": checks,
                     "rendered_outputs": rendered_outputs,
                     "observations": [f"The category-specific {category} procedure completed against the exact frozen descriptor and native assets."],
                     "summary": f"Machine-readable {category} result for the exact release candidate.",
@@ -280,6 +324,20 @@ class ReleaseAssemblyTests(unittest.TestCase):
             write_json(result_path, result)
             catalog_before = (root / "library/catalog.json").read_bytes()
             with self.assertRaisesRegex(AssemblyRefused, "descriptor_sha256 does not match"):
+                self.assemble(root)
+            self.assert_no_assembly_writes(root, catalog_before)
+
+    def test_refuses_workbook_result_without_machine_recalculation_proof(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.make_root(temporary)
+            self.add_reviews(root)
+            self.add_technical_results(root)
+            result_path = root / "evidence/template-releases/REL-0001/technical-results/computational.json"
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            result["machine_proof"] = None
+            write_json(result_path, result)
+            catalog_before = (root / "library/catalog.json").read_bytes()
+            with self.assertRaisesRegex(AssemblyRefused, "machine recalculation proof binding is malformed"):
                 self.assemble(root)
             self.assert_no_assembly_writes(root, catalog_before)
 

@@ -16,16 +16,22 @@
   "procedure": "Inspect properties, hidden content, comments, names, links, and external connections.",
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
+  "machine_proof": null,
   "checks": [
     {
       "id": "metadata:xlsx-surfaces",
       "status": "PASS",
       "detail": "Inspected workbook relationships, 8 sheet states, row/column visibility, and 0 parsed comment parts; found no external links or hidden surfaces."
+    },
+    {
+      "id": "metadata:bound-native-assets",
+      "status": "PASS",
+      "detail": "Parsed metadata and relationship surfaces across all 1 bound native assets."
     }
   ],
   "rendered_outputs": [],
   "observations": [
-    "Deterministic metadata checks inspected the frozen descriptor and every native asset byte."
+    "Deterministic metadata checks inspected the frozen descriptor and all 1 bound native assets."
   ],
   "summary": "Category-specific metadata validation completed against the frozen release inputs."
 }

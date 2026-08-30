@@ -13,12 +13,12 @@
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
   "observations": [
-    "Deterministic metadata checks inspected the frozen descriptor and every native asset byte."
+    "Deterministic metadata checks inspected the frozen descriptor and all 1 bound native assets."
   ],
   "artifacts": [
     {
       "path": "evidence/template-releases/REL-0001/technical-results/metadata.json",
-      "sha256": "71f871b59299c58cc1a04faa9b0928b46b020af4df109f35f3c16eb2aff84f4f",
+      "sha256": "181f655ce18dbb17171f166198d74ed59062776fc186078587a58f4e61746cd2",
       "media_type": "application/json",
       "category": "metadata"
     }

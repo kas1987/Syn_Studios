@@ -9,9 +9,13 @@ from email import policy
 from email.message import EmailMessage
 from email.parser import BytesParser
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 from xml.etree import ElementTree as ET
 
-from scripts.run_template_technical_validation import ValidationFailed, run, sha256
+from scripts.run_template_technical_validation import ValidationFailed, pdf_pages, run, sha256
+from scripts.generate_workbook_recalculation_proof import generate
+from scripts.workbook_recalculation import workbook_formula_evidence
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,6 +51,52 @@ def minimal_compact_pdf(newline: bytes) -> bytes:
     pdf.extend(b"trailer" + newline)
     pdf.extend(f"<< /Size {len(objects) + 1} /Root 1 0 R >>".encode("ascii") + newline)
     pdf.extend(b"startxref" + newline + str(xref_offset).encode("ascii") + newline + b"%%EOF" + newline)
+    return bytes(pdf)
+
+
+def bare_object_pdf() -> bytes:
+    newline = b"\n"
+    pdf = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    objects = (
+        b"/Type /Catalog /Pages 2 0 R",
+        b"/Type /Pages /Count 1 /Kids [3 0 R]",
+        b"/Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Contents 4 0 R",
+        b"/Length 4 stream\njunk\nendstream",
+    )
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(pdf))
+        pdf.extend(f"{number} 0 obj".encode("ascii") + newline)
+        pdf.extend(body + newline + b"endobj" + newline)
+    xref_offset = len(pdf)
+    pdf.extend(b"xref\n0 5\n0000000000 65535 f \n")
+    for offset in offsets:
+        pdf.extend(f"{offset:010d} 00000 n ".encode("ascii") + newline)
+    pdf.extend(b"trailer\n<< /Size 5 /Root 1 0 R >>\n")
+    pdf.extend(b"startxref\n" + str(xref_offset).encode("ascii") + b"\n%%EOF\n")
+    return bytes(pdf)
+
+
+def literal_string_page_tree_pdf() -> bytes:
+    newline = b"\n"
+    pdf = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    objects = (
+        b"<< /Dummy (/Type /Catalog /Pages 2 0 R) >>",
+        b"<< /Dummy (/Type /Pages /Count 1 /Kids [3 0 R]) >>",
+        b"<< /Dummy (/Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Contents 4 0 R) >>",
+        b"<< /Length 4 >>\nstream\njunk\nendstream",
+    )
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(pdf))
+        pdf.extend(f"{number} 0 obj".encode("ascii") + newline)
+        pdf.extend(body + newline + b"endobj" + newline)
+    xref_offset = len(pdf)
+    pdf.extend(b"xref\n0 5\n0000000000 65535 f \n")
+    for offset in offsets:
+        pdf.extend(f"{offset:010d} 00000 n ".encode("ascii") + newline)
+    pdf.extend(b"trailer\n<< /Size 5 /Root 1 0 R >>\n")
+    pdf.extend(b"startxref\n" + str(xref_offset).encode("ascii") + b"\n%%EOF\n")
     return bytes(pdf)
 
 
@@ -97,6 +147,8 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
                     shutil.copy2(evidence_file, target / evidence_file.name)
             if (source / "render").is_dir():
                 shutil.copytree(source / "render", target / "render")
+            if (source / "machine-proofs").is_dir():
+                shutil.copytree(source / "machine-proofs", target / "machine-proofs")
         return root
 
     def release(self, root: Path, release_id: str) -> tuple[Path, dict, Path, dict, Path]:
@@ -177,6 +229,44 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
                 self.assertTrue(result["checks"])
                 self.assertTrue(all(item["id"].startswith(result["category"] + ":") for item in result["checks"]))
 
+    def test_committed_results_match_current_production_runner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            generated = run(root, self.actor_id, self.actor, write=True)
+            for path in generated:
+                committed = ROOT / path.relative_to(root)
+                self.assertEqual(path.read_bytes(), committed.read_bytes(), committed.as_posix())
+
+    def test_machine_proof_generator_clears_caches_and_matches_committed_proof(self):
+        release = json.loads((ROOT / "library/releases/REL-0001.template.json").read_text(encoding="utf-8"))
+        source = ROOT / release["native_assets"][0]["path"]
+        source_hash = sha256(source)
+        source_evidence = workbook_formula_evidence(source)
+        prepared = {}
+
+        def run_subprocess(arguments, **_kwargs):
+            if "--version" in arguments:
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout="LibreOffice 26.2.5.2 cd7284b4cbbfeb507e630c1aac019f4157393acb\n",
+                    stderr="",
+                )
+            input_path = Path(arguments[-1])
+            prepared.update(workbook_formula_evidence(input_path))
+            output_dir = Path(arguments[arguments.index("--outdir") + 1])
+            shutil.copy2(source, output_dir / input_path.name)
+            return SimpleNamespace(returncode=0, stdout="converted", stderr="")
+
+        with patch("scripts.generate_workbook_recalculation_proof.subprocess.run", side_effect=run_subprocess):
+            output, payload = generate(ROOT, "REL-0001", Path("soffice-fixture"))
+
+        self.assertEqual(source_evidence["formula_count"], 99)
+        self.assertEqual(prepared["formula_count"], 99)
+        self.assertEqual(prepared["cached_formula_count"], 0)
+        self.assertEqual(prepared["formula_structure_sha256"], source_evidence["formula_structure_sha256"])
+        self.assertEqual(sha256(source), source_hash)
+        self.assertEqual(payload, output.read_bytes())
+
     def test_invalid_render_is_refused_before_any_write(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self.copy_release_inputs(directory)
@@ -196,6 +286,20 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             next(item for item in rendered if item["path"] == descriptor["render_contract"]["expected_pdf_path"])["sha256"] = sha256(pdf)
             write_json(manifest_path, manifest)
             self.assert_refused_without_results(root)
+
+    def test_pdf_render_with_bare_page_tree_objects_is_refused_without_writes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pdf = Path(directory) / "bare-page-tree.pdf"
+            pdf.write_bytes(bare_object_pdf())
+            with self.assertRaisesRegex(ValidationFailed, "structurally valid PDF"):
+                pdf_pages(pdf)
+
+    def test_pdf_render_with_page_tree_tokens_only_in_strings_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pdf = Path(directory) / "literal-string-page-tree.pdf"
+            pdf.write_bytes(literal_string_page_tree_pdf())
+            with self.assertRaisesRegex(ValidationFailed, "structurally valid PDF"):
+                pdf_pages(pdf)
 
     def test_missing_formula_cache_is_refused_before_any_write(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -257,7 +361,7 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
 
             self.mutate_zip_member(asset, "xl/worksheets/sheet8.xml", replace_formula_but_keep_cache)
             self.rebind_asset(root, "REL-0001")
-            with self.assertRaisesRegex(ValidationFailed, "trusted recalculation proof"):
+            with self.assertRaisesRegex(ValidationFailed, "machine recalculation proof"):
                 run(root, self.actor_id, self.actor, write=True)
             self.assertEqual(
                 list(root.glob("evidence/template-releases/REL-*/technical-results/*.json")),
@@ -532,6 +636,76 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             secondary.write_bytes(message.as_bytes(policy=policy.default))
             self.bind_secondary_asset(root, "REL-0003", secondary, "message/rfc822")
             self.assert_refused_without_results(root)
+
+    def test_non_mixed_descriptor_rejects_heterogeneous_secondary_asset(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, primary = self.release(root, "REL-0003")
+            source = root / "library/templates/TMPL-0002/1.0.0/internal-controller-memo.docx"
+            secondary = primary.with_name("sanitized-supporting-memo.docx")
+            with zipfile.ZipFile(source) as package:
+                members = {
+                    info.filename: package.read(info.filename)
+                    for info in package.infolist()
+                }
+            for name, payload in members.items():
+                if name.casefold().endswith((".xml", ".rels", ".vml")):
+                    members[name] = payload.replace(b"{", b"[").replace(b"}", b"]")
+            with zipfile.ZipFile(secondary, "w") as package:
+                for name, payload in members.items():
+                    package.writestr(name, payload)
+            self.bind_secondary_asset(
+                root,
+                "REL-0003",
+                secondary,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+            self.assert_refused_without_results(root)
+
+    def test_xlsx_descriptor_rejects_second_workbook(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, primary = self.release(root, "REL-0001")
+            secondary = primary.with_name("uncontracted-secondary.xlsx")
+            shutil.copy2(primary, secondary)
+            self.bind_secondary_asset(
+                root,
+                "REL-0001",
+                secondary,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            with self.assertRaisesRegex(ValidationFailed, "xlsx descriptor must bind exactly one"):
+                run(root, self.actor_id, self.actor, write=True)
+
+    def test_docx_descriptor_rejects_second_document(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, primary = self.release(root, "REL-0002")
+            secondary = primary.with_name("uncontracted-secondary.docx")
+            shutil.copy2(primary, secondary)
+            self.bind_secondary_asset(
+                root,
+                "REL-0002",
+                secondary,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+            with self.assertRaisesRegex(ValidationFailed, "docx descriptor must bind exactly one"):
+                run(root, self.actor_id, self.actor, write=True)
+
+    def test_secondary_eml_without_date_or_message_id_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, primary = self.release(root, "REL-0003")
+            secondary = primary.with_name("undated-supporting-note.eml")
+            message = EmailMessage(policy=policy.default)
+            message["From"] = "analyst@example.invalid"
+            message["To"] = "manager@example.invalid"
+            message["Subject"] = "Supporting status note"
+            message.set_content("This contextual supporting note records a routine follow-up.")
+            secondary.write_bytes(message.as_bytes(policy=policy.default))
+            self.bind_secondary_asset(root, "REL-0003", secondary, "message/rfc822")
+            with self.assertRaisesRegex(ValidationFailed, "lacks required headers"):
+                run(root, self.actor_id, self.actor, write=True)
 
     def test_secondary_eml_without_authority_marker_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:

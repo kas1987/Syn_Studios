@@ -16,6 +16,7 @@
   "procedure": "Distinguish contextual correspondence, corrected support, and any governing attachment.",
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
+  "machine_proof": null,
   "checks": [
     {
       "id": "authority_separation:declared-boundary",
@@ -30,7 +31,7 @@
   ],
   "rendered_outputs": [],
   "observations": [
-    "Deterministic authority_separation checks inspected the frozen descriptor and every native asset byte."
+    "Deterministic authority_separation checks inspected the frozen descriptor and all 1 bound native assets."
   ],
   "summary": "Category-specific authority_separation validation completed against the frozen release inputs."
 }

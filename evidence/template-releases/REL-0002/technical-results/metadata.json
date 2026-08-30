@@ -16,16 +16,22 @@
   "procedure": "Inspect document properties, revisions, comments, custom XML, and embedded links.",
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
+  "machine_proof": null,
   "checks": [
     {
       "id": "metadata:docx-surfaces",
       "status": "PASS",
       "detail": "Inspected package relationships, hidden text, 0 revisions, 0 parsed comment parts, and 2 custom XML parts with no external targets."
+    },
+    {
+      "id": "metadata:bound-native-assets",
+      "status": "PASS",
+      "detail": "Parsed metadata and relationship surfaces across all 1 bound native assets."
     }
   ],
   "rendered_outputs": [],
   "observations": [
-    "Deterministic metadata checks inspected the frozen descriptor and every native asset byte."
+    "Deterministic metadata checks inspected the frozen descriptor and all 1 bound native assets."
   ],
   "summary": "Category-specific metadata validation completed against the frozen release inputs."
 }

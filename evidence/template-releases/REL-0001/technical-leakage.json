@@ -13,12 +13,12 @@
   "actor_id": "syn-validation-runner-2026-08-29",
   "actor": "Syn Studios validation runner",
   "observations": [
-    "Deterministic leakage checks inspected the frozen descriptor and every native asset byte."
+    "Deterministic leakage checks inspected the frozen descriptor and all 1 bound native assets."
   ],
   "artifacts": [
     {
       "path": "evidence/template-releases/REL-0001/technical-results/leakage.json",
-      "sha256": "9f798d8cf7c8be8ab02a87e501010ba90edf3a8b8d157170d8060677516246ad",
+      "sha256": "f03ca939ee983872e457ec0bef1479cbdbb5e1155111cdd18bb86edc395a9801",
       "media_type": "application/json",
       "category": "leakage"
     }
