@@ -51,3 +51,7 @@ _Avoid_: Popularity score, repository history
 **Material Transformation**:
 A target-bound change to producer workflow, source-system structure, substantive footprint, calculation model, authority or lifecycle, or document composition. Renaming, recoloring, typography, filenames, token substitution, and layout polish alone are cosmetic.
 _Avoid_: Restyle, variation token
+
+**Transformation-qualified Facet**:
+A producer-role or lifecycle applicability value outside a blueprint's reviewed direct binding. Recommendation may use it only when the submission profile declares its material-change obligation and the caller supplies a matching target-bound Material Transformation plan.
+_Avoid_: Broad tag, implied compatibility

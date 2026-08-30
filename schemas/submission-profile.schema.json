@@ -305,6 +305,25 @@
         }
       }
     },
+    "direct_facet_applicability_registry": {
+      "const": {
+        "BP-0001": {
+          "artifact_family": "close_workbook",
+          "producer_role": ["accountant", "controller"],
+          "lifecycle": ["internal_working", "reviewed_internal"]
+        },
+        "BP-0002": {
+          "artifact_family": "internal_decision_memo",
+          "producer_role": ["controller", "technical_accounting"],
+          "lifecycle": ["internal_working", "reviewed_internal"]
+        },
+        "BP-0003": {
+          "artifact_family": "email_chain",
+          "producer_role": ["operations_manager", "analyst", "external_counterparty"],
+          "lifecycle": ["transmitted", "retained_correspondence"]
+        }
+      }
+    },
     "diversity_dimensions": {
       "type": "object",
       "additionalProperties": false,
@@ -343,8 +362,45 @@
         "Preserve correspondence as contextual and keep any governing evidence in separately manifested sources.",
         "Change the communication sequence or document composition when this exact template appeared inside the package recent-use window.",
         "Create every issue, conclusion, citation, appendix, review item, and role assignment from authorized package evidence.",
-        "Change the decision workflow or document composition when this exact template appeared inside the package recent-use window."
+        "Change the decision workflow or document composition when this exact template appeared inside the package recent-use window.",
+        "Change and validate the producer workflow before using this structure for a transformation-qualified producer role.",
+        "Change and validate lifecycle and authority evidence before using this structure for a transformation-qualified lifecycle."
       ]
+    },
+    "transformation_qualified_facets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["producer_role", "lifecycle"],
+      "properties": {
+        "producer_role": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["value", "change_kind", "obligation"],
+            "properties": {
+              "value": {"$ref": "#/$defs/producer_role"},
+              "change_kind": {"const": "producer_workflow"},
+              "obligation": {"const": "Change and validate the producer workflow before using this structure for a transformation-qualified producer role."}
+            }
+          }
+        },
+        "lifecycle": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["value", "change_kind", "obligation"],
+            "properties": {
+              "value": {"$ref": "#/$defs/lifecycle"},
+              "change_kind": {"const": "authority_or_lifecycle"},
+              "obligation": {"const": "Change and validate lifecycle and authority evidence before using this structure for a transformation-qualified lifecycle."}
+            }
+          }
+        }
+      }
     },
     "profiled_template": {
       "type": "object",
@@ -359,6 +415,7 @@
         "native_assets",
         "evidence",
         "facets",
+        "transformation_qualified_facets",
         "pattern_invariants",
         "diversity_dimensions",
         "diversity_fingerprint",
@@ -385,6 +442,7 @@
         },
         "evidence": {"$ref": "#/$defs/evidence_bindings"},
         "facets": {"$ref": "#/$defs/facets"},
+        "transformation_qualified_facets": {"$ref": "#/$defs/transformation_qualified_facets"},
         "pattern_invariants": {
           "type": "array",
           "minItems": 1,
@@ -451,9 +509,9 @@
             "artifact_type": {"enum": ["docx", "xlsx", "pdf", "eml", "csv", "mixed_package"]},
             "blueprint_id": {"type": "string", "pattern": "^BP-[0-9]{4}$"},
             "authority": {"$ref": "#/$defs/authority_class"},
-            "lifecycle": {"type": "string", "minLength": 1},
-            "producer_role": {"type": "string", "minLength": 1},
-            "medium": {"type": "string", "minLength": 1},
+            "catalog_lifecycle": {"type": "string", "minLength": 1},
+            "descriptor_producer_role": {"type": "string", "minLength": 1},
+            "blueprint_medium": {"type": "string", "minLength": 1},
             "capabilities": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
             "required_allowed_knowledge": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
             "prohibited_knowledge": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}

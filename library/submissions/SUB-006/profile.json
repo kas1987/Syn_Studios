@@ -79,6 +79,21 @@
         "authority_class": ["supporting"],
         "medium": ["docx"]
       },
+      "transformation_qualified_facets": {
+        "producer_role": [
+          {
+            "value": "finance_lead",
+            "change_kind": "producer_workflow",
+            "obligation": "Change and validate the producer workflow before using this structure for a transformation-qualified producer role."
+          },
+          {
+            "value": "tax_professional",
+            "change_kind": "producer_workflow",
+            "obligation": "Change and validate the producer workflow before using this structure for a transformation-qualified producer role."
+          }
+        ],
+        "lifecycle": []
+      },
       "pattern_invariants": [
         {"semantic_pattern_id": "restrained_decision_or_handoff_endpoint", "foundation_card_id": "FOUND-0005", "json_pointer": "/reuse/patterns/0"}
       ],
@@ -98,7 +113,8 @@
       "transformation_obligations": [
         "Create every issue, conclusion, citation, appendix, review item, and role assignment from authorized package evidence.",
         "Reconcile the selected reporting basis and authority family to package-owned governing evidence before generation.",
-        "Change the decision workflow or document composition when this exact template appeared inside the package recent-use window."
+        "Change the decision workflow or document composition when this exact template appeared inside the package recent-use window.",
+        "Change and validate the producer workflow before using this structure for a transformation-qualified producer role."
       ]
     }
   ]

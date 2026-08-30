@@ -79,6 +79,16 @@
         "authority_class": ["supporting"],
         "medium": ["xlsx"]
       },
+      "transformation_qualified_facets": {
+        "producer_role": [
+          {
+            "value": "finance_lead",
+            "change_kind": "producer_workflow",
+            "obligation": "Change and validate the producer workflow before using this structure for a transformation-qualified producer role."
+          }
+        ],
+        "lifecycle": []
+      },
       "pattern_invariants": [
         {"semantic_pattern_id": "source_populations_separated_by_originating_module", "foundation_card_id": "FOUND-0001", "json_pointer": "/reuse/patterns/0"},
         {"semantic_pattern_id": "close_control_layer_beside_raw_exports", "foundation_card_id": "FOUND-0001", "json_pointer": "/reuse/patterns/1"},
@@ -100,7 +110,8 @@
       "transformation_obligations": [
         "Rebuild every population, identifier, value, formula, mapping, citation, and style from the authorized package world.",
         "Reconcile the selected reporting basis and authority family to package-owned governing evidence before generation.",
-        "Change the producer workflow or substantive footprint when this exact template appeared inside the package recent-use window."
+        "Change the producer workflow or substantive footprint when this exact template appeared inside the package recent-use window.",
+        "Change and validate the producer workflow before using this structure for a transformation-qualified producer role."
       ]
     },
     {
@@ -153,6 +164,10 @@
         "lifecycle": ["transmitted", "retained_correspondence"],
         "authority_class": ["contextual"],
         "medium": ["eml"]
+      },
+      "transformation_qualified_facets": {
+        "producer_role": [],
+        "lifecycle": []
       },
       "pattern_invariants": [
         {"semantic_pattern_id": "controlled_record_lifecycle_distribution_and_retention", "foundation_card_id": "FOUND-0008", "json_pointer": "/reuse/patterns/0"}

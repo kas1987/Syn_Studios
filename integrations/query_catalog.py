@@ -497,16 +497,19 @@ def _pattern_invariants(root: Path, template: dict[str, Any]) -> list[dict[str, 
 
 def _profile_matches(
     root: Path,
+    key: tuple[str, str],
     entry: dict[str, Any],
     profiled: dict[str, Any],
     compatibility: dict[str, Any],
     requested_facets: dict[str, Any],
+    plan_key: tuple[str, str] | None,
+    plan_material_kinds: set[str],
 ) -> bool:
     scalar_filters = {
         "artifact_type": compatibility.get("artifact_type"),
         "blueprint_id": compatibility.get("blueprint_id"),
         "authority": compatibility.get("authority"),
-        "lifecycle": compatibility.get("lifecycle"),
+        "lifecycle": compatibility.get("catalog_lifecycle"),
     }
     if any(value is not None and entry.get(field) != value for field, value in scalar_filters.items()):
         return False
@@ -514,21 +517,54 @@ def _profile_matches(
         return False
     contextual_filters = any(
         compatibility.get(field)
-        for field in ("producer_role", "medium", "required_allowed_knowledge", "prohibited_knowledge")
+        for field in (
+            "descriptor_producer_role",
+            "blueprint_medium",
+            "required_allowed_knowledge",
+            "prohibited_knowledge",
+        )
     )
     if contextual_filters:
         descriptor, blueprint = _entry_context(root, entry)
         if not _compatible_context(
             descriptor,
             blueprint,
-            producer_role=compatibility.get("producer_role"),
-            medium=compatibility.get("medium"),
+            producer_role=compatibility.get("descriptor_producer_role"),
+            medium=compatibility.get("blueprint_medium"),
             required_allowed_knowledge=compatibility.get("required_allowed_knowledge", []),
             prohibited_knowledge=compatibility.get("prohibited_knowledge", []),
         ):
             return False
     candidate_facets = profiled["template"]["facets"]
-    return all(value in candidate_facets.get(name, []) for name, value in requested_facets.items())
+    if not all(value in candidate_facets.get(name, []) for name, value in requested_facets.items()):
+        return False
+    qualifications = profiled["template"]["transformation_qualified_facets"]
+    for name in ("producer_role", "lifecycle"):
+        requested = requested_facets.get(name)
+        if requested is None:
+            continue
+        qualification = next(
+            (item for item in qualifications[name] if item["value"] == requested),
+            None,
+        )
+        if qualification is not None and (
+            plan_key != key or qualification["change_kind"] not in plan_material_kinds
+        ):
+            return False
+    return True
+
+
+def _facet_transformation_kinds(
+    profiled_template: dict[str, Any],
+    requested_facets: dict[str, Any],
+) -> set[str]:
+    qualifications = profiled_template["transformation_qualified_facets"]
+    return {
+        item["change_kind"]
+        for name in ("producer_role", "lifecycle")
+        for item in qualifications[name]
+        if requested_facets.get(name) == item["value"]
+    }
 
 
 def _target_key(value: dict[str, Any] | None) -> tuple[str, str] | None:
@@ -586,26 +622,41 @@ def recommend(
     plan_key = _target_key(plan)
     if plan_key is not None and plan_key not in profiles:
         raise CatalogQueryError("material_transformation_plan target is not recommendation-profiled")
+    plan_material_kinds: set[str] = set()
+    if isinstance(plan, dict):
+        policy = profiles[plan_key]["reuse_policy"]
+        plan_material_kinds = set(plan["change_kinds"]).intersection(policy["material_change_kinds"])
 
-    compatible: list[tuple[tuple[str, str], dict[str, Any], dict[str, Any]]] = []
+    compatible: list[tuple[tuple[str, str], dict[str, Any], dict[str, Any], set[str]]] = []
     for key, profiled in profiles.items():
         entry = catalog_by_key.get(key)
         if entry is None or not _contains_all(entry, "supported_consumers", (consumer_id,)):
             continue
-        if _profile_matches(root, entry, profiled, compatibility, requested_facets):
-            compatible.append((key, profiled, entry))
+        if _profile_matches(
+            root,
+            key,
+            entry,
+            profiled,
+            compatibility,
+            requested_facets,
+            plan_key,
+            plan_material_kinds,
+        ):
+            compatible.append(
+                (
+                    key,
+                    profiled,
+                    entry,
+                    _facet_transformation_kinds(profiled["template"], requested_facets),
+                )
+            )
 
     window = recent_usage[-requirements["recent_window"] :]
     window_keys = [(item["template_id"], item["version"]) for item in window]
     unprofiled_history_count = sum(key not in profiles for key in window_keys)
     last_key = window_keys[-1] if window_keys else None
-    material_kinds = set()
-    if isinstance(plan, dict):
-        policy = profiles[plan_key]["reuse_policy"]
-        material_kinds = set(plan["change_kinds"]).intersection(policy["material_change_kinds"])
-
     recommendations: list[dict[str, Any]] = []
-    for key, profiled, entry in compatible:
+    for key, profiled, entry, facet_transformation_kinds in compatible:
         template = profiled["template"]
         exact_count = window_keys.count(key)
         fingerprint = template["diversity_fingerprint"]
@@ -619,7 +670,7 @@ def recommend(
             and profiles[history_key]["submission_profile_id"] == profiled["submission_profile_id"]
             for history_key in window_keys
         )
-        if exact_count and (plan_key != key or not material_kinds):
+        if exact_count and (plan_key != key or not plan_material_kinds):
             continue
         consecutive = key == last_key
         if consecutive:
@@ -630,37 +681,39 @@ def recommend(
             reason_codes.append("exact_reuse_material_transformation_planned")
         else:
             reason_codes.append("exact_not_recent")
+        if facet_transformation_kinds:
+            reason_codes.append("facet_applicability_material_transformation_planned")
         if lineage_count:
             reason_codes.append("submission_lineage_repeated")
         if fingerprint_count:
             reason_codes.append("diversity_fingerprint_repeated")
         recommendation = {
-                "template_id": key[0],
-                "version": key[1],
-                "release_status": entry["release_status"],
-                "submission_profile_id": profiled["submission_profile_id"],
-                "submission_id": profiled["submission_id"],
-                "profile_status": profiled["profile_status"],
-                "foundation_card_ids": [item["card_id"] for item in template["foundation_cards"]],
-                "blueprint_id": template["blueprint"]["blueprint_id"],
-                "release_id": template["release"]["release_id"],
-                "diversity_fingerprint": fingerprint,
-                "diversity_dimensions": template["diversity_dimensions"],
-                "exact_reuse_count": exact_count,
-                "lineage_reuse_count": lineage_count,
-                "fingerprint_reuse_count": fingerprint_count,
-                "reason_codes": reason_codes,
-                "confidence_limits": template["confidence_limits"],
-                "pattern_invariants": _pattern_invariants(root, template),
-                "transformation_obligations": template["transformation_obligations"],
-                "next_operation": "select",
-            }
-        if exact_count:
+            "template_id": key[0],
+            "version": key[1],
+            "release_status": entry["release_status"],
+            "submission_profile_id": profiled["submission_profile_id"],
+            "submission_id": profiled["submission_id"],
+            "profile_status": profiled["profile_status"],
+            "foundation_card_ids": [item["card_id"] for item in template["foundation_cards"]],
+            "blueprint_id": template["blueprint"]["blueprint_id"],
+            "release_id": template["release"]["release_id"],
+            "diversity_fingerprint": fingerprint,
+            "diversity_dimensions": template["diversity_dimensions"],
+            "exact_reuse_count": exact_count,
+            "lineage_reuse_count": lineage_count,
+            "fingerprint_reuse_count": fingerprint_count,
+            "reason_codes": reason_codes,
+            "confidence_limits": template["confidence_limits"],
+            "pattern_invariants": _pattern_invariants(root, template),
+            "transformation_obligations": template["transformation_obligations"],
+            "next_operation": "select",
+        }
+        if exact_count or facet_transformation_kinds:
             recommendation["material_transformation"] = {
                 "status": "planned_not_validated",
                 "plan": {
                     "target": dict(plan["target"]),
-                    "change_kinds": sorted(material_kinds),
+                    "change_kinds": sorted(plan_material_kinds),
                 },
                 "must_bind_to": "package_local_template_binding",
                 "completion_owner": "consumer_candidate_artifact_validation",

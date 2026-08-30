@@ -89,7 +89,7 @@
       "accepts": [
         "closed_schema_versioned_requirements",
         "canonical_consumer_id",
-        "existing_compatibility_constraints",
+        "exact_catalog_descriptor_blueprint_compatibility_constraints",
         "controlled_facets",
         "bounded_recent_window",
         "package_local_oldest_to_newest_exact_recent_usage",
@@ -105,7 +105,7 @@
         "recommendation_profile_exists",
         "release_status_is_selectable",
         "profile_and_catalog_compatibility",
-        "known_profiled_recent_usage_identities"
+        "known_selectable_catalog_recent_usage_identities"
       ],
       "returns": "ranked_exact_versions_with_reuse_evidence_or_explicit_no_match",
       "material_transformation_policy": "planned_not_validated_until_bound_to_package_local_template_binding_and_proven_by_consumer_candidate_artifact_validation",

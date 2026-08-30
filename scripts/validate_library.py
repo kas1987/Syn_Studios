@@ -1318,6 +1318,9 @@ def validate_submission_profiles(
     semantic_registry = as_dict(
         as_dict(definitions.get("semantic_pattern_binding_registry")).get("const")
     )
+    direct_facet_registry = as_dict(
+        as_dict(definitions.get("direct_facet_applicability_registry")).get("const")
+    )
     semantic_ids = {
         value
         for value in as_list(as_dict(definitions.get("semantic_pattern_id")).get("enum"))
@@ -1326,6 +1329,10 @@ def validate_submission_profiles(
     if not semantic_registry or set(semantic_registry) != semantic_ids:
         findings.append(
             "schemas/submission-profile.schema.json: semantic Pattern Invariant vocabulary and binding registry must match exactly"
+        )
+    if not direct_facet_registry:
+        findings.append(
+            "schemas/submission-profile.schema.json: direct facet applicability registry must be nonempty"
         )
 
     def inspect_keys(value: object, label: str) -> None:
@@ -1480,6 +1487,68 @@ def validate_submission_profiles(
                 findings.append(f"{prefix}.facets.authority_class: must exactly match blueprint authority class")
             if as_list(facets.get("medium")) != [catalog_entry.get("artifact_type")]:
                 findings.append(f"{prefix}.facets.medium: must exactly match catalog artifact_type")
+            direct_facets = as_dict(direct_facet_registry.get(blueprint_id))
+            if not direct_facets:
+                findings.append(
+                    f"{prefix}.transformation_qualified_facets: blueprint has no reviewed direct facet applicability"
+                )
+            elif direct_facets.get("artifact_family") != blueprint.get("archetype"):
+                findings.append(
+                    f"{prefix}.transformation_qualified_facets: direct facet applicability conflicts with blueprint archetype"
+                )
+            qualifications = as_dict(template.get("transformation_qualified_facets"))
+            obligations = as_list(template.get("transformation_obligations"))
+            required_change_kind = {
+                "producer_role": "producer_workflow",
+                "lifecycle": "authority_or_lifecycle",
+            }
+            for facet_name in ("producer_role", "lifecycle"):
+                direct_values = as_list(direct_facets.get(facet_name))
+                qualified_items = [
+                    as_dict(item)
+                    for item in as_list(qualifications.get(facet_name))
+                ]
+                qualified_values = [
+                    item.get("value")
+                    for item in qualified_items
+                    if isinstance(item.get("value"), str)
+                ]
+                if (
+                    len(qualified_values) != len(qualified_items)
+                    or len(qualified_values) != len(set(qualified_values))
+                ):
+                    findings.append(
+                        f"{prefix}.transformation_qualified_facets.{facet_name}: values must be unique"
+                    )
+                if set(direct_values).intersection(qualified_values):
+                    findings.append(
+                        f"{prefix}.transformation_qualified_facets.{facet_name}: direct values cannot require transformation"
+                    )
+                declared_values = [
+                    value
+                    for value in as_list(facets.get(facet_name))
+                    if isinstance(value, str)
+                ]
+                if (
+                    len(declared_values) != len(as_list(facets.get(facet_name)))
+                    or len(declared_values) != len(direct_values) + len(qualified_values)
+                    or set(declared_values) != set(direct_values + qualified_values)
+                ):
+                    findings.append(
+                        f"{prefix}.facets.{facet_name}: must equal reviewed direct values plus explicit transformation-qualified values"
+                    )
+                for qualification_index, qualification in enumerate(qualified_items):
+                    qualification_label = (
+                        f"{prefix}.transformation_qualified_facets.{facet_name}.{qualification_index}"
+                    )
+                    if qualification.get("change_kind") != required_change_kind[facet_name]:
+                        findings.append(
+                            f"{qualification_label}.change_kind: does not qualify the facet transformation"
+                        )
+                    if qualification.get("obligation") not in obligations:
+                        findings.append(
+                            f"{qualification_label}.obligation: must be present in transformation_obligations"
+                        )
             dimensions = as_dict(template.get("diversity_dimensions"))
             medium_dimensions = {
                 "xlsx": "xlsx_native",

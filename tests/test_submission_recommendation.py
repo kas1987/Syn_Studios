@@ -221,6 +221,51 @@ class SubmissionProfileValidatorTests(unittest.TestCase):
             findings, _ = validate_repository(root)
             self.assertIn("must agree with the controlled medium facet", "\n".join(findings))
 
+    def test_unqualified_producer_or_lifecycle_broadening_is_rejected(self):
+        mutations = (
+            ("producer_role", "external_counterparty"),
+            ("lifecycle", "executed"),
+        )
+        for facet_name, value in mutations:
+            with self.subTest(facet_name=facet_name), tempfile.TemporaryDirectory() as temporary:
+                root = self.copy_repository(temporary)
+                path = root / "library/submissions/SUB-005/profile.json"
+                profile = json.loads(path.read_text(encoding="utf-8"))
+                profile["templates"][0]["facets"][facet_name].append(value)
+                write_json(path, profile)
+
+                findings, _ = validate_repository(root)
+
+                self.assertIn(
+                    f"facets.{facet_name}: must equal reviewed direct values plus explicit transformation-qualified values",
+                    "\n".join(findings),
+                )
+
+    def test_qualified_lifecycle_broadening_is_valid_metadata(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.copy_repository(temporary)
+            path = root / "library/submissions/SUB-005/profile.json"
+            profile = json.loads(path.read_text(encoding="utf-8"))
+            template = profile["templates"][0]
+            obligation = (
+                "Change and validate lifecycle and authority evidence before using this structure "
+                "for a transformation-qualified lifecycle."
+            )
+            template["facets"]["lifecycle"].append("executed")
+            template["transformation_qualified_facets"]["lifecycle"].append(
+                {
+                    "value": "executed",
+                    "change_kind": "authority_or_lifecycle",
+                    "obligation": obligation,
+                }
+            )
+            template["transformation_obligations"].append(obligation)
+            write_json(path, profile)
+
+            findings, _ = validate_repository(root)
+
+            self.assertEqual(findings, [])
+
 
 class RecommendationInterfaceTests(unittest.TestCase):
     def call(self, request=None, history=None, root=ROOT):
@@ -238,6 +283,31 @@ class RecommendationInterfaceTests(unittest.TestCase):
             result = self.call(root=root)
             self.assertEqual(result["count"], 2)
             self.assertNotIn("TMPL-0003", {item["template_id"] for item in result["recommendations"]})
+
+    def test_exact_released_artifact_compatibility_has_unambiguous_names(self):
+        request = requirements(
+            compatibility={
+                "catalog_lifecycle": "internal working copy through reviewed close file",
+                "descriptor_producer_role": "senior accountant",
+                "blueprint_medium": "Native Excel workbook assembled from ERP exports and analyst schedules",
+            }
+        )
+        result = self.call(request)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(
+            [(item["template_id"], item["version"]) for item in result["recommendations"]],
+            [("TMPL-0001", "1.0.0")],
+        )
+
+    def test_ambiguous_legacy_recommendation_compatibility_names_are_rejected(self):
+        for field, value in (
+            ("producer_role", "accountant"),
+            ("lifecycle", "internal_working"),
+            ("medium", "xlsx"),
+        ):
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(CatalogQueryError, "Additional properties are not allowed"):
+                    self.call(requirements(compatibility={field: value}))
 
     def test_only_reviewed_profiles_are_recommendation_eligible(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -303,6 +373,60 @@ class RecommendationInterfaceTests(unittest.TestCase):
             recommendation["material_transformation"]["completion_owner"],
             "consumer_candidate_artifact_validation",
         )
+
+    def test_transformation_qualified_producer_requires_a_matching_material_plan(self):
+        target = {"template_id": "TMPL-0001", "version": "1.0.0"}
+        request = requirements(facets={"producer_role": "finance_lead"})
+        self.assertEqual(self.call(request)["status"], "no_match")
+
+        request["material_transformation_plan"] = {
+            "target": target,
+            "change_kinds": ["producer_workflow"],
+        }
+        result = self.call(request)
+        self.assertEqual(
+            [(item["template_id"], item["version"]) for item in result["recommendations"]],
+            [("TMPL-0001", "1.0.0")],
+        )
+        recommendation = result["recommendations"][0]
+        self.assertIn(
+            "facet_applicability_material_transformation_planned",
+            recommendation["reason_codes"],
+        )
+        self.assertEqual(
+            recommendation["material_transformation"]["status"],
+            "planned_not_validated",
+        )
+
+    def test_transformation_qualified_lifecycle_requires_a_matching_material_plan(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repository"
+            shutil.copytree(ROOT, root, ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"))
+            path = root / "library/submissions/SUB-005/profile.json"
+            profile = json.loads(path.read_text(encoding="utf-8"))
+            template = profile["templates"][0]
+            obligation = (
+                "Change and validate lifecycle and authority evidence before using this structure "
+                "for a transformation-qualified lifecycle."
+            )
+            template["facets"]["lifecycle"].append("executed")
+            template["transformation_qualified_facets"]["lifecycle"].append(
+                {"value": "executed", "change_kind": "authority_or_lifecycle", "obligation": obligation}
+            )
+            template["transformation_obligations"].append(obligation)
+            write_json(path, profile)
+            request = requirements(facets={"lifecycle": "executed"})
+            self.assertEqual(self.call(request, root=root)["status"], "no_match")
+
+            request["material_transformation_plan"] = {
+                "target": {"template_id": "TMPL-0001", "version": "1.0.0"},
+                "change_kinds": ["authority_or_lifecycle"],
+            }
+            result = self.call(request, root=root)
+            self.assertEqual(
+                [(item["template_id"], item["version"]) for item in result["recommendations"]],
+                [("TMPL-0001", "1.0.0")],
+            )
 
     def test_cosmetic_only_plan_does_not_qualify(self):
         target = {"template_id": "TMPL-0001", "version": "1.0.0"}

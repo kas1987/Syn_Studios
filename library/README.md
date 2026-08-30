@@ -21,6 +21,8 @@ outside this library.
 Submission profiles are canonical JSON validated by
 `schemas/submission-profile.schema.json`. Their controlled facets and derived
 diversity fingerprints support package-local recommendation without changing
-catalog discovery or exact selection.
+catalog discovery or exact selection. Producer-role or lifecycle applicability
+outside a blueprint's reviewed direct binding is explicit and requires a
+matching package-local material-transformation plan.
 
 Versioning and lifecycle behavior are defined in `docs/VERSIONING.md`.
