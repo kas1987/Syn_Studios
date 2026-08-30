@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from xml.etree import ElementTree as ET
 
 try:
@@ -40,6 +40,30 @@ def load_object(path: Path) -> dict:
     if not isinstance(value, dict):
         raise ProofGenerationFailed(f"{path}: expected a JSON object")
     return value
+
+
+def repository_path(
+    root: Path,
+    relative: object,
+    label: str,
+    *,
+    must_exist: bool = True,
+) -> Path:
+    if not isinstance(relative, str) or not relative or "\\" in relative or ":" in relative:
+        raise ProofGenerationFailed(f"{label}: invalid repository-relative path")
+    posix_path = PurePosixPath(relative)
+    windows_path = PureWindowsPath(relative)
+    if posix_path.is_absolute() or windows_path.drive or windows_path.root or ".." in posix_path.parts:
+        raise ProofGenerationFailed(f"{label}: invalid repository-relative path")
+    root = root.resolve()
+    candidate = (root / Path(*posix_path.parts)).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as error:
+        raise ProofGenerationFailed(f"{label}: path escapes repository root") from error
+    if must_exist and not candidate.is_file():
+        raise ProofGenerationFailed(f"{label}: referenced file does not exist: {relative}")
+    return candidate
 
 
 def find_soffice(explicit: Path | None) -> Path:
@@ -81,10 +105,18 @@ def strip_formula_caches(source: Path, target: Path) -> int:
 
 def generate(root: Path, release_id: str, soffice: Path) -> tuple[Path, bytes]:
     root = root.resolve()
-    release_path = root / "library/releases" / f"{release_id}.template.json"
+    release_path = repository_path(
+        root,
+        f"library/releases/{release_id}.template.json",
+        "release record",
+    )
     release = load_object(release_path)
     descriptor_reference = release.get("descriptor") or {}
-    descriptor_path = root / str(descriptor_reference.get("path", ""))
+    descriptor_path = repository_path(
+        root,
+        descriptor_reference.get("path"),
+        "release descriptor",
+    )
     descriptor = load_object(descriptor_path)
     descriptor_sha256 = file_sha256(descriptor_path)
     if descriptor_reference.get("sha256") != descriptor_sha256:
@@ -93,7 +125,11 @@ def generate(root: Path, release_id: str, soffice: Path) -> tuple[Path, bytes]:
     if descriptor.get("artifact_type") != "xlsx" or not isinstance(assets, list) or len(assets) != 1:
         raise ProofGenerationFailed("recalculation proof requires exactly one XLSX native asset")
     binding = assets[0]
-    workbook_path = root / str(binding.get("path", ""))
+    workbook_path = repository_path(
+        root,
+        binding.get("path"),
+        "descriptor workbook",
+    )
     source_hash = file_sha256(workbook_path)
     if binding.get("sha256") != source_hash:
         raise ProofGenerationFailed("descriptor workbook hash is stale")
@@ -195,7 +231,12 @@ def generate(root: Path, release_id: str, soffice: Path) -> tuple[Path, bytes]:
         "formula_evidence": recalculated_evidence,
         "verdict": "RECALCULATION_PASS",
     }
-    output = root / "evidence/template-releases" / release_id / "machine-proofs/workbook-recalculation.json"
+    output = repository_path(
+        root,
+        f"evidence/template-releases/{release_id}/machine-proofs/workbook-recalculation.json",
+        "machine proof output",
+        must_exist=False,
+    )
     payload = (json.dumps(proof, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
     return output, payload
 

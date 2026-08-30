@@ -14,8 +14,8 @@ from unittest.mock import patch
 from xml.etree import ElementTree as ET
 
 from scripts.run_template_technical_validation import ValidationFailed, pdf_pages, run, sha256
-from scripts.generate_workbook_recalculation_proof import generate
-from scripts.workbook_recalculation import workbook_formula_evidence
+from scripts.generate_workbook_recalculation_proof import ProofGenerationFailed, generate, load_object
+from scripts.workbook_recalculation import file_sha256 as workbook_file_sha256, workbook_formula_evidence
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -52,6 +52,29 @@ def minimal_compact_pdf(newline: bytes) -> bytes:
     pdf.extend(f"<< /Size {len(objects) + 1} /Root 1 0 R >>".encode("ascii") + newline)
     pdf.extend(b"startxref" + newline + str(xref_offset).encode("ascii") + newline + b"%%EOF" + newline)
     return bytes(pdf)
+
+
+def pdf_with_stream_keyword_text() -> bytes:
+    stream_data = b"BT (endstream endobj) Tj ET"
+    objects = (
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Contents 4 0 R >>",
+        f"<< /Length {len(stream_data)} >>\nstream\n".encode("ascii") + stream_data + b"\nendstream",
+    )
+    payload = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(payload))
+        payload.extend(f"{number} 0 obj\n".encode("ascii") + body + b"\nendobj\n")
+    xref_offset = len(payload)
+    payload.extend(b"xref\n0 5\n0000000000 65535 f \n")
+    for offset in offsets:
+        payload.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    payload.extend(
+        f"trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n".encode("ascii")
+    )
+    return bytes(payload)
 
 
 def bare_object_pdf() -> bytes:
@@ -98,6 +121,44 @@ def literal_string_page_tree_pdf() -> bytes:
     pdf.extend(b"trailer\n<< /Size 5 /Root 1 0 R >>\n")
     pdf.extend(b"startxref\n" + str(xref_offset).encode("ascii") + b"\n%%EOF\n")
     return bytes(pdf)
+
+
+def lexically_embedded_object_pdf(container: str) -> bytes:
+    """Build an xref graph whose entries point inside an ignored container."""
+
+    fake_objects = (
+        b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
+        b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
+        b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Contents 4 0 R >> endobj",
+        b"4 0 obj << /Length 0 >> stream endstream endobj",
+    )
+    embedded = b"\n".join(fake_objects) + b"\n"
+    payload = bytearray(b"%PDF-1.4\n")
+    if container == "comment":
+        for fake_object in fake_objects:
+            payload.extend(b"% " + fake_object + b"\n")
+    elif container == "literal-string":
+        payload.extend(b"90 0 obj\n(" + embedded + b")\nendobj\n")
+    elif container == "stream":
+        stream_data = b"\n".join(fake_objects[:3]) + b"\n4 0 obj << /Length 0 >> stream "
+        payload.extend(
+            f"90 0 obj\n<< /Length {len(stream_data)} >>\nstream\n".encode("ascii")
+            + stream_data
+            + b"endstream endobj\n"
+        )
+    else:  # pragma: no cover - test helper contract
+        raise ValueError(container)
+    offsets = [payload.find(f"{number} 0 obj".encode("ascii")) for number in range(1, 5)]
+    if any(offset < 0 for offset in offsets):  # pragma: no cover - test helper contract
+        raise AssertionError("embedded object header missing")
+    xref_offset = len(payload)
+    payload.extend(b"xref\n0 5\n0000000000 65535 f \n")
+    for offset in offsets:
+        payload.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    payload.extend(
+        f"trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n".encode("ascii")
+    )
+    return bytes(payload)
 
 
 def long_xref_stream_pdf() -> bytes:
@@ -207,6 +268,29 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
         release["native_assets"].append({"path": relative, "sha256": digest})
         write_json(release_path, release)
 
+    def write_secondary_email(
+        self,
+        path: Path,
+        *,
+        message_id: str,
+        omit_header: str | None = None,
+        body: str | None = "This contextual supporting note records a routine follow-up.",
+    ) -> None:
+        message = EmailMessage(policy=policy.default)
+        headers = {
+            "From": "analyst@example.invalid",
+            "To": "manager@example.invalid",
+            "Date": "Sun, 30 Aug 2026 10:00:00 -0400",
+            "Subject": "Contextual supporting status note",
+            "Message-ID": message_id,
+        }
+        for name, value in headers.items():
+            if name != omit_header:
+                message[name] = value
+        if body is not None:
+            message.set_content(body)
+        path.write_bytes(message.as_bytes(policy=policy.default))
+
     def test_real_release_inputs_dry_run_without_writes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self.copy_release_inputs(directory)
@@ -267,6 +351,119 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
         self.assertEqual(sha256(source), source_hash)
         self.assertEqual(payload, output.read_bytes())
 
+    def test_machine_proof_generator_rejects_descriptor_path_escapes_before_read(self):
+        vectors = (
+            "../outside.json",
+            "C:/outside/descriptor.json",
+            r"\\server\share\descriptor.json",
+            "library/templates/carrier.json:proof",
+        )
+        for relative in vectors:
+            with self.subTest(relative=relative), tempfile.TemporaryDirectory() as directory:
+                root = self.copy_release_inputs(directory)
+                release_path = root / "library/releases/REL-0001.template.json"
+                release = json.loads(release_path.read_text(encoding="utf-8"))
+                if ":" in relative and not relative.startswith("C:"):
+                    descriptor_path = root / release["descriptor"]["path"]
+                    (root / relative.split(":", 1)[0]).write_bytes(b"carrier")
+                    (root / relative).write_bytes(descriptor_path.read_bytes())
+                release["descriptor"]["path"] = relative
+                write_json(release_path, release)
+                with patch(
+                    "scripts.generate_workbook_recalculation_proof.load_object",
+                    wraps=load_object,
+                ) as reader:
+                    with self.assertRaisesRegex(ProofGenerationFailed, "repository-relative path|escapes repository root"):
+                        generate(root, "REL-0001", Path("soffice-fixture"))
+                self.assertEqual([call.args[0] for call in reader.call_args_list], [release_path])
+
+    def test_machine_proof_generator_rejects_workbook_path_escapes_before_read(self):
+        vectors = (
+            "../outside.xlsx",
+            "C:/outside/workbook.xlsx",
+            r"\\server\share\workbook.xlsx",
+            "library/templates/carrier.xlsx:proof",
+        )
+        for relative in vectors:
+            with self.subTest(relative=relative), tempfile.TemporaryDirectory() as directory:
+                root = self.copy_release_inputs(directory)
+                release_path, release, descriptor_path, descriptor, source = self.release(root, "REL-0001")
+                if ":" in relative and not relative.startswith("C:"):
+                    (root / relative.split(":", 1)[0]).write_bytes(b"carrier")
+                    (root / relative).write_bytes(source.read_bytes())
+                descriptor["native_assets"][0]["path"] = relative
+                write_json(descriptor_path, descriptor)
+                release["descriptor"]["sha256"] = sha256(descriptor_path)
+                write_json(release_path, release)
+                with patch(
+                    "scripts.generate_workbook_recalculation_proof.file_sha256",
+                    wraps=workbook_file_sha256,
+                ) as hasher, patch(
+                    "scripts.generate_workbook_recalculation_proof.workbook_formula_evidence",
+                    wraps=workbook_formula_evidence,
+                ) as formula_reader:
+                    with self.assertRaisesRegex(ProofGenerationFailed, "repository-relative path|escapes repository root"):
+                        generate(root, "REL-0001", Path("soffice-fixture"))
+                self.assertEqual([call.args[0] for call in hasher.call_args_list], [descriptor_path])
+                formula_reader.assert_not_called()
+
+    def test_machine_proof_generator_rejects_resolved_workbook_escape_before_read(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside_directory:
+            root = self.copy_release_inputs(directory)
+            release_path, release, descriptor_path, descriptor, _ = self.release(root, "REL-0001")
+            relative = "library/templates/workbook-link.xlsx"
+            descriptor["native_assets"][0]["path"] = relative
+            write_json(descriptor_path, descriptor)
+            release["descriptor"]["sha256"] = sha256(descriptor_path)
+            write_json(release_path, release)
+            candidate = root / relative
+            outside = Path(outside_directory).resolve() / "outside.xlsx"
+            outside.write_bytes(b"outside bytes must not be read")
+            original_resolve = Path.resolve
+
+            def simulate_link(path, *args, **kwargs):
+                if original_resolve(path, *args, **kwargs) == original_resolve(candidate):
+                    return outside
+                return original_resolve(path, *args, **kwargs)
+
+            with patch("pathlib.Path.resolve", autospec=True, side_effect=simulate_link), patch(
+                "scripts.generate_workbook_recalculation_proof.file_sha256",
+                wraps=workbook_file_sha256,
+            ) as hasher, patch(
+                "scripts.generate_workbook_recalculation_proof.workbook_formula_evidence",
+                wraps=workbook_formula_evidence,
+            ) as formula_reader:
+                with self.assertRaisesRegex(ProofGenerationFailed, "escapes repository root"):
+                    generate(root, "REL-0001", Path("soffice-fixture"))
+            self.assertEqual([call.args[0] for call in hasher.call_args_list], [descriptor_path])
+            formula_reader.assert_not_called()
+
+    def test_machine_proof_generator_rejects_resolved_descriptor_escape_before_read(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside_directory:
+            root = self.copy_release_inputs(directory)
+            release_path = root / "library/releases/REL-0001.template.json"
+            release = json.loads(release_path.read_text(encoding="utf-8"))
+            relative = "library/templates/descriptor-link.json"
+            release["descriptor"]["path"] = relative
+            write_json(release_path, release)
+            candidate = root / relative
+            outside = Path(outside_directory).resolve() / "outside.json"
+            write_json(outside, {"outside": "must not be read"})
+            original_resolve = Path.resolve
+
+            def simulate_link(path, *args, **kwargs):
+                if original_resolve(path, *args, **kwargs) == original_resolve(candidate):
+                    return outside
+                return original_resolve(path, *args, **kwargs)
+
+            with patch("pathlib.Path.resolve", autospec=True, side_effect=simulate_link), patch(
+                "scripts.generate_workbook_recalculation_proof.load_object",
+                wraps=load_object,
+            ) as reader:
+                with self.assertRaisesRegex(ProofGenerationFailed, "escapes repository root"):
+                    generate(root, "REL-0001", Path("soffice-fixture"))
+            self.assertEqual([call.args[0] for call in reader.call_args_list], [release_path])
+
     def test_invalid_render_is_refused_before_any_write(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self.copy_release_inputs(directory)
@@ -300,6 +497,23 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             pdf.write_bytes(literal_string_page_tree_pdf())
             with self.assertRaisesRegex(ValidationFailed, "structurally valid PDF"):
                 pdf_pages(pdf)
+
+    def test_pdf_stream_payload_may_contain_endstream_endobj_text(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pdf = Path(directory) / "stream-keyword-text.pdf"
+            pdf.write_bytes(pdf_with_stream_keyword_text())
+            self.assertEqual(pdf_pages(pdf), 1)
+
+    def test_pdf_xref_cannot_point_to_objects_embedded_in_ignored_containers(self):
+        for container in ("comment", "literal-string", "stream"):
+            with self.subTest(container=container), tempfile.TemporaryDirectory() as directory:
+                pdf = Path(directory) / f"embedded-{container}.pdf"
+                pdf.write_bytes(lexically_embedded_object_pdf(container))
+                with self.assertRaisesRegex(
+                    ValidationFailed,
+                    "xref entry does not point to a top-level indirect object",
+                ):
+                    pdf_pages(pdf)
 
     def test_missing_formula_cache_is_refused_before_any_write(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -358,6 +572,30 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
                     and (cell.find(f"{{{MAIN}}}v").text or "").strip()
                 )
                 formula_cell.find(f"{{{MAIN}}}f").text = "1/0"
+
+            self.mutate_zip_member(asset, "xl/worksheets/sheet8.xml", replace_formula_but_keep_cache)
+            self.rebind_asset(root, "REL-0001")
+            with self.assertRaisesRegex(ValidationFailed, "machine recalculation proof"):
+                run(root, self.actor_id, self.actor, write=True)
+            self.assertEqual(
+                list(root.glob("evidence/template-releases/REL-*/technical-results/*.json")),
+                [],
+            )
+
+    def test_benign_formula_mutation_with_stale_nonerror_cache_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, asset = self.release(root, "REL-0001")
+
+            def replace_formula_but_keep_cache(tree):
+                formula_cell = next(
+                    cell
+                    for cell in tree.findall(f".//{{{MAIN}}}c")
+                    if cell.find(f"{{{MAIN}}}f") is not None
+                    and cell.find(f"{{{MAIN}}}v") is not None
+                    and (cell.find(f"{{{MAIN}}}v").text or "").strip()
+                )
+                formula_cell.find(f"{{{MAIN}}}f").text = "2+2"
 
             self.mutate_zip_member(asset, "xl/worksheets/sheet8.xml", replace_formula_but_keep_cache)
             self.rebind_asset(root, "REL-0001")
@@ -706,6 +944,55 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             self.bind_secondary_asset(root, "REL-0003", secondary, "message/rfc822")
             with self.assertRaisesRegex(ValidationFailed, "lacks required headers"):
                 run(root, self.actor_id, self.actor, write=True)
+
+    def test_each_required_secondary_eml_header_is_independently_enforced(self):
+        for header in ("From", "To", "Date", "Subject", "Message-ID"):
+            with self.subTest(header=header), tempfile.TemporaryDirectory() as directory:
+                root = self.copy_release_inputs(directory)
+                _, _, _, _, primary = self.release(root, "REL-0003")
+                secondary = primary.with_name(f"missing-{header.casefold()}-supporting-note.eml")
+                body = "This contextual supporting note records a routine follow-up."
+                if header == "From":
+                    body += "\nFrom: quoted-history@example.invalid"
+                self.write_secondary_email(
+                    secondary,
+                    message_id=f"<missing-{header.casefold()}@example.invalid>",
+                    omit_header=header,
+                    body=body,
+                )
+                self.bind_secondary_asset(root, "REL-0003", secondary, "message/rfc822")
+                with self.assertRaisesRegex(ValidationFailed, "lacks required headers or message content"):
+                    run(root, self.actor_id, self.actor, write=True)
+                self.assertEqual(
+                    list(root.glob("evidence/template-releases/REL-*/technical-results/*.json")),
+                    [],
+                )
+
+    def test_secondary_eml_with_empty_body_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, primary = self.release(root, "REL-0003")
+            secondary = primary.with_name("empty-supporting-note.eml")
+            self.write_secondary_email(
+                secondary,
+                message_id="<empty-supporting-note@example.invalid>",
+                body=None,
+            )
+            self.bind_secondary_asset(root, "REL-0003", secondary, "message/rfc822")
+            with self.assertRaisesRegex(ValidationFailed, "lacks required headers or message content"):
+                run(root, self.actor_id, self.actor, write=True)
+
+    def test_valid_bounded_secondary_eml_is_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            _, _, _, _, primary = self.release(root, "REL-0003")
+            secondary = primary.with_name("bounded-supporting-note.eml")
+            self.write_secondary_email(
+                secondary,
+                message_id="<bounded-supporting-note@example.invalid>",
+            )
+            self.bind_secondary_asset(root, "REL-0003", secondary, "message/rfc822")
+            self.assertEqual(len(run(root, self.actor_id, self.actor)), 24)
 
     def test_secondary_eml_without_authority_marker_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -329,9 +329,17 @@ def eml_inventory(path: Path) -> dict[str, Any]:
         text_parts.extend(f"{name}: {value}" for name, value in part.items())
         if part.get_content_maintype() == "text":
             try:
-                text_parts.append(part.get_content())
+                content = part.get_content()
             except (LookupError, UnicodeError):
                 raise ValidationFailed(f"{path}: text MIME part cannot be decoded")
+            text_parts.append(content)
+    body_part = message.get_body(preferencelist=("plain", "html"))
+    try:
+        decoded_body = body_part.get_content() if body_part is not None else ""
+    except (LookupError, UnicodeError):
+        raise ValidationFailed(f"{path}: message body cannot be decoded")
+    if not isinstance(decoded_body, str):
+        decoded_body = ""
     raw = path.read_text(encoding="utf-8")
     message_ids = re.findall(r"(?im)^Message-ID:\s*(\S+)", raw)
     message_count = len(re.findall(r"(?im)^From:\s*.+$", raw))
@@ -356,7 +364,7 @@ def eml_inventory(path: Path) -> dict[str, Any]:
     return {
         "message": message, "attachments": attachments, "parts": parts,
         "text": raw + "\n" + "\n".join(text_parts), "message_ids": message_ids,
-        "message_count": message_count,
+        "message_count": message_count, "body": decoded_body,
     }
 
 
@@ -520,12 +528,14 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
             raise ValidationFailed(f"{release_id}: workbook {asset_path.name} has insufficient native structure")
         if asset_type == "docx" and (asset_inventory["paragraphs"] == 0 or not asset_inventory["text"].strip()):
             raise ValidationFailed(f"{release_id}: document {asset_path.name} has insufficient native structure")
+        required_email_headers = ("From", "To", "Date", "Subject", "Message-ID")
         if asset_type == "eml" and (
-            not asset_inventory["message"].get("From")
-            or not asset_inventory["message"].get("To")
-            or not asset_inventory["message"].get("Date")
-            or not asset_inventory["message"].get("Message-ID")
+            any(
+                not str(asset_inventory["message"].get(header, "")).strip()
+                for header in required_email_headers
+            )
             or asset_inventory["message_count"] < 1
+            or not asset_inventory["body"].strip()
         ):
             raise ValidationFailed(f"{release_id}: email {asset_path.name} lacks required headers or message content")
     if artifact_type == "xlsx":

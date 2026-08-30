@@ -36,7 +36,7 @@ def write_render_pdf(path, pages=1):
         b"<< /Type /Catalog /Pages 2 0 R >>",
         f"<< /Type /Pages /Kids [{kids}] /Count {pages} >>".encode(),
         *(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {content_number} 0 R >>".encode() for _ in range(pages)),
-        b"<< /Length 18 >>\nstream\nBT (proof) Tj ET\nendstream",
+        b"<< /Length 17 >>\nstream\nBT (proof) Tj ET\nendstream",
     ]
     payload = bytearray(b"%PDF-1.7\n")
     offsets = []
@@ -50,6 +50,27 @@ def write_render_pdf(path, pages=1):
     payload.extend(f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n".encode())
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(bytes(payload))
+
+
+def pdf_with_stream_keyword_text():
+    stream_data = b"BT (endstream endobj) Tj ET"
+    objects = (
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Contents 4 0 R >>",
+        f"<< /Length {len(stream_data)} >>\nstream\n".encode() + stream_data + b"\nendstream",
+    )
+    payload = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(payload))
+        payload.extend(f"{number} 0 obj\n".encode() + body + b"\nendobj\n")
+    xref_offset = len(payload)
+    payload.extend(b"xref\n0 5\n0000000000 65535 f \n")
+    for offset in offsets:
+        payload.extend(f"{offset:010d} 00000 n \n".encode())
+    payload.extend(f"trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n".encode())
+    return bytes(payload)
 
 
 def spoof_pdf(*, literal_strings=False):
@@ -72,6 +93,38 @@ def spoof_pdf(*, literal_strings=False):
     for number, body in enumerate(objects, start=1):
         offsets.append(len(payload))
         payload.extend(f"{number} 0 obj\n".encode() + body + b"\nendobj\n")
+    xref_offset = len(payload)
+    payload.extend(b"xref\n0 5\n0000000000 65535 f \n")
+    for offset in offsets:
+        payload.extend(f"{offset:010d} 00000 n \n".encode())
+    payload.extend(f"trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n".encode())
+    return bytes(payload)
+
+
+def lexically_embedded_object_pdf(container):
+    fake_objects = (
+        b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
+        b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
+        b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Contents 4 0 R >> endobj",
+        b"4 0 obj << /Length 0 >> stream endstream endobj",
+    )
+    embedded = b"\n".join(fake_objects) + b"\n"
+    payload = bytearray(b"%PDF-1.4\n")
+    if container == "comment":
+        for fake_object in fake_objects:
+            payload.extend(b"% " + fake_object + b"\n")
+    elif container == "literal-string":
+        payload.extend(b"90 0 obj\n(" + embedded + b")\nendobj\n")
+    elif container == "stream":
+        stream_data = b"\n".join(fake_objects[:3]) + b"\n4 0 obj << /Length 0 >> stream "
+        payload.extend(
+            f"90 0 obj\n<< /Length {len(stream_data)} >>\nstream\n".encode()
+            + stream_data
+            + b"endstream endobj\n"
+        )
+    else:  # pragma: no cover - test helper contract
+        raise ValueError(container)
+    offsets = [payload.find(f"{number} 0 obj".encode()) for number in range(1, 5)]
     xref_offset = len(payload)
     payload.extend(b"xref\n0 5\n0000000000 65535 f \n")
     for offset in offsets:
@@ -558,6 +611,56 @@ class LibraryControlPlaneTests(unittest.TestCase):
             terra_proof = root / terra["artifacts"][0]["path"]
             terra_proof.write_text(
                 terra_proof.read_text(encoding="utf-8") + "observation=Independently recalculated after formula review.\n",
+                encoding="utf-8",
+            )
+            terra["artifacts"][0]["sha256"] = file_hash(terra_proof)
+            write_json(terra_path, terra)
+            terra_reference["record_sha256"] = file_hash(terra_path)
+
+            for category, reference in release["evidence"].items():
+                technical_path = root / reference["record_path"]
+                technical = json.loads(technical_path.read_text(encoding="utf-8"))
+                result_artifact = next(
+                    item for item in technical["artifacts"]
+                    if item["path"].endswith(f"technical-results/{category}.json")
+                )
+                result_path = root / result_artifact["path"]
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+                result["descriptor_sha256"] = new_descriptor_hash
+                result["native_asset_sha256s"] = [new_asset_hash]
+                write_json(result_path, result)
+                result_artifact["sha256"] = file_hash(result_path)
+                write_json(technical_path, technical)
+                reference["record_sha256"] = file_hash(technical_path)
+            write_json(release_path, release)
+            self.make_catalog(root, release_path, release, descriptor)
+            self.assert_finding(root, "machine recalculation proof source_workbook does not bind the current workbook result")
+
+    def test_benign_formula_mutation_with_stale_nonerror_cache_and_rebound_prose_is_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root, _, blueprint_path = self.make_minimal_root(temporary)
+            release_path, release, descriptor_path, descriptor = self.make_release(root, blueprint_path)
+            asset_path = root / release["native_assets"][0]["path"]
+            with zipfile.ZipFile(asset_path) as package:
+                members = {item.filename: package.read(item.filename) for item in package.infolist()}
+            checks = ET.fromstring(members["xl/worksheets/sheet2.xml"])
+            formula = checks.find(f".//{{http://schemas.openxmlformats.org/spreadsheetml/2006/main}}f")
+            self.assertIsNotNone(formula)
+            formula.text = "2+2"
+            members["xl/worksheets/sheet2.xml"] = ET.tostring(checks, encoding="utf-8", xml_declaration=True)
+            with zipfile.ZipFile(asset_path, "w") as package:
+                for name, payload in members.items():
+                    package.writestr(name, payload)
+
+            self.rebind_native_asset(root, release_path, release, descriptor_path, descriptor)
+            new_asset_hash = release["native_assets"][0]["sha256"]
+            new_descriptor_hash = release["descriptor"]["sha256"]
+            terra_reference = release["reviews"]["terra"]
+            terra_path = root / terra_reference["record_path"]
+            terra = json.loads(terra_path.read_text(encoding="utf-8"))
+            terra_proof = root / terra["artifacts"][0]["path"]
+            terra_proof.write_text(
+                terra_proof.read_text(encoding="utf-8") + "observation=Independently recalculated after benign formula review.\n",
                 encoding="utf-8",
             )
             terra["artifacts"][0]["sha256"] = file_hash(terra_proof)
@@ -1094,6 +1197,21 @@ class LibraryControlPlaneTests(unittest.TestCase):
         findings = []
         validate_pdf_shape(spoof_pdf(literal_strings=True), "spoof", findings)
         self.assertIn("not a structurally valid PDF", "\n".join(findings))
+
+    def test_pdf_stream_payload_may_contain_endstream_endobj_text(self):
+        findings = []
+        validate_pdf_shape(pdf_with_stream_keyword_text(), "valid", findings)
+        self.assertEqual(findings, [])
+
+    def test_pdf_xref_cannot_point_to_objects_embedded_in_ignored_containers(self):
+        for container in ("comment", "literal-string", "stream"):
+            with self.subTest(container=container):
+                findings = []
+                validate_pdf_shape(lexically_embedded_object_pdf(container), "spoof", findings)
+                self.assertIn(
+                    "xref entry does not point to a top-level indirect object",
+                    "\n".join(findings),
+                )
 
     def test_one_byte_generic_evidence_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:

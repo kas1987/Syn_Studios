@@ -201,6 +201,98 @@ def parse_indirect_object(
     return value, lexer.pop()
 
 
+def _stream_data_start(payload: bytes, offset: int, limit: int) -> int:
+    while offset < limit and payload[offset] in b"\x00\x09\x0c\x20":
+        offset += 1
+    if payload.startswith(b"\r\n", offset):
+        return offset + 2
+    if offset < limit and payload[offset] in b"\r\n":
+        return offset + 1
+    raise ValueError("stream keyword is not followed by an end-of-line marker")
+
+
+def _stream_length(
+    payload: bytes,
+    objects: dict[tuple[int, int], int],
+    value: Any,
+) -> int:
+    if isinstance(value, PdfReference):
+        value, tail = parse_indirect_object(payload, objects, value)
+        if tail.kind != "keyword" or tail.value != b"endobj":
+            raise ValueError("indirect stream Length object has trailing content")
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError("stream dictionary lacks a valid Length")
+    return value
+
+
+def _stream_end_at_length(
+    payload: bytes,
+    data_start: int,
+    length: int,
+    limit: int,
+) -> tuple[Token, Token]:
+    position = data_start + length
+    if position > limit:
+        raise ValueError("stream Length extends outside the object section")
+    if payload.startswith(b"\r\n", position):
+        position += 2
+    elif position < limit and payload[position] in b"\r\n":
+        position += 1
+    lexer = Lexer(payload[:limit], position)
+    endstream = lexer.pop()
+    endobj = lexer.pop()
+    if (
+        endstream.kind != "keyword"
+        or endstream.value != b"endstream"
+        or endobj.kind != "keyword"
+        or endobj.value != b"endobj"
+    ):
+        raise ValueError("stream Length does not resolve to endstream and endobj")
+    return endstream, endobj
+
+
+def index_top_level_objects(
+    payload: bytes,
+    start: int,
+    limit: int,
+    xref_entries: dict[tuple[int, int], int],
+) -> dict[tuple[int, int], int]:
+    """Parse top-level indirect objects without indexing ignored container bytes."""
+
+    lexer = Lexer(payload[:limit], start)
+    objects: dict[tuple[int, int], int] = {}
+    while True:
+        number = lexer.pop()
+        if number.kind == "eof":
+            break
+        generation = lexer.pop()
+        marker = lexer.pop()
+        if (
+            number.kind != "integer"
+            or generation.kind != "integer"
+            or marker.kind != "keyword"
+            or marker.value != b"obj"
+            or number.value < 0
+            or generation.value < 0
+        ):
+            raise ValueError("PDF body contains malformed top-level object syntax")
+        key = (number.value, generation.value)
+        if key in objects:
+            raise ValueError("PDF body contains a duplicate top-level object")
+        objects[key] = number.start
+        value = parse_value(lexer)
+        tail = lexer.pop()
+        if tail.kind == "keyword" and tail.value == b"endobj":
+            continue
+        if tail.kind != "keyword" or tail.value != b"stream" or not isinstance(value, dict):
+            raise ValueError("top-level indirect object has malformed trailing content")
+        data_start = _stream_data_start(payload, tail.end, limit)
+        length = _stream_length(payload, xref_entries, value.get(b"Length"))
+        _, endobj = _stream_end_at_length(payload, data_start, length, limit)
+        lexer = Lexer(payload[:limit], endobj.end)
+    return objects
+
+
 def parse_xref(payload: bytes, offset: int) -> tuple[dict[tuple[int, int], int], PdfReference]:
     section = payload[offset:]
     if not section.startswith(b"xref"):
@@ -243,10 +335,16 @@ def parse_xref(payload: bytes, offset: int) -> tuple[dict[tuple[int, int], int],
     for (number, generation), object_offset in entries.items():
         if object_offset < 0 or object_offset >= offset:
             raise ValueError("xref object offset is outside the object section")
-        header = re.match(rb"(\d+)\s+(\d+)\s+obj\b", payload[object_offset:])
-        if header is None or (int(header.group(1)), int(header.group(2))) != (number, generation):
-            raise ValueError("xref entry does not point to its object header")
     return entries, root
+
+
+def validate_xref_entries(
+    entries: dict[tuple[int, int], int],
+    top_level_objects: dict[tuple[int, int], int],
+) -> None:
+    for (number, generation), object_offset in entries.items():
+        if top_level_objects.get((number, generation)) != object_offset:
+            raise ValueError("xref entry does not point to a top-level indirect object")
 
 
 def _name(value: Any) -> bytes | None:
@@ -272,6 +370,8 @@ def inspect_pdf(payload: bytes) -> dict[str, Any]:
     if xref_offset < header.end() or xref_offset >= trailer.start():
         raise ValueError("startxref offset is outside the PDF body")
     entries, root = parse_xref(payload, xref_offset)
+    top_level_objects = index_top_level_objects(payload, header.end(), xref_offset, entries)
+    validate_xref_entries(entries, top_level_objects)
     catalog, catalog_tail = parse_indirect_object(payload, entries, root)
     if catalog_tail.kind != "keyword" or catalog_tail.value != b"endobj":
         raise ValueError("catalog object has trailing content")
