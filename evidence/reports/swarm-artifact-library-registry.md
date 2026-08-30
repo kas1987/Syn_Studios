@@ -13,17 +13,18 @@ Mission: close the P0-P2 artifact-library backlog identified on 2026-08-29.
 | AGENT-07 / recalculation-proof-integrity | build | Preserve an existing machine recalculation proof unless a rerun is byte-identical | `scripts/generate_workbook_recalculation_proof.py`, `tests/test_recalculation_proof_immutability.py` | Atomic no-clobber publication plus changed/identical/missing-target arms | COMPLETE | Integrated as `c840028`; 259 tests passed with 3 expected optional-stack skips in the worker worktree | Independent combined-head review |
 | AGENT-08 / OOXML-token-decoding | build | Reconstruct visible build tokens across decoded OOXML XML surfaces | `scripts/audit_tabular_package.py`, `tests/test_tabular_conformance.py` | Numeric-entity, text, tail, attribute, VML, malformed-XML, and binary-control arms | COMPLETE | Integrated as `7bbb2b9` and `123f3fd`; 23 targeted tests passed and `.xml`, `.rels`, and `.vml` all use the parsed fail-closed path | Independent combined-head review |
 | AGENT-09 / immutable-publication | build + two critics | Bind proof and technical-result publication to held staging identity and reject ambiguous write sets before mutation | `scripts/immutable_publication.py`, both publication scripts, and both focused publication test modules | Cross-platform no-clobber publication with replacement, in-place writer, duplicate-destination, cancellation, and rerun proof | READY_FOR_REVIEW | Independent `TEST_PASS` and `CHANGE_PASS`; Windows focused 89/89, WSL focused 87 passed plus 2 expected Windows-only skips, full Windows 296 passed plus 3 expected optional-stack skips | Commit the reviewed local head, refresh PR #4, and require current hosted checks |
+| AGENT-10 / PNG-proof-hardening | build + verifier | Fail closed on palette ancillary chunks, invalid chunk types, and compact raster amplification | `scripts/validate_library.py`, `tests/test_library_control_plane.py` | Production-path malformed-chunk and resource-limit arms | READY_FOR_REVIEW | `b5c3915`; 6 focused PNG tests, 63 control-plane tests, 312 full tests with 3 expected skips, canonical 39, and technical dry run 24 passed | Fresh exact-head test and change critics plus hosted checks |
 
 Conductor integration assembled `REL-0001`, `REL-0002`, and `REL-0003` with
 independent Terra and Sol records, executable typed technical evidence,
-conductor records, and catalog bindings. PR #4 is published, the default-branch
-ruleset is active, and the local skill was installed recoverably from the
-verified `8fc069a` tree. The exact-head review then identified four additional
-P1/P2 findings; AGENT-06 through AGENT-08 and their critic-driven follow-ups
-close those findings on the integrated local head. AGENT-09 then closed the
-publisher races found during combined-head review without changing released
-templates or evidence. Its bounded threat model assumes stable repository and
-publication-directory names; POSIX same-principal mutation of an already-open
-inode is not treated as a filesystem security boundary. Remaining gates are PR
-refresh, current hosted checks, and installation refresh from the final reviewed
-head. The downstream ANNA adapter remains isolated and unmerged.
+conductor records, and catalog bindings. PR #4 is published and the active
+default-branch ruleset requires the contract, dependency review, CodeQL, Ubuntu,
+and Windows checks. AGENT-06 through AGENT-08 closed the additional email,
+tabular, and OOXML findings; AGENT-09 closed publisher races; and AGENT-10 closes
+the remaining PNG ancillary-structure and resource-amplification findings without
+changing released templates or evidence. The immutable-publication threat model
+assumes stable repository and publication-directory names; POSIX same-principal
+mutation of an already-open inode is not treated as a filesystem security
+boundary. Remaining gates are fresh exact-head critics, current hosted checks,
+conversation resolution, and installation refresh from the final reviewed head.
+The downstream ANNA adapter remains isolated and unmerged.
