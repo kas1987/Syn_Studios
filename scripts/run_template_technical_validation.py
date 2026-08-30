@@ -16,7 +16,6 @@ import posixpath
 import re
 import struct
 import sys
-import tempfile
 import zipfile
 from email import policy
 from email.message import EmailMessage
@@ -34,6 +33,27 @@ try:
     from .workbook_recalculation import recalculation_proof_findings, workbook_formula_evidence
 except ImportError:  # Direct execution: python scripts/run_template_technical_validation.py
     from workbook_recalculation import recalculation_proof_findings, workbook_formula_evidence
+
+try:
+    from .immutable_publication import (
+        PublicationSafetyError,
+        hard_link,
+        locked_directory,
+        open_staging_file,
+        read_stable_file,
+        remove_owned_file,
+        verify_parent,
+    )
+except ImportError:  # Direct execution: python scripts/run_template_technical_validation.py
+    from immutable_publication import (
+        PublicationSafetyError,
+        hard_link,
+        locked_directory,
+        open_staging_file,
+        read_stable_file,
+        remove_owned_file,
+        verify_parent,
+    )
 
 
 CATEGORIES = (
@@ -110,6 +130,24 @@ def repository_path(root: Path, relative: object, label: str) -> Path:
 
 def json_bytes(value: object) -> bytes:
     return (json.dumps(value, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+
+
+def read_stable_technical_result(
+    root: Path, path: Path, directory_descriptor: int | None = None
+) -> bytes | None:
+    relative = path.relative_to(root).as_posix()
+    try:
+        return read_stable_file(root, path, directory_descriptor)
+    except PublicationSafetyError as error:
+        raise ValidationFailed(f"technical result target {relative} {error}") from error
+
+
+def verify_result_parent(root: Path, path: Path) -> None:
+    relative = path.relative_to(root).as_posix()
+    try:
+        verify_parent(root, path)
+    except PublicationSafetyError as error:
+        raise ValidationFailed(f"technical result directory for {relative} {error}") from error
 
 
 def check(check_id: str, detail: str, status: str = "PASS") -> dict[str, str]:
@@ -722,130 +760,140 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
 
 
 def publish_results_once(root: Path, writes: list[tuple[Path, bytes]]) -> None:
-    """Publish one complete result set without replacing any target path."""
+    """Monotonically publish missing results without replacing any target path."""
+
+    destinations = [path for path, _ in writes]
+    if len(destinations) != len(set(destinations)):
+        raise ValidationFailed(
+            "technical result destinations must be unique before publication"
+        )
+    root_stat = root.stat(follow_symlinks=False)
+    for path, _ in writes:
+        verify_result_parent(root, path)
 
     states: list[tuple[Path, str]] = []
     for path, payload in writes:
-        try:
-            existing = path.read_bytes()
-        except FileNotFoundError:
+        existing = read_stable_technical_result(root, path)
+        if existing is None:
             states.append((path, "missing"))
-        except OSError as error:
-            raise ValidationFailed(
-                f"cannot inspect technical result target {path.relative_to(root).as_posix()}: {error}; no files written"
-            ) from error
         else:
             states.append((path, "identical" if existing == payload else "different"))
 
-    if any(state != "missing" for _, state in states):
-        conflicts = [
-            path.relative_to(root).as_posix()
-            for path, state in states
-            if state != "identical"
-        ]
-        if conflicts:
-            raise ValidationFailed(
-                "published technical results are immutable; no files written; "
-                "missing or different targets: " + ", ".join(conflicts)
-            )
+    conflicts = [
+        path.relative_to(root).as_posix()
+        for path, state in states
+        if state == "different"
+    ]
+    if conflicts:
+        raise ValidationFailed(
+            "published technical results are immutable; no files written; "
+            "different targets: " + ", ".join(conflicts)
+        )
+    missing = {
+        path
+        for path, state in states
+        if state == "missing"
+    }
+    pending = [(path, payload) for path, payload in writes if path in missing]
+    if not pending:
         return
 
-    staged: list[tuple[Path, bytes, Path]] = []
-    created: list[tuple[Path, Path]] = []
-    created_directories: list[Path] = []
-    rollback_failures: list[str] = []
+    staged: list[tuple[Path, bytes, Path, os.stat_result, object]] = []
     try:
-        for path, payload in writes:
+        for path, payload in pending:
             if not path.parent.exists():
                 try:
                     path.parent.mkdir()
                 except FileExistsError:
                     pass
-                else:
-                    created_directories.append(path.parent)
-            with tempfile.NamedTemporaryFile(
-                dir=path.parent,
+            verify_result_parent(root, path)
+            stream = open_staging_file(
+                dir=root,
                 prefix=path.name + ".",
                 suffix=".tmp",
                 delete=False,
-            ) as stream:
-                temporary = Path(stream.name)
-                staged.append((path, payload, temporary))
-                stream.write(payload)
-                stream.flush()
-                os.fsync(stream.fileno())
+            )
+            temporary = Path(stream.name)
+            temporary_stat = os.fstat(stream.fileno())
+            staged.append((path, payload, temporary, temporary_stat, stream))
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+            if not os.path.samestat(root_stat, root.stat(follow_symlinks=False)):
+                raise ValidationFailed(
+                    "repository root changed during technical-result staging"
+                )
 
-        for path, payload, temporary in staged:
-            try:
-                os.link(temporary, path)
-            except FileExistsError:
+        for path, payload, temporary, _, stream in staged:
+            verify_result_parent(root, path)
+            with locked_directory(path.parent) as directory_descriptor:
                 try:
-                    concurrent = path.read_bytes()
+                    hard_link(
+                        temporary,
+                        stream.fileno(),
+                        path,
+                        directory_descriptor,
+                    )
+                except FileExistsError:
+                    concurrent = read_stable_technical_result(
+                        root, path, directory_descriptor
+                    )
+                    if concurrent is None:
+                        raise ValidationFailed(
+                            "technical result target vanished during publication: "
+                            + path.relative_to(root).as_posix()
+                        )
+                    if concurrent != payload:
+                        raise ValidationFailed(
+                            "concurrent technical result differs; no target overwritten: "
+                            + path.relative_to(root).as_posix()
+                        )
                 except OSError as error:
                     raise ValidationFailed(
-                        f"technical result publication failed while inspecting concurrent target "
+                        f"technical result publication failed at "
                         f"{path.relative_to(root).as_posix()}: {error}"
                     ) from error
-                if concurrent != payload:
+
+        for path, payload in writes:
+            verify_result_parent(root, path)
+            with locked_directory(path.parent) as directory_descriptor:
+                current = read_stable_technical_result(
+                    root, path, directory_descriptor
+                )
+                if current is None:
                     raise ValidationFailed(
-                        "concurrent technical result differs; no target overwritten: "
+                        f"technical result publication failed during final verification of "
+                        f"{path.relative_to(root).as_posix()}: target is missing"
+                    )
+                if current != payload:
+                    raise ValidationFailed(
+                        "concurrent technical result changed during publication: "
                         + path.relative_to(root).as_posix()
                     )
-            except OSError as error:
-                raise ValidationFailed(
-                    f"technical result publication failed at {path.relative_to(root).as_posix()}: {error}"
-                ) from error
-            else:
-                created.append((path, temporary))
 
-        for path, payload, _ in staged:
-            try:
-                current = path.read_bytes()
-            except OSError as error:
-                raise ValidationFailed(
-                    f"technical result publication failed during final verification of "
-                    f"{path.relative_to(root).as_posix()}: {error}"
-                ) from error
-            if current != payload:
-                raise ValidationFailed(
-                    "concurrent technical result changed during publication: "
-                    + path.relative_to(root).as_posix()
-                )
-    except Exception as error:
-        for path, temporary in reversed(created):
-            try:
-                temporary_stat = temporary.stat(follow_symlinks=False)
-                target_stat = path.stat(follow_symlinks=False)
-            except FileNotFoundError:
-                continue
-            except OSError as rollback_error:
-                rollback_failures.append(
-                    f"{path.relative_to(root).as_posix()}: {rollback_error}"
-                )
-                continue
-            if not os.path.samestat(temporary_stat, target_stat):
-                continue
-            try:
-                path.unlink()
-            except OSError as rollback_error:
-                rollback_failures.append(
-                    f"{path.relative_to(root).as_posix()}: {rollback_error}"
-                )
-        if rollback_failures:
-            raise ValidationFailed(
-                f"{error}; technical result rollback incomplete: " + "; ".join(rollback_failures)
-            ) from error
+    except BaseException as error:
+        if not isinstance(error, Exception):
+            raise
         if isinstance(error, ValidationFailed):
             raise
         raise ValidationFailed(f"technical result publication failed: {error}") from error
     finally:
-        for _, _, temporary in staged:
-            temporary.unlink(missing_ok=True)
-        for directory in reversed(created_directories):
+        cleanup_failures: list[str] = []
+        for _, _, temporary, temporary_stat, stream in staged:
+            stream.close()
             try:
-                directory.rmdir()
-            except OSError:
-                pass
+                remove_owned_file(temporary, temporary_stat)
+            except OSError as cleanup_error:
+                cleanup_failures.append(f"{temporary.name}: {cleanup_error}")
+        if cleanup_failures:
+            active_error = sys.exc_info()[1]
+            detail = "technical result staging cleanup incomplete: " + "; ".join(
+                cleanup_failures
+            )
+            if active_error is not None:
+                active_error.add_note(detail)
+            else:
+                raise ValidationFailed(detail)
 
 
 def run(root: Path, actor_id: str, actor: str, write: bool = False) -> list[Path]:
@@ -864,6 +912,11 @@ def run(root: Path, actor_id: str, actor: str, write: bool = False) -> list[Path
         raise ValidationFailed("technical validation failed; no files written:\n- " + "\n- ".join(errors))
     if len(writes) != 24:
         raise ValidationFailed(f"expected 24 category results, produced {len(writes)}; no files written")
+    destinations = [path for path, _ in writes]
+    if len(destinations) != len(set(destinations)):
+        raise ValidationFailed(
+            "expected 24 unique category result destinations; no files written"
+        )
     if write:
         publish_results_once(root, writes)
     return [path for path, _ in writes]

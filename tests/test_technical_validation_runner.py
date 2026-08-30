@@ -14,7 +14,14 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from xml.etree import ElementTree as ET
 
-from scripts.run_template_technical_validation import ValidationFailed, pdf_pages, run, sha256
+from scripts.immutable_publication import open_staging_file
+from scripts.run_template_technical_validation import (
+    ValidationFailed,
+    pdf_pages,
+    publish_results_once,
+    run,
+    sha256,
+)
 from scripts.generate_workbook_recalculation_proof import ProofGenerationFailed, generate, load_object
 from scripts.workbook_recalculation import file_sha256 as workbook_file_sha256, workbook_formula_evidence
 
@@ -342,6 +349,42 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
 
             self.assertEqual(snapshot_files(root), published_tree)
 
+    def test_conflicting_duplicate_destinations_are_refused_before_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "evidence" / "duplicate.json"
+
+            with self.assertRaisesRegex(
+                ValidationFailed,
+                "destinations must be unique",
+            ):
+                publish_results_once(
+                    root,
+                    [(target, b"FIRST\n"), (target, b"SECOND\n")],
+                )
+
+            self.assertFalse(target.exists())
+            self.assertFalse(target.parent.exists())
+
+    def test_runner_requires_24_unique_result_destinations_before_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            target = root / "evidence" / "duplicate.json"
+
+            with (
+                patch(
+                    "scripts.run_template_technical_validation.validate_release",
+                    return_value=[(target, b"duplicate\n")] * 8,
+                ),
+                self.assertRaisesRegex(
+                    ValidationFailed,
+                    "24 unique category result destinations",
+                ),
+            ):
+                run(root, self.actor_id, self.actor, write=True)
+
+            self.assertFalse(target.exists())
+
     def test_idempotent_write_does_not_replace_identical_published_results(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self.copy_release_inputs(directory)
@@ -349,11 +392,11 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
 
             with (
                 patch(
-                    "scripts.run_template_technical_validation.tempfile.NamedTemporaryFile",
+                    "scripts.run_template_technical_validation.open_staging_file",
                     side_effect=AssertionError("identical rerun must not stage bytes"),
                 ),
                 patch(
-                    "scripts.run_template_technical_validation.os.link",
+                    "scripts.immutable_publication.os.link",
                     side_effect=AssertionError("identical rerun must not publish bytes"),
                 ),
             ):
@@ -369,17 +412,23 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             race_target: Path | None = None
             real_link = os.link
 
-            def target_appears(source, target):
+            def target_appears(source, target, **kwargs):
                 nonlocal race_target
                 if race_target is None:
                     race_target = Path(target)
+                    if not race_target.is_absolute():
+                        race_target = (
+                            root
+                            / "evidence/template-releases/REL-0001/technical-results"
+                            / race_target
+                        )
                     race_target.write_bytes(winner)
                     raise FileExistsError("injected concurrent target")
-                return real_link(source, target)
+                return real_link(source, target, **kwargs)
 
             with (
                 patch(
-                    "scripts.run_template_technical_validation.os.link",
+                    "scripts.immutable_publication.os.link",
                     side_effect=target_appears,
                 ),
                 self.assertRaisesRegex(ValidationFailed, "concurrent technical result differs"),
@@ -398,17 +447,23 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             winner_stat = None
             real_link = os.link
 
-            def identical_target_appears(source, target):
+            def identical_target_appears(source, target, **kwargs):
                 nonlocal race_target, winner_stat
                 if race_target is None:
                     race_target = Path(target)
+                    if not race_target.is_absolute():
+                        race_target = (
+                            root
+                            / "evidence/template-releases/REL-0001/technical-results"
+                            / race_target
+                        )
                     race_target.write_bytes(Path(source).read_bytes())
                     winner_stat = race_target.stat()
                     raise FileExistsError("injected identical concurrent target")
-                return real_link(source, target)
+                return real_link(source, target, **kwargs)
 
             with patch(
-                "scripts.run_template_technical_validation.os.link",
+                "scripts.immutable_publication.os.link",
                 side_effect=identical_target_appears,
             ):
                 paths = run(root, self.actor_id, self.actor, write=True)
@@ -419,25 +474,137 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             self.assertEqual(race_target.stat().st_ino, winner_stat.st_ino)
             self.assertEqual(race_target.stat().st_mtime_ns, winner_stat.st_mtime_ns)
 
-    def test_second_publication_failure_rolls_back_the_complete_tree(self):
+    def test_mixed_existing_subset_is_reverified_after_missing_publication(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self.copy_release_inputs(directory)
-            before = snapshot_tree(root)
+            paths = run(root, self.actor_id, self.actor, write=True)
+            existing = paths[0]
+            winner = b"concurrent replacement of identical existing result\n"
+            for path in paths[1:]:
+                path.unlink()
+            real_link = os.link
+            replaced = False
+
+            def replace_existing_then_link(source, target, **kwargs):
+                nonlocal replaced
+                if not replaced:
+                    replaced = True
+                    existing.unlink()
+                    existing.write_bytes(winner)
+                return real_link(source, target, **kwargs)
+
+            with (
+                patch(
+                    "scripts.immutable_publication.os.link",
+                    side_effect=replace_existing_then_link,
+                ),
+                self.assertRaisesRegex(
+                    ValidationFailed, "concurrent technical result changed"
+                ),
+            ):
+                run(root, self.actor_id, self.actor, write=True)
+
+            self.assertTrue(replaced)
+            self.assertEqual(existing.read_bytes(), winner)
+
+    def test_staging_path_replacement_cannot_publish_replacement_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            replacement = b"attacker replacement result\n"
+            real_link = os.link
+            replacement_path: Path | None = None
+
+            def replace_source_before_link(source, target, **kwargs):
+                nonlocal replacement_path
+                if os.name == "nt":
+                    replacement_path = Path(source)
+                else:
+                    replacement_path = Path(os.readlink(source))
+                replacement_path.unlink()
+                replacement_path.write_bytes(replacement)
+                return real_link(source, target, **kwargs)
+
+            with (
+                patch(
+                    "scripts.immutable_publication.os.link",
+                    side_effect=replace_source_before_link,
+                ),
+                self.assertRaisesRegex(
+                    ValidationFailed,
+                    "technical result publication failed",
+                ),
+            ):
+                run(root, self.actor_id, self.actor, write=True)
+
+            self.assertEqual(
+                list(
+                    root.glob(
+                        "evidence/template-releases/REL-*/technical-results/*.json"
+                    )
+                ),
+                [],
+            )
+            if os.name == "nt":
+                self.assertIsNotNone(replacement_path)
+                self.assertFalse(replacement_path.exists())
+                self.assertEqual(list(root.glob("*.tmp")), [])
+            else:
+                self.assertIsNotNone(replacement_path)
+                self.assertEqual(replacement_path.read_bytes(), replacement)
+
+    @unittest.skipUnless(os.name == "nt", "Windows sharing semantics")
+    def test_in_place_staging_writer_is_denied_before_result_link(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            real_link = os.link
+
+            def mutate_source_before_link(source, target, **kwargs):
+                with Path(source).open("r+b") as attacker:
+                    attacker.seek(0)
+                    attacker.write(b"attacker replacement result\n")
+                    attacker.truncate()
+                return real_link(source, target, **kwargs)
+
+            with (
+                patch(
+                    "scripts.immutable_publication.os.link",
+                    side_effect=mutate_source_before_link,
+                ),
+                self.assertRaisesRegex(
+                    ValidationFailed,
+                    "technical result publication failed",
+                ),
+            ):
+                run(root, self.actor_id, self.actor, write=True)
+
+            self.assertEqual(
+                list(
+                    root.glob(
+                        "evidence/template-releases/REL-*/technical-results/*.json"
+                    )
+                ),
+                [],
+            )
+            self.assertEqual(list(root.glob("*.tmp")), [])
+
+    def test_second_publication_failure_leaves_recoverable_subset(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
             real_link = os.link
             link_count = 0
             staged_counts: list[int] = []
 
-            def fail_second_link(source, target):
+            def fail_second_link(source, target, **kwargs):
                 nonlocal link_count
                 link_count += 1
                 staged_counts.append(len(list(root.rglob("*.tmp"))))
                 if link_count == 2:
                     raise OSError("injected second publication failure")
-                return real_link(source, target)
+                return real_link(source, target, **kwargs)
 
             with (
                 patch(
-                    "scripts.run_template_technical_validation.os.link",
+                    "scripts.immutable_publication.os.link",
                     side_effect=fail_second_link,
                 ),
                 self.assertRaisesRegex(ValidationFailed, "technical result publication failed"),
@@ -446,9 +613,206 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
 
             self.assertEqual(link_count, 2)
             self.assertEqual(staged_counts, [24, 24])
-            self.assertEqual(snapshot_tree(root), before)
+            partial = list(
+                root.glob("evidence/template-releases/REL-*/technical-results/*.json")
+            )
+            self.assertEqual(len(partial), 1)
+            self.assertEqual(list(root.glob("*.tmp")), [])
 
-    def test_rollback_preserves_concurrent_replacement_of_created_target(self):
+            completed = run(root, self.actor_id, self.actor, write=True)
+            self.assertEqual(len(completed), 24)
+            self.assertTrue(all(path.is_file() for path in completed))
+
+    def test_second_publication_keyboard_interrupt_leaves_recoverable_subset(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            real_link = os.link
+            link_count = 0
+
+            def interrupt_second_link(source, target, **kwargs):
+                nonlocal link_count
+                link_count += 1
+                if link_count == 2:
+                    raise KeyboardInterrupt("injected publication cancellation")
+                return real_link(source, target, **kwargs)
+
+            with (
+                patch(
+                    "scripts.immutable_publication.os.link",
+                    side_effect=interrupt_second_link,
+                ),
+                self.assertRaises(KeyboardInterrupt),
+            ):
+                run(root, self.actor_id, self.actor, write=True)
+
+            self.assertEqual(link_count, 2)
+            partial = list(
+                root.glob("evidence/template-releases/REL-*/technical-results/*.json")
+            )
+            self.assertEqual(len(partial), 1)
+            self.assertEqual(list(root.glob("*.tmp")), [])
+
+            completed = run(root, self.actor_id, self.actor, write=True)
+            self.assertEqual(len(completed), 24)
+            self.assertTrue(all(path.is_file() for path in completed))
+
+    def test_second_link_then_keyboard_interrupt_leaves_recoverable_subset(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            real_link = os.link
+            link_count = 0
+
+            def interrupt_after_second_link(source, target, **kwargs):
+                nonlocal link_count
+                link_count += 1
+                result = real_link(source, target, **kwargs)
+                if link_count == 2:
+                    raise KeyboardInterrupt("injected cancellation after hard link")
+                return result
+
+            with (
+                patch(
+                    "scripts.immutable_publication.os.link",
+                    side_effect=interrupt_after_second_link,
+                ),
+                self.assertRaises(KeyboardInterrupt),
+            ):
+                run(root, self.actor_id, self.actor, write=True)
+
+            self.assertEqual(link_count, 2)
+            partial = list(
+                root.glob("evidence/template-releases/REL-*/technical-results/*.json")
+            )
+            self.assertEqual(len(partial), 2)
+            self.assertEqual(list(root.glob("*.tmp")), [])
+
+            completed = run(root, self.actor_id, self.actor, write=True)
+            self.assertEqual(len(completed), 24)
+            self.assertTrue(all(path.is_file() for path in completed))
+
+    def test_idempotent_write_rejects_byte_identical_preexisting_symlink(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root = self.copy_release_inputs(str(base / "repo"))
+            paths = run(root, self.actor_id, self.actor, write=True)
+            target = paths[0]
+            payload = target.read_bytes()
+            outside = base / "outside-technical-result.json"
+            outside.write_bytes(payload)
+            target.unlink()
+            try:
+                target.symlink_to(outside)
+            except OSError as error:
+                self.skipTest(f"file symlinks are unavailable: {error}")
+
+            with self.assertRaisesRegex(ValidationFailed, "direct regular file"):
+                run(root, self.actor_id, self.actor, write=True)
+
+            self.assertTrue(target.is_symlink())
+            self.assertEqual(outside.read_bytes(), payload)
+
+    def test_concurrent_byte_identical_symlink_is_rejected_without_clobber(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root = self.copy_release_inputs(str(base / "repo"))
+            outside = base / "outside-technical-result.json"
+            race_target: Path | None = None
+            real_link = os.link
+
+            def symlink_target_appears(source, target, **kwargs):
+                nonlocal race_target
+                if race_target is None:
+                    race_target = Path(target)
+                    if not race_target.is_absolute():
+                        race_target = (
+                            root
+                            / "evidence/template-releases/REL-0001/technical-results"
+                            / race_target
+                        )
+                    outside.write_bytes(Path(source).read_bytes())
+                    try:
+                        race_target.symlink_to(outside)
+                    except OSError as error:
+                        self.skipTest(f"file symlinks are unavailable: {error}")
+                    raise FileExistsError("injected identical symlink target")
+                return real_link(source, target, **kwargs)
+
+            with (
+                patch(
+                    "scripts.immutable_publication.os.link",
+                    side_effect=symlink_target_appears,
+                ),
+                self.assertRaisesRegex(ValidationFailed, "direct regular file"),
+            ):
+                run(root, self.actor_id, self.actor, write=True)
+
+            self.assertIsNotNone(race_target)
+            self.assertTrue(race_target.is_symlink())
+            self.assertEqual(race_target.resolve(), outside.resolve())
+
+    def test_out_of_root_result_directory_is_rejected_before_staging(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root = self.copy_release_inputs(str(base / "repo"))
+            outside = base / "outside-results"
+            outside.mkdir()
+            result_directory = (
+                root / "evidence/template-releases/REL-0001/technical-results"
+            )
+            try:
+                result_directory.symlink_to(outside, target_is_directory=True)
+            except OSError as error:
+                self.skipTest(f"directory symlinks are unavailable: {error}")
+
+            with (
+                patch(
+                    "scripts.run_template_technical_validation.open_staging_file",
+                    wraps=open_staging_file,
+                ) as stage,
+                self.assertRaisesRegex(ValidationFailed, "repository root"),
+            ):
+                run(root, self.actor_id, self.actor, write=True)
+
+            stage.assert_not_called()
+            self.assertEqual(list(outside.iterdir()), [])
+
+    def test_parent_swap_during_staging_never_writes_outside_root(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root = self.copy_release_inputs(str(base / "repo"))
+            outside = base / "outside-results"
+            outside.mkdir()
+            result_directory = (
+                root / "evidence/template-releases/REL-0001/technical-results"
+            )
+            real_stage = open_staging_file
+            swapped = False
+
+            def swap_parent_before_stage(*args, **kwargs):
+                nonlocal swapped
+                if not swapped:
+                    swapped = True
+                    result_directory.rmdir()
+                    try:
+                        result_directory.symlink_to(outside, target_is_directory=True)
+                    except OSError as error:
+                        self.skipTest(f"directory symlinks are unavailable: {error}")
+                return real_stage(*args, **kwargs)
+
+            with (
+                patch(
+                    "scripts.run_template_technical_validation.open_staging_file",
+                    side_effect=swap_parent_before_stage,
+                ),
+                self.assertRaisesRegex(ValidationFailed, "repository root"),
+            ):
+                run(root, self.actor_id, self.actor, write=True)
+
+            self.assertTrue(swapped)
+            self.assertEqual(list(outside.iterdir()), [])
+            self.assertEqual(list(root.glob("*.tmp")), [])
+
+    def test_publication_failure_preserves_concurrent_replacement(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self.copy_release_inputs(directory)
             before = snapshot_files(root)
@@ -457,19 +821,25 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             real_link = os.link
             link_count = 0
 
-            def replace_first_then_fail(source, target):
+            def replace_first_then_fail(source, target, **kwargs):
                 nonlocal first_target, link_count
                 link_count += 1
                 if link_count == 1:
                     first_target = Path(target)
-                    return real_link(source, target)
+                    if not first_target.is_absolute():
+                        first_target = (
+                            root
+                            / "evidence/template-releases/REL-0001/technical-results"
+                            / first_target
+                        )
+                    return real_link(source, target, **kwargs)
                 first_target.unlink()
                 first_target.write_bytes(winner)
                 raise OSError("injected failure after concurrent replacement")
 
             with (
                 patch(
-                    "scripts.run_template_technical_validation.os.link",
+                    "scripts.immutable_publication.os.link",
                     side_effect=replace_first_then_fail,
                 ),
                 self.assertRaisesRegex(ValidationFailed, "technical result publication failed"),
