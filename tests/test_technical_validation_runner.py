@@ -1,5 +1,6 @@
 import base64
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -35,6 +36,15 @@ def snapshot_files(root: Path) -> dict[str, bytes]:
         path.relative_to(root).as_posix(): path.read_bytes()
         for path in sorted(root.rglob("*"))
         if path.is_file()
+    }
+
+
+def snapshot_tree(root: Path) -> dict[str, tuple[str, bytes | None]]:
+    return {
+        path.relative_to(root).as_posix(): (
+            ("directory", None) if path.is_dir() else ("file", path.read_bytes())
+        )
+        for path in sorted(root.rglob("*"))
     }
 
 
@@ -337,11 +347,139 @@ class TechnicalValidationRunnerTests(unittest.TestCase):
             root = self.copy_release_inputs(directory)
             first = run(root, self.actor_id, self.actor, write=True)
 
-            with patch("scripts.run_template_technical_validation.os.replace") as replace:
+            with (
+                patch(
+                    "scripts.run_template_technical_validation.tempfile.NamedTemporaryFile",
+                    side_effect=AssertionError("identical rerun must not stage bytes"),
+                ),
+                patch(
+                    "scripts.run_template_technical_validation.os.link",
+                    side_effect=AssertionError("identical rerun must not publish bytes"),
+                ),
+            ):
                 second = run(root, self.actor_id, self.actor, write=True)
 
             self.assertEqual(second, first)
-            replace.assert_not_called()
+
+    def test_target_appearance_during_first_publication_is_not_overwritten(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            before = snapshot_files(root)
+            winner = b"concurrent technical-result winner\n"
+            race_target: Path | None = None
+            real_link = os.link
+
+            def target_appears(source, target):
+                nonlocal race_target
+                if race_target is None:
+                    race_target = Path(target)
+                    race_target.write_bytes(winner)
+                    raise FileExistsError("injected concurrent target")
+                return real_link(source, target)
+
+            with (
+                patch(
+                    "scripts.run_template_technical_validation.os.link",
+                    side_effect=target_appears,
+                ),
+                self.assertRaisesRegex(ValidationFailed, "concurrent technical result differs"),
+            ):
+                run(root, self.actor_id, self.actor, write=True)
+
+            self.assertIsNotNone(race_target)
+            expected = dict(before)
+            expected[race_target.relative_to(root).as_posix()] = winner
+            self.assertEqual(snapshot_files(root), expected)
+
+    def test_byte_identical_target_appearance_is_accepted_without_clobber(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            race_target: Path | None = None
+            winner_stat = None
+            real_link = os.link
+
+            def identical_target_appears(source, target):
+                nonlocal race_target, winner_stat
+                if race_target is None:
+                    race_target = Path(target)
+                    race_target.write_bytes(Path(source).read_bytes())
+                    winner_stat = race_target.stat()
+                    raise FileExistsError("injected identical concurrent target")
+                return real_link(source, target)
+
+            with patch(
+                "scripts.run_template_technical_validation.os.link",
+                side_effect=identical_target_appears,
+            ):
+                paths = run(root, self.actor_id, self.actor, write=True)
+
+            self.assertIsNotNone(race_target)
+            self.assertIsNotNone(winner_stat)
+            self.assertEqual(len(paths), 24)
+            self.assertEqual(race_target.stat().st_ino, winner_stat.st_ino)
+            self.assertEqual(race_target.stat().st_mtime_ns, winner_stat.st_mtime_ns)
+
+    def test_second_publication_failure_rolls_back_the_complete_tree(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            before = snapshot_tree(root)
+            real_link = os.link
+            link_count = 0
+            staged_counts: list[int] = []
+
+            def fail_second_link(source, target):
+                nonlocal link_count
+                link_count += 1
+                staged_counts.append(len(list(root.rglob("*.tmp"))))
+                if link_count == 2:
+                    raise OSError("injected second publication failure")
+                return real_link(source, target)
+
+            with (
+                patch(
+                    "scripts.run_template_technical_validation.os.link",
+                    side_effect=fail_second_link,
+                ),
+                self.assertRaisesRegex(ValidationFailed, "technical result publication failed"),
+            ):
+                run(root, self.actor_id, self.actor, write=True)
+
+            self.assertEqual(link_count, 2)
+            self.assertEqual(staged_counts, [24, 24])
+            self.assertEqual(snapshot_tree(root), before)
+
+    def test_rollback_preserves_concurrent_replacement_of_created_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.copy_release_inputs(directory)
+            before = snapshot_files(root)
+            winner = b"concurrent replacement after first publication\n"
+            first_target: Path | None = None
+            real_link = os.link
+            link_count = 0
+
+            def replace_first_then_fail(source, target):
+                nonlocal first_target, link_count
+                link_count += 1
+                if link_count == 1:
+                    first_target = Path(target)
+                    return real_link(source, target)
+                first_target.unlink()
+                first_target.write_bytes(winner)
+                raise OSError("injected failure after concurrent replacement")
+
+            with (
+                patch(
+                    "scripts.run_template_technical_validation.os.link",
+                    side_effect=replace_first_then_fail,
+                ),
+                self.assertRaisesRegex(ValidationFailed, "technical result publication failed"),
+            ):
+                run(root, self.actor_id, self.actor, write=True)
+
+            self.assertIsNotNone(first_target)
+            expected = dict(before)
+            expected[first_target.relative_to(root).as_posix()] = winner
+            self.assertEqual(snapshot_files(root), expected)
 
     def test_committed_results_match_current_production_runner(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -721,6 +721,133 @@ def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) 
     return writes
 
 
+def publish_results_once(root: Path, writes: list[tuple[Path, bytes]]) -> None:
+    """Publish one complete result set without replacing any target path."""
+
+    states: list[tuple[Path, str]] = []
+    for path, payload in writes:
+        try:
+            existing = path.read_bytes()
+        except FileNotFoundError:
+            states.append((path, "missing"))
+        except OSError as error:
+            raise ValidationFailed(
+                f"cannot inspect technical result target {path.relative_to(root).as_posix()}: {error}; no files written"
+            ) from error
+        else:
+            states.append((path, "identical" if existing == payload else "different"))
+
+    if any(state != "missing" for _, state in states):
+        conflicts = [
+            path.relative_to(root).as_posix()
+            for path, state in states
+            if state != "identical"
+        ]
+        if conflicts:
+            raise ValidationFailed(
+                "published technical results are immutable; no files written; "
+                "missing or different targets: " + ", ".join(conflicts)
+            )
+        return
+
+    staged: list[tuple[Path, bytes, Path]] = []
+    created: list[tuple[Path, Path]] = []
+    created_directories: list[Path] = []
+    rollback_failures: list[str] = []
+    try:
+        for path, payload in writes:
+            if not path.parent.exists():
+                try:
+                    path.parent.mkdir()
+                except FileExistsError:
+                    pass
+                else:
+                    created_directories.append(path.parent)
+            with tempfile.NamedTemporaryFile(
+                dir=path.parent,
+                prefix=path.name + ".",
+                suffix=".tmp",
+                delete=False,
+            ) as stream:
+                temporary = Path(stream.name)
+                staged.append((path, payload, temporary))
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+
+        for path, payload, temporary in staged:
+            try:
+                os.link(temporary, path)
+            except FileExistsError:
+                try:
+                    concurrent = path.read_bytes()
+                except OSError as error:
+                    raise ValidationFailed(
+                        f"technical result publication failed while inspecting concurrent target "
+                        f"{path.relative_to(root).as_posix()}: {error}"
+                    ) from error
+                if concurrent != payload:
+                    raise ValidationFailed(
+                        "concurrent technical result differs; no target overwritten: "
+                        + path.relative_to(root).as_posix()
+                    )
+            except OSError as error:
+                raise ValidationFailed(
+                    f"technical result publication failed at {path.relative_to(root).as_posix()}: {error}"
+                ) from error
+            else:
+                created.append((path, temporary))
+
+        for path, payload, _ in staged:
+            try:
+                current = path.read_bytes()
+            except OSError as error:
+                raise ValidationFailed(
+                    f"technical result publication failed during final verification of "
+                    f"{path.relative_to(root).as_posix()}: {error}"
+                ) from error
+            if current != payload:
+                raise ValidationFailed(
+                    "concurrent technical result changed during publication: "
+                    + path.relative_to(root).as_posix()
+                )
+    except Exception as error:
+        for path, temporary in reversed(created):
+            try:
+                temporary_stat = temporary.stat(follow_symlinks=False)
+                target_stat = path.stat(follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            except OSError as rollback_error:
+                rollback_failures.append(
+                    f"{path.relative_to(root).as_posix()}: {rollback_error}"
+                )
+                continue
+            if not os.path.samestat(temporary_stat, target_stat):
+                continue
+            try:
+                path.unlink()
+            except OSError as rollback_error:
+                rollback_failures.append(
+                    f"{path.relative_to(root).as_posix()}: {rollback_error}"
+                )
+        if rollback_failures:
+            raise ValidationFailed(
+                f"{error}; technical result rollback incomplete: " + "; ".join(rollback_failures)
+            ) from error
+        if isinstance(error, ValidationFailed):
+            raise
+        raise ValidationFailed(f"technical result publication failed: {error}") from error
+    finally:
+        for _, _, temporary in staged:
+            temporary.unlink(missing_ok=True)
+        for directory in reversed(created_directories):
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
+
+
 def run(root: Path, actor_id: str, actor: str, write: bool = False) -> list[Path]:
     root = root.resolve()
     if not actor_id.strip() or not actor.strip():
@@ -738,34 +865,7 @@ def run(root: Path, actor_id: str, actor: str, write: bool = False) -> list[Path
     if len(writes) != 24:
         raise ValidationFailed(f"expected 24 category results, produced {len(writes)}; no files written")
     if write:
-        existing_targets = [path for path, _ in writes if path.exists()]
-        if existing_targets:
-            conflicts: list[str] = []
-            for path, payload in writes:
-                if not path.is_file():
-                    conflicts.append(path.relative_to(root).as_posix())
-                    continue
-                try:
-                    identical = path.read_bytes() == payload
-                except OSError:
-                    identical = False
-                if not identical:
-                    conflicts.append(path.relative_to(root).as_posix())
-            if conflicts:
-                raise ValidationFailed(
-                    "published technical results are immutable; no files written; "
-                    "missing or different targets: " + ", ".join(conflicts)
-                )
-            return [path for path, _ in writes]
-        for path, payload in writes:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(dir=path.parent, prefix=path.name + ".", suffix=".tmp", delete=False) as stream:
-                temporary = Path(stream.name)
-                stream.write(payload)
-            try:
-                os.replace(temporary, path)
-            finally:
-                temporary.unlink(missing_ok=True)
+        publish_results_once(root, writes)
     return [path for path, _ in writes]
 
 
