@@ -15,6 +15,7 @@ The repository is not a warehouse of old submissions. Prior artifacts enter firs
 - `library/foundations/` — reviewed cards pointing to strong prior foundations and known anti-patterns.
 - `library/catalog.json` and `library/releases/` — exact-version discovery and hash-bound release records.
 - `library/templates/` — sanitized, fact-free native templates; released entries remain immutable.
+- `docs/EXPERIMENTAL_CRAFT_LANES.md` — optional operator UI / schematic lanes that must not enter a submission package.
 - `scripts/inventory_artifacts.py` — read-only structural inventory for DOCX, XLSX, PDF, EML, CSV, and ZIP packages.
 - `scripts/validate_library.py` — canonical fail-closed validator for cards, blueprints, templates, evidence, releases, and catalog bindings.
 - `scripts/run_template_technical_validation.py` — deterministic category-specific release checks; the assembler cannot manufacture a passing result.

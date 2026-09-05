@@ -41,3 +41,4 @@ Repository release does not imply public publication or downstream installation.
 - Apply versioned design patterns to Sub-005 and Sub-007.
 - Keep Sub-006 frozen unless a submission-blocking defect requires a scoped repair.
 - Gate: the submission's own manifest, calibration, package, prompt, rubric, and iteration controls remain authoritative.
+- Optional operator craft (dock UI, packet schematics) is recorded in [`EXPERIMENTAL_CRAFT_LANES.md`](EXPERIMENTAL_CRAFT_LANES.md). It is not an adoption step and must not restyle frozen packets.
