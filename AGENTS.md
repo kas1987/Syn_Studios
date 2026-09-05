@@ -14,6 +14,7 @@ Syn Studios is the source-first design system and pattern library for authorized
 - `scripts/` owns deterministic inspection and validation.
 - `docs/DOCUMENT_STACK.md` owns the local document-toolchain contract.
 - `tests/` proves repository invariants.
+- `docs/EXPERIMENTAL_CRAFT_LANES.md` records optional operator UI and schematic lanes. It does not change the artifact contract or submission freeze rules.
 
 Do not duplicate a rule across these surfaces. Link to the owning source.
 
