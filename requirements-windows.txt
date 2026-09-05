@@ -1,2 +1,2 @@
 # Optional Windows-only automation fallback for installed Microsoft Office.
-pywin32==311
+pywin32==312
