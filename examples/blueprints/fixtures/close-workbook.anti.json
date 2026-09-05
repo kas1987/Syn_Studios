@@ -1,0 +1,1 @@
+{"fixture_version":"1.0.0","archetype":"close_workbook","expected":"fail","base_blueprint":"examples/blueprints/BP-0001.internal-close-workbook.json","mutations":[{"op":"replace","path":"/proof_gates/3/applicable","value":false},{"op":"replace","path":"/proof_gates/3/procedure","value":"Skip calculation review."}]}

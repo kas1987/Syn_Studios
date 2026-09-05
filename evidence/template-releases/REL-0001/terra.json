@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "record_id": "EVID-TERRA-REL-0001",
+  "record_type": "terra_review",
+  "release_id": "REL-0001",
+  "template_id": "TMPL-0001",
+  "version": "1.0.0",
+  "descriptor_sha256": "642d3c4d81d898667606140d4f50ca0c040f66c2bf602312bc57a40aea318c7c",
+  "native_asset_sha256s": [
+    "2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66"
+  ],
+  "verdict": "USABILITY_PASS",
+  "actor_id": "terra-usability-reviewer-2026-08-29",
+  "actor": "Terra usability reviewer",
+  "observations": [
+    "Source footprint: the eight sheets separate close control, transaction population, mapping, reconciliation, entries, prior-period context, exceptions, and checks into a plausible internal close workflow rather than a thin answer sheet.",
+    "Render and readability: fresh LibreOffice conversion preserved the native hash and produced eight landscape pages; visual inspection of every release-owned page found readable headers, input regions, status cells, and authority warnings without clipping or overflow.",
+    "Slot usability and consumer fit: four required identity and period slots are prominent on Close_Control, while typed table contracts and explicit readiness checks give ANNA and generation consumers deterministic points for population and validation.",
+    "Scale and CSV behavior: the executable 30-row CSV arm rebuilt SourceDataTable from A4:H29 to A4:H34, propagated dependent formulas through row 34, moved the out-of-capacity guard to row 35, and refreshed the print area and render hashes.",
+    "False-authority risk is controlled because empty, incomplete, unmapped, unbalanced, and unresolved populations do not yield model readiness, and the workbook expressly states that a PASS check is not approval or release evidence.",
+    "Realism limit: the released asset is intentionally a clean fact-free scaffold; workflow-specific row diversity and bounded working residue must be supplied by an authorized instantiation and revalidated at its actual scale."
+  ],
+  "artifacts": [
+    {
+      "path": "evidence/template-releases/REL-0001/render/internal-close-reconciliation.pdf",
+      "sha256": "5a959e1795b560a9d9908f0c374aebcfe000c675b6b1f3df710fd49d0f225346",
+      "media_type": "application/pdf",
+      "category": "render"
+    },
+    {
+      "path": "evidence/template-releases/REL-0001/terra-proof.txt",
+      "sha256": "f631d4d62b95cb142adbeb72b58820b1b94b25cdcc87d64e1345107d9f40ae1b",
+      "media_type": "text/plain",
+      "category": "computational"
+    }
+  ],
+  "summary": "USABILITY_PASS: TMPL-0001 is a readable, fail-closed close-workbook scaffold with a proven CSV expansion path. Its reference capacity is not a diversity ceiling; larger or richer authorized populations require the declared rebuild, recalculation, leakage, and fresh-render gates."
+}

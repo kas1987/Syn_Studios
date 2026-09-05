@@ -1,0 +1,5 @@
+REL-0001 | TMPL-0001 | computational
+Descriptor SHA-256: 642d3c4d81d898667606140d4f50ca0c040f66c2bf602312bc57a40aea318c7c
+Native asset SHA-256: 2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66
+
+Terra independently recalculated the workbook gates and visually inspected all eight release-owned rendered sheets. The empty scaffold remains NOT READY. The 30-row CSV arm expands SourceDataTable through row 34, propagates formulas and print boundaries, moves the out-of-capacity guard to row 35, and still refuses readiness until mapping and reconciliation inputs are complete.

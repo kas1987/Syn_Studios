@@ -1,13 +1,21 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "blueprint_id": "BP-0003",
+  "archetype": "email_chain",
   "name": "Operational issue and attachment-correction email chain",
   "artifact_type": "eml",
+  "foundation_lineage": [{
+    "card_id": "FOUND-0008", "card_sha256": "7d6e69556cb4ab76dd9da6ea8acd8797c393f5a57ba19a041d23b8afbb38c304", "reviewed_source_sha256": "9b662db862a533f30c0e789f6c4d6c160e6f19bbff5e067dd18096f86b52ac7e", "use_mode": "reviewed_pattern",
+    "patterns_used": ["Use a controlled two-page form with explicit lifecycle, approvals, implementation, distribution, optional attachments, and retention metadata."],
+    "prohibited_content_acknowledged": true,
+    "transformation_boundary": "Reuse only the lifecycle, distribution, attachment, and retention control concepts; do not reproduce the reviewed form, its layout, content, identities, or approval evidence."
+  }],
   "producer": "Operations manager, analyst, and external counterparty",
   "purpose": "Coordinate an operational exception, circulate support, correct one attachment, and leave a bounded open item.",
   "medium": "Native MIME email thread with ordinary attachments",
   "lifecycle": "Sent and received thread retained in the project file",
-  "authority": "contextual",
+  "authority": {"primary_class": "contextual", "governing_scope": "Records who communicated an exception, correction, attachment, and open action.", "non_governing_scope": "Does not turn correspondence into approval or replace the attached governing record."},
+  "source_boundary": {"authorized_inputs": ["Approved fictional-world participants, events, and attachments", "Role-specific knowledge available at each message time"], "excluded_inputs": ["Facts unknown to the sender at message time", "Private task answers and generator notes"], "conflict_resolution": "Attachments govern their own contents; later corrections supersede earlier attachments only when the thread states that boundary."},
   "footprint": {
     "target": "6-12 messages with 2-4 attachments",
     "natural_depth": [
@@ -16,8 +24,10 @@
       "Attachment reference and corrected attachment",
       "Internal shorthand and external formal reply",
       "One unresolved owner and due date"
-    ]
+    ],
+    "source_owned_rationale": "Message and attachment counts arise from request, incomplete response, correction, coordination, and retention events in the operational lifecycle."
   },
+  "handling_history": {"mode": "present", "sequence": ["Issue reported with initial support", "Participants exchange partial responses", "Corrected attachment circulated", "Open item assigned and thread retained"]},
   "complexity_layers": [
     {"layer": "core", "features": ["Authentic headers", "Thread order", "Attachment correspondence"]},
     {"layer": "operational_depth", "features": ["Partial replies", "Forwarding", "Role-specific vocabulary"]},
@@ -25,6 +35,14 @@
     {"layer": "handling_history", "features": ["One printed retained copy only if separately manifested"]}
   ],
   "prohibited": ["Identical voice across senders", "Perfectly complete reply from every participant", "Attachment facts absent from the attachments", "Thread that directly states the task answer"],
-  "proof_gates": ["Parse MIME structure", "Open every attachment", "Check chronological and role knowledge boundaries", "Confirm no duplicate or impossible message IDs"]
+  "proof_gates": [
+    {"category": "core_integrity", "applicable": true, "procedure": "Parse MIME structure and verify thread order, headers, attachments, and correction state."},
+    {"category": "render", "applicable": true, "procedure": "Render every message body and open and inspect every attachment."},
+    {"category": "metadata", "applicable": true, "procedure": "Inspect MIME headers, message identifiers, timestamps, encodings, and attachment names."},
+    {"category": "computational", "applicable": false, "procedure": "Confirm the email body contains no material calculation contract.", "not_applicable_rationale": "Any calculations are owned and validated by separately manifested attachments."},
+    {"category": "provenance", "applicable": true, "procedure": "Trace participants, attachment versions, and known facts to the approved world manifest."},
+    {"category": "leakage", "applicable": true, "procedure": "Scan bodies, quoted text, headers, and attachments for prohibited residue."},
+    {"category": "authority_separation", "applicable": true, "procedure": "Distinguish contextual correspondence, corrected support, and any governing attachment."},
+    {"category": "anti_filler", "applicable": true, "procedure": "Map each message and attachment to a credible operational communication event."}
+  ]
 }
-

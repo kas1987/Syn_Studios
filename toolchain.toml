@@ -1,0 +1,56 @@
+schema_version = 1
+
+[python]
+minimum = "3.12"
+
+[python.packages]
+jsonschema = "4.26.0"
+openpyxl = "3.1.5"
+pypdf = "6.10.0"
+pdfplumber = "0.11.9"
+pandas = "3.0.1"
+python-docx = "1.2.0"
+reportlab = "4.4.9"
+XlsxWriter = "3.2.9"
+Pillow = "12.3.0"
+python-pptx = "1.0.2"
+pypdfium2 = "5.13.0"
+pywin32 = "311"
+
+[executables.accepted]
+node = "v24.19.0"
+pnpm = "11.19.0"
+git = "git version 2.53.0"
+pdfinfo = "pdfinfo version 26.05.0"
+pdftoppm = "pdftoppm version 26.05.0"
+libreoffice = "LibreOffice 26.2.5.2"
+artifact_tool = "2.8.52"
+microsoft_office = "16.0.17932.20910"
+
+[profiles.core]
+python_packages = ["jsonschema"]
+executables = []
+
+[profiles.analysis]
+python_packages = ["jsonschema", "openpyxl", "pypdf", "pdfplumber", "pandas", "python-docx", "reportlab", "XlsxWriter", "Pillow", "python-pptx", "pypdfium2"]
+executables = []
+
+[profiles.render]
+python_packages = ["Pillow", "pypdf"]
+executables = ["pdfinfo", "pdftoppm", "libreoffice"]
+
+[profiles.generation]
+python_packages = ["openpyxl", "python-docx", "reportlab", "Pillow"]
+executables = ["node", "artifact_tool"]
+
+[profiles.dev]
+python_packages = ["jsonschema"]
+executables = ["node", "pnpm", "git"]
+
+[profiles.office]
+python_packages = ["pywin32"]
+executables = ["excel", "word", "powerpoint"]
+
+[profiles.all]
+python_packages = ["jsonschema", "openpyxl", "pypdf", "pdfplumber", "pandas", "python-docx", "reportlab", "XlsxWriter", "Pillow", "python-pptx", "pypdfium2", "pywin32"]
+executables = ["pdfinfo", "pdftoppm", "libreoffice", "node", "pnpm", "git", "artifact_tool", "excel", "word", "powerpoint"]

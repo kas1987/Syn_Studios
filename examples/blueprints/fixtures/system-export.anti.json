@@ -1,0 +1,1 @@
+{"fixture_version":"1.0.0","archetype":"system_export","expected":"fail","base_blueprint":"examples/blueprints/BP-0007.system-export-register.json","mutations":[{"op":"replace","path":"/footprint/source_owned_rationale","value":"Meet a row quota."}]}

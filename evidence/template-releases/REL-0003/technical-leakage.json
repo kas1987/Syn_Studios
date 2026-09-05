@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0.0",
+  "record_id": "EVID-REL-0003-TECH-LEAKAGE",
+  "record_type": "technical_validation",
+  "release_id": "REL-0003",
+  "template_id": "TMPL-0003",
+  "version": "1.0.0",
+  "descriptor_sha256": "850e4665fc96a18aab826296243c6f86e0af3833f1dea60547a62049e2559dfe",
+  "native_asset_sha256s": [
+    "8acaf754686fa23b1bbc59d229094d6444b54224ea9a0dae53c50086b8c5bf99"
+  ],
+  "verdict": "VALIDATION_PASS",
+  "actor_id": "syn-validation-runner-2026-08-29",
+  "actor": "Syn Studios validation runner",
+  "observations": [
+    "Deterministic leakage checks inspected the frozen descriptor and all 1 bound native assets."
+  ],
+  "artifacts": [
+    {
+      "path": "evidence/template-releases/REL-0003/technical-results/leakage.json",
+      "sha256": "3f1bc424714ddc9bdddf2e94847f440ae509c394154235648a0a3b4d6ed7e897",
+      "media_type": "application/json",
+      "category": "leakage"
+    }
+  ],
+  "summary": "Category-specific leakage validation completed against the frozen release inputs.",
+  "categories": [
+    "leakage"
+  ],
+  "procedures": {
+    "leakage": "Scan bodies, quoted text, headers, and attachments for prohibited residue."
+  }
+}

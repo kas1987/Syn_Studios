@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0.0",
+  "result_type": "template_technical_validation_result",
+  "result_id": "TECHRES-REL-0001-AUTHORITY-SEPARATION",
+  "release_id": "REL-0001",
+  "template_id": "TMPL-0001",
+  "version": "1.0.0",
+  "category": "authority_separation",
+  "result_artifact_category": "authority_separation",
+  "descriptor_sha256": "642d3c4d81d898667606140d4f50ca0c040f66c2bf602312bc57a40aea318c7c",
+  "native_asset_sha256s": [
+    "2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66"
+  ],
+  "applicable": true,
+  "verdict": "VALIDATION_PASS",
+  "procedure": "Confirm supporting work is distinct from governing ledger and approvals.",
+  "actor_id": "syn-validation-runner-2026-08-29",
+  "actor": "Syn Studios validation runner",
+  "machine_proof": null,
+  "checks": [
+    {
+      "id": "authority_separation:declared-boundary",
+      "status": "PASS",
+      "detail": "Descriptor authority supporting matches the blueprint and retains explicit governing, non-governing, and knowledge boundaries."
+    },
+    {
+      "id": "authority_separation:native-content",
+      "status": "PASS",
+      "detail": "Extracted native content preserves 5 distinct authority-state markers: approval, contextual, question, superseded, supporting."
+    }
+  ],
+  "rendered_outputs": [],
+  "observations": [
+    "Deterministic authority_separation checks inspected the frozen descriptor and all 1 bound native assets."
+  ],
+  "summary": "Category-specific authority_separation validation completed against the frozen release inputs."
+}

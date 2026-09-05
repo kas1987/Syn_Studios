@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0.0",
+  "record_id": "EVID-REL-0001-SANITIZATION",
+  "record_type": "sanitization",
+  "release_id": "REL-0001",
+  "template_id": "TMPL-0001",
+  "version": "1.0.0",
+  "descriptor_sha256": "642d3c4d81d898667606140d4f50ca0c040f66c2bf602312bc57a40aea318c7c",
+  "native_asset_sha256s": [
+    "2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66"
+  ],
+  "verdict": "SANITIZATION_PASS",
+  "actor_id": "syn-sanitization-verifier-b8efe82",
+  "actor": "Syn Studios sanitization verifier",
+  "observations": [
+    "Sanitization evidence binds the released descriptor and every native asset hash."
+  ],
+  "artifacts": [
+    {
+      "path": "evidence/template-releases/REL-0001/proofs/sanitization.txt",
+      "sha256": "0bd974fa73891b16c969c510d9325b4e3ad4e15d668350bcbaccac319fa0c924",
+      "media_type": "text/plain",
+      "category": "leakage"
+    }
+  ],
+  "summary": "Hash-bound sanitization approval for this exact template version."
+}

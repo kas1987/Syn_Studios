@@ -1,0 +1,282 @@
+{
+  "schema_version": "1.0.0",
+  "profile_id": "syn-studios-consumer",
+  "profile_version": "1.0.0",
+  "status": "stable",
+  "interface": {
+    "operations": [
+      "discover",
+      "select",
+      "instantiate",
+      "validate"
+    ],
+    "resolver": "integrations/query_catalog.py",
+    "resolver_modes": [
+      "discover",
+      "select",
+      "instantiate",
+      "validate"
+    ],
+    "catalog_path": "library/catalog.json",
+    "release_evidence_root": "library/releases",
+    "reference_paths": [
+      "SYNTHETIC_DESIGN.md",
+      "skill/SKILL.md",
+      "skill/references/artifact-archetypes.md",
+      "skill/references/package-composition.md",
+      "docs/DOCUMENT_STACK.md",
+      "examples/blueprints",
+      "library/foundations"
+    ]
+  },
+  "authority": {
+    "durable_design": "SYNTHETIC_DESIGN.md",
+    "agent_routing": "skill/SKILL.md",
+    "resource_discovery": "library/catalog.json",
+    "release_evidence": "library/releases",
+    "world_facts": "consumer_package",
+    "manifest_and_provenance": "consumer_package",
+    "generation_approval": "consumer_workflow",
+    "downstream_acceptance": "downstream_reviewer",
+    "adapter_may_authorize_writes": false,
+    "adapter_may_claim_downstream_completion": false
+  },
+  "data_classes": {
+    "library_safe": [
+      "foundation_metadata",
+      "blueprint_constraints",
+      "sanitized_template_bytes",
+      "release_evidence",
+      "validation_profiles"
+    ],
+    "package_only": [
+      "world_facts",
+      "task_prompt",
+      "answer_key",
+      "private_source_paths",
+      "package_manifest",
+      "template_binding"
+    ],
+    "package_only_transport": "reference_or_ephemeral_input",
+    "persist_package_only_under_library": false
+  },
+  "operations": {
+    "discover": {
+      "reads": [
+        "library/catalog.json"
+      ],
+      "filters": [
+        "consumer_id",
+        "artifact_type",
+        "blueprint_id",
+        "producer_role",
+        "medium",
+        "lifecycle",
+        "authority",
+        "capabilities",
+        "release_status"
+      ],
+      "returns": "catalog_entries",
+      "release_policy": "released_or_deprecated_exact_versions",
+      "side_effects": false
+    },
+    "select": {
+      "accepts": [
+        "consumer_id",
+        "catalog_entries",
+        "provenance_constraints",
+        "world_requirements",
+        "required_capabilities"
+      ],
+      "requires": [
+        "canonical_consumer_id",
+        "canonical_repository_validation",
+        "release_status_is_selectable",
+        "blueprint_compatible",
+        "capabilities_satisfy_request",
+        "provenance_boundary_compatible"
+      ],
+      "default_mode": "plan_without_file_writes",
+      "materialization_policy": "explicit_flag_after_all_authorization_and_release_gates",
+      "returns": "selected_template_release_or_no_match",
+      "version_policy": "exact_only_no_floating_aliases",
+      "no_match_behavior": "return_constraints_and_stop",
+      "side_effects": false
+    },
+    "instantiate": {
+      "accepts": [
+        "consumer_id",
+        "selected_template_release",
+        "approved_package_manifest",
+        "package_owned_world_facts",
+        "provenance_card",
+        "output_location"
+      ],
+      "requires": [
+        "canonical_consumer_id",
+        "canonical_repository_validation",
+        "nonempty_provenance_reference",
+        "selection_constraints_rechecked",
+        "consumer_write_authorization",
+        "manifest_approval",
+        "source_authorization",
+        "document_stack_when_artifact_bytes_change"
+      ],
+      "returns": "package_local_template_binding_and_candidate_artifact",
+      "must_not_write": [
+        "library/templates",
+        "library/releases",
+        "library/catalog.json"
+      ],
+      "side_effects": true
+    },
+    "validate": {
+      "accepts": [
+        "consumer_id",
+        "exact_selectable_template_id",
+        "exact_selectable_version",
+        "canonical_catalog_entry"
+      ],
+      "required_check_families": [
+        "canonical_repository_validation",
+        "catalog_descriptor_and_native_asset_binding",
+        "blueprint_binding",
+        "release_record_and_typed_evidence_binding",
+        "render_evidence_binding_when_required"
+      ],
+      "returns": "exact_release_identity_and_bound_hashes",
+      "implementation": "release_only_canonical_repository_validation_plus_exact_release_binding",
+      "outcomes": [
+        "pass",
+        "error"
+      ],
+      "failure_contract": "status_error_on_stderr_exit_2",
+      "candidate_artifact_validation": "owned_by_consumer_package_review_workflow",
+      "side_effects": false
+    }
+  },
+  "holodeck_mapping": {
+    "package_mode": {
+      "target": "template_binding.package_mode",
+      "persistence": "package_only"
+    },
+    "provenance_card.author_or_source": {
+      "target": "blueprint.producer_constraint"
+    },
+    "provenance_card.source_knows": {
+      "target": "template_binding.allowed_knowledge",
+      "persistence": "package_only"
+    },
+    "provenance_card.source_does_not_know": {
+      "target": "template_binding.prohibited_knowledge",
+      "persistence": "package_only"
+    },
+    "provenance_card.tool_or_system": {
+      "target": "blueprint.medium_constraint"
+    },
+    "provenance_card.realistic_imperfections": {
+      "target": "template_binding.realism_plan",
+      "persistence": "package_only"
+    },
+    "provenance_card.generation_approach": {
+      "target": "template_binding.generation_approach",
+      "persistence": "package_only"
+    },
+    "provenance_card.realism_checks": {
+      "target": "validation_profile.required_checks"
+    },
+    "provenance_card.difficulty_preservation": {
+      "target": "template_binding.prohibited_outputs",
+      "persistence": "package_only"
+    },
+    "world_facts": {
+      "target": "template_binding.instance_inputs",
+      "persistence": "package_only",
+      "template_storage": "forbidden"
+    },
+    "seed_conventions": {
+      "target": "template_binding.presentation_constraints",
+      "persistence": "package_only"
+    }
+  },
+  "exploration_compatibility": {
+    "artifact_map": {
+      "fields": [
+        "path",
+        "artifact_role",
+        "producer_or_source_system",
+        "authority",
+        "lifecycle",
+        "dependencies",
+        "observed_or_inferred",
+        "evidence_references"
+      ]
+    },
+    "world_brief": {
+      "sections": [
+        "executive_summary",
+        "world_mode",
+        "historical_prompt",
+        "artifact_groups",
+        "authoritative_sources",
+        "entities_and_relationships",
+        "timeline_and_state_changes",
+        "key_facts_values_and_identifiers",
+        "existing_complexity",
+        "weak_points_and_leakage_risks",
+        "reuse_potential",
+        "open_questions",
+        "evidence_index"
+      ],
+      "facts_remain_package_owned": true
+    }
+  },
+  "consumers": [
+    {
+      "consumer_id": "anna",
+      "modes": [
+        "discover",
+        "select",
+        "instantiate",
+        "validate"
+      ],
+      "handoff": "action_free_until_anna_and_holodeck_gates_pass",
+      "never_satisfies": [
+        "manifest_approval",
+        "write_authorization",
+        "agent_assignment_validation",
+        "downstream_acceptance"
+      ]
+    },
+    {
+      "consumer_id": "holodeck-file-generation",
+      "modes": [
+        "discover",
+        "select",
+        "instantiate",
+        "validate",
+        "plan",
+        "create",
+        "review",
+        "quick_orientation",
+        "deep_world_brief",
+        "artifact_map",
+        "reuse_scan",
+        "leakage_audit"
+      ],
+      "handoff": "provenance_card_package_local_template_binding_artifact_map_or_world_brief"
+    },
+    {
+      "consumer_id": "human-artifact-realism",
+      "modes": [
+        "discover",
+        "select",
+        "validate",
+        "plan",
+        "create",
+        "audit"
+      ],
+      "handoff": "package_local_realism_plan_and_validation_evidence"
+    }
+  ]
+}

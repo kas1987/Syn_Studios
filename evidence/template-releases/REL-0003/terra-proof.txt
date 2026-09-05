@@ -1,0 +1,5 @@
+REL-0003 | TMPL-0003 | authority_separation
+Descriptor SHA-256: 850e4665fc96a18aab826296243c6f86e0af3833f1dea60547a62049e2559dfe
+Native asset SHA-256: 8acaf754686fa23b1bbc59d229094d6444b54224ea9a0dae53c50086b8c5bf99
+
+Terra parsed the native multipart message as a six-message operational thread and opened its CSV and text attachments. The analyst leaves unvalidated scope unresolved, the counterparty confirms receipt while asking a question, and the final sender assigns follow-up without claiming approval or resolving the treatment.

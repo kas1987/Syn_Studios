@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0.0",
+  "result_type": "template_technical_validation_result",
+  "result_id": "TECHRES-REL-0003-RENDER",
+  "release_id": "REL-0003",
+  "template_id": "TMPL-0003",
+  "version": "1.0.0",
+  "category": "render",
+  "result_artifact_category": "render",
+  "descriptor_sha256": "850e4665fc96a18aab826296243c6f86e0af3833f1dea60547a62049e2559dfe",
+  "native_asset_sha256s": [
+    "8acaf754686fa23b1bbc59d229094d6444b54224ea9a0dae53c50086b8c5bf99"
+  ],
+  "applicable": true,
+  "verdict": "VALIDATION_PASS",
+  "procedure": "Render every message body and open and inspect every attachment.",
+  "actor_id": "syn-validation-runner-2026-08-29",
+  "actor": "Syn Studios validation runner",
+  "machine_proof": null,
+  "checks": [
+    {
+      "id": "render:mime-parts",
+      "status": "PASS",
+      "detail": "Opened and decoded all 2 native MIME attachment payloads across every bound email asset; pagination is not the descriptor render surface."
+    }
+  ],
+  "rendered_outputs": [],
+  "observations": [
+    "Deterministic render checks inspected the frozen descriptor and all 1 bound native assets."
+  ],
+  "summary": "Category-specific render validation completed against the frozen release inputs."
+}

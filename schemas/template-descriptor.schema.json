@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://syn-studios.local/schemas/template-descriptor.schema.json",
+  "title": "Syn Studios rich template descriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "template_id", "version", "name", "release_status", "artifact_type", "blueprint_id", "native_assets", "producer", "purpose", "lifecycle", "authority", "slots", "slot_contract", "render_contract", "knowledge_and_authority_constraints", "prohibited_content", "supported_consumers", "capabilities", "generation_notes", "proof_expectations"],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "nonemptyStrings": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "media_type", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "media_type": {"type": "string", "pattern": "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "renderContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "evidence_manifest", "expected_page_count", "expected_sheet_names", "print_policy"],
+      "properties": {
+        "required": {"type": "boolean"},
+        "evidence_manifest": {"type": ["string", "null"], "minLength": 1},
+        "expected_page_count": {"type": ["integer", "null"], "minimum": 1},
+        "expected_sheet_names": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "expected_pdf_path": {"type": ["string", "null"], "pattern": "^(?!/)(?![A-Za-z]:).+\\.pdf$"},
+        "expected_page_image_pattern": {"type": ["string", "null"], "pattern": "^(?!/)(?![A-Za-z]:).+\\{page\\}.*\\.png$"},
+        "print_policy": {"type": "string", "minLength": 16}
+      },
+      "allOf": [
+        {"if": {"properties": {"required": {"const": true}}}, "then": {"required": ["expected_pdf_path", "expected_page_image_pattern"], "properties": {"evidence_manifest": {"type": "string"}, "expected_page_count": {"type": "integer"}, "expected_pdf_path": {"type": "string"}, "expected_page_image_pattern": {"type": "string"}}}},
+        {"if": {"properties": {"required": {"const": false}}}, "then": {"properties": {"evidence_manifest": {"type": "null"}, "expected_page_count": {"type": "null"}, "expected_pdf_path": {"type": "null"}, "expected_page_image_pattern": {"type": "null"}}}}
+      ]
+    },
+    "populationTable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "sheet", "range", "minimum_rows", "maximum_rows", "columns"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "sheet": {"type": "string", "minLength": 1},
+        "range": {"type": "string", "pattern": "^[A-Z]+[1-9][0-9]*:[A-Z]+[1-9][0-9]*$"},
+        "minimum_rows": {"type": "integer", "minimum": 0},
+        "maximum_rows": {"type": "integer", "minimum": 1},
+        "columns": {"type": "object", "minProperties": 1, "propertyNames": {"minLength": 1}, "additionalProperties": {"type": "string", "minLength": 1}}
+      }
+    },
+    "sourceCarrier": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "target_table", "variable_row_counts"],
+          "properties": {"kind": {"const": "native_table"}, "target_table": {"type": "string", "minLength": 1}, "variable_row_counts": {"const": true}}
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "target_table", "header_mode", "required_target_columns", "encoding", "newline_policy"],
+          "properties": {
+            "kind": {"const": "csv_import"}, "target_table": {"type": "string", "minLength": 1},
+            "header_mode": {"enum": ["exact", "exact_or_explicitly_mapped"]},
+            "required_target_columns": {"$ref": "#/$defs/nonemptyStrings"},
+            "encoding": {"const": "utf-8"}, "newline_policy": {"type": "string", "minLength": 8}
+          }
+        }
+      ]
+    },
+    "expansionContract": {
+      "type": "object", "additionalProperties": false,
+      "required": ["reference_capacity_only", "minimum_population_rows", "reference_population_rows", "expanded_proof_rows", "strategy", "builder", "builder_csv_option", "rebuild_pipeline", "evidence_verifier", "deterministic_test_carrier", "formula_propagation", "print_propagation", "proof_required"],
+      "properties": {
+        "reference_capacity_only": {"const": true}, "strategy": {"type": "string", "minLength": 12},
+        "minimum_population_rows": {"type": "integer", "minimum": 1},
+        "reference_population_rows": {"type": "integer", "minimum": 1},
+        "expanded_proof_rows": {"type": "integer", "minimum": 2},
+        "builder": {"type": "string", "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.(?:mjs|py)$"},
+        "builder_csv_option": {"type": "string", "pattern": "^--[a-z0-9-]+$"},
+        "rebuild_pipeline": {"type": "string", "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.py$"},
+        "evidence_verifier": {"type": "string", "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.py$"},
+        "deterministic_test_carrier": {"type": "string", "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.csv$"},
+        "formula_propagation": {"type": "string", "minLength": 16}, "print_propagation": {"type": "string", "minLength": 16},
+        "proof_required": {"$ref": "#/$defs/nonemptyStrings"}
+      }
+    }
+  },
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "template_id": {"type": "string", "pattern": "^TMPL-[0-9]{4}$"},
+    "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "name": {"type": "string", "minLength": 3},
+    "release_status": {"enum": ["draft", "candidate", "released", "deprecated", "withdrawn"]},
+    "artifact_type": {"enum": ["docx", "xlsx", "pdf", "eml", "csv", "mixed_package"]},
+    "blueprint_id": {"type": "string", "pattern": "^BP-[0-9]{4}$"},
+    "native_assets": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/asset"}},
+    "producer": {"type": "object", "additionalProperties": false, "required": ["role", "department"], "properties": {"role": {"type": "string", "minLength": 3}, "review_role": {"type": "string", "minLength": 3}, "department": {"type": "string", "minLength": 2}}},
+    "purpose": {"type": "string", "minLength": 12},
+    "lifecycle": {"type": "string", "minLength": 3},
+    "authority": {"enum": ["authoritative", "supporting", "contextual", "superseded", "question-only", "incidental", "mixed"]},
+    "slots": {"$ref": "#/$defs/nonemptyStrings"},
+    "slot_contract": {"type": "object", "additionalProperties": false, "required": ["token_format", "required", "instantiated_artifact_policy", "value_source"], "properties": {"token_format": {"type": "string", "minLength": 3}, "required": {"type": "boolean"}, "instantiated_artifact_policy": {"type": "string", "minLength": 8}, "value_source": {"type": "string", "minLength": 8}, "header_fields_to_replace": {"$ref": "#/$defs/nonemptyStrings"}}},
+    "population_contract": {"type": "object", "additionalProperties": false, "required": ["mode", "capacity_change_policy", "tables"], "properties": {"mode": {"type": "string", "minLength": 8}, "capacity_change_policy": {"type": "string", "minLength": 16}, "source_carriers": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/sourceCarrier"}}, "expansion_contract": {"$ref": "#/$defs/expansionContract"}, "tables": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/populationTable"}}}},
+    "render_contract": {"$ref": "#/$defs/renderContract"},
+    "knowledge_and_authority_constraints": {"$ref": "#/$defs/nonemptyStrings"},
+    "prohibited_content": {"$ref": "#/$defs/nonemptyStrings"},
+    "supported_consumers": {"$ref": "#/$defs/nonemptyStrings"},
+    "capabilities": {"$ref": "#/$defs/nonemptyStrings"},
+    "generation_notes": {"$ref": "#/$defs/nonemptyStrings"},
+    "proof_expectations": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["id", "capability", "required", "description"], "properties": {"id": {"type": "string", "minLength": 3}, "capability": {"type": "string", "minLength": 3}, "required": {"type": "boolean"}, "description": {"type": "string", "minLength": 8}}}}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"artifact_type": {"const": "xlsx"}}},
+      "then": {"properties": {"render_contract": {"properties": {"expected_sheet_names": {"minItems": 1}}}}}
+    },
+    {"if": {"required": ["population_contract"]}, "then": {"properties": {"artifact_type": {"enum": ["xlsx", "mixed_package"]}}}}
+  ]
+}

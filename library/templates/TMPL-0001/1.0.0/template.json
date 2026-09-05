@@ -1,0 +1,103 @@
+{
+  "schema_version": "1.0.0",
+  "template_id": "TMPL-0001",
+  "version": "1.0.0",
+  "name": "Internal close and reconciliation workbook",
+  "release_status": "released",
+  "artifact_type": "xlsx",
+  "blueprint_id": "BP-0001",
+  "native_assets": [
+    {
+      "path": "library/templates/TMPL-0001/1.0.0/internal-close-reconciliation.xlsx",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "sha256": "2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66"
+    }
+  ],
+  "producer": {"role": "senior accountant", "review_role": "controller", "department": "finance"},
+  "purpose": "Reconcile authorized source activity to a ledger balance, document exceptions, and prepare supported close entries.",
+  "lifecycle": "internal working copy through reviewed close file",
+  "authority": "supporting",
+  "slots": ["organization_name", "close_period_end", "preparer_role", "reviewer_role"],
+  "slot_contract": {
+    "token_format": "{{slot_name}}",
+    "required": true,
+    "instantiated_artifact_policy": "reject_if_any_declared_or_double_brace_token_remains",
+    "value_source": "authorized world facts or explicit role assignment only"
+  },
+  "population_contract": {
+    "mode": "bounded_native_tables",
+    "capacity_change_policy": "reject_and_rebuild_with_fresh_formula_and_render_evidence",
+    "source_carriers": [
+      {
+        "kind": "native_table",
+        "target_table": "SourceDataTable",
+        "variable_row_counts": true
+      },
+      {
+        "kind": "csv_import",
+        "target_table": "SourceDataTable",
+        "header_mode": "exact_or_explicitly_mapped",
+        "required_target_columns": ["Source Row ID", "Entity Code", "Account Code", "Transaction Date", "Description", "Debit", "Credit", "Status Code"],
+        "encoding": "utf-8",
+        "newline_policy": "normalize_before_import"
+      }
+    ],
+    "expansion_contract": {
+      "reference_capacity_only": true,
+      "minimum_population_rows": 1,
+      "reference_population_rows": 25,
+      "expanded_proof_rows": 30,
+      "strategy": "rebuild_native_tables_to_requested_population_size",
+      "builder": "evidence/reports/template-assets/builders/build_close_template.mjs",
+      "builder_csv_option": "--source-csv",
+      "rebuild_pipeline": "evidence/reports/template-assets/builders/build_close_population.py",
+      "evidence_verifier": "evidence/reports/template-assets/builders/verify_population_rebuild.py",
+      "deterministic_test_carrier": "tests/fixtures/populations/source-expanded-30.csv",
+      "formula_propagation": "extend every calculated column, reconciliation range, and control formula to the rebuilt table boundary",
+      "print_propagation": "recompute print areas and pagination for the populated footprint instead of forcing the reference one-page layout",
+      "proof_required": ["typed row validation", "formula recalculation", "out-of-capacity scan", "all-sheet render", "fresh native and render hashes"]
+    },
+    "tables": [
+      {"name": "SourceDataTable", "sheet": "Source_Data", "range": "A4:H29", "minimum_rows": 1, "maximum_rows": 25, "columns": {"Source Row ID": "nonempty_string", "Entity Code": "nonempty_string", "Account Code": "nonempty_string", "Transaction Date": "date", "Description": "string", "Debit": "decimal", "Credit": "decimal", "Status Code": "string"}},
+      {"name": "AccountMapTable", "sheet": "Account_Map", "range": "A4:E29", "minimum_rows": 1, "maximum_rows": 25, "columns": {"Account Code": "nonempty_string", "Account Name": "nonempty_string", "Statement Group": "string", "Reconciliation Owner Role": "role", "Active?": "enum:Yes|No"}},
+      {"name": "ReconciliationTable", "sheet": "Reconciliation", "range": "A4:H24", "minimum_rows": 1, "maximum_rows": 20, "columns": {"Account Code": "nonempty_string", "Account Name": "string", "Source Net": "formula", "Ledger Balance": "decimal", "Difference": "formula", "Threshold": "nonnegative_decimal", "Status": "formula", "Explanation / Action": "string"}},
+      {"name": "ProposedEntriesTable", "sheet": "Proposed_Entries", "range": "A4:H19", "minimum_rows": 0, "maximum_rows": 15, "columns": {"Entry ID": "nonempty_string", "Account Code": "nonempty_string", "Description": "string", "Debit": "decimal", "Credit": "decimal", "Source Reference": "string", "Preparation Status": "enum:Draft|Ready for review|Hold", "Review Note": "string"}},
+      {"name": "PriorPeriodTable", "sheet": "Prior_Period", "range": "A4:E24", "minimum_rows": 0, "maximum_rows": 20, "columns": {"Account Code": "nonempty_string", "Current Balance": "decimal", "Prior Balance": "decimal", "Change": "formula", "Context Note": "string"}},
+      {"name": "ExceptionsTable", "sheet": "Exceptions", "range": "A4:H19", "minimum_rows": 0, "maximum_rows": 15, "columns": {"Exception ID": "nonempty_string", "Detected In": "string", "Question / Condition": "string", "Authority Class": "enum:supporting|contextual|question-only|superseded", "Owner Role": "role", "Due Date": "date", "Status": "enum:Open|Resolved|Retained", "Resolution Reference": "string"}}
+    ]
+  },
+  "render_contract": {
+    "required": true,
+    "evidence_manifest": "evidence/template-releases/REL-0001/render-manifest.json",
+    "expected_page_count": 8,
+    "expected_pdf_path": "evidence/template-releases/REL-0001/render/internal-close-reconciliation.pdf",
+    "expected_page_image_pattern": "evidence/template-releases/REL-0001/render/internal-close-reconciliation-page-{page}.png",
+    "expected_sheet_names": ["Close_Control", "Source_Data", "Account_Map", "Reconciliation", "Proposed_Entries", "Prior_Period", "Exceptions", "Checks"],
+    "print_policy": "one_readable_candidate_page_per_bounded_sheet; capacity changes require rebuild and fresh evidence"
+  },
+  "knowledge_and_authority_constraints": [
+    "Source_Data contains source-owned rows, not conclusions.",
+    "Questions and exceptions cannot supply their own resolutions.",
+    "A PASS check is internal arithmetic evidence, not approval or release authority.",
+    "Current authoritative records control over prior-period context."
+  ],
+  "prohibited_content": ["prior submission bytes or facts", "real identities", "signatures or approvals", "hidden answer keys", "private grading or generator residue", "broken or pasted-over formulas", "unresolved build tokens in instantiated artifacts"],
+  "supported_consumers": ["anna", "holodeck-file-generation", "human-artifact-realism"],
+  "capabilities": ["native_xlsx", "transaction_population", "variable_row_counts", "csv_import_compatible", "rebuildable_capacity", "account_mapping", "formula_reconciliation", "proposed_entries", "prior_period_context", "exception_log", "control_checks", "renderable"],
+  "generation_notes": [
+    "Populate source and mapping layers before reconciliation.",
+    "Every populated source row must provide all eight typed fields; every populated mapping row must provide all five fields; reconciliation rows require account, name, numeric ledger balance, numeric threshold, and a passing formula result.",
+    "The committed 25-row source table is a compact reference capacity, not a library-wide population model; select a source carrier and rebuild table, formula, and print boundaries for larger authorized populations.",
+    "CSV imports must use the declared target columns or an explicit header map and then pass the same typed-row, formula, capacity, and render gates as native entry.",
+    "The executable CSV rebuild path accepts an exact-header UTF-8 source carrier, sizes SourceDataTable to the population, propagates dependent formula ranges, derives its out-of-capacity guard and print area from native table boundaries, and binds fresh rendered-output hashes.",
+    "Reject populations above a declared table maximum; a larger capacity requires a rebuilt workbook, extended formulas and tables, and fresh render evidence.",
+    "Preserve formulas, validations, number formats, freeze panes, and distinct layer styling.",
+    "The untouched candidate intentionally shows MODEL STATUS NOT READY until required identity slots and populations are supplied."
+  ],
+  "proof_expectations": [
+    {"id": "xlsx-structure", "capability": "native_structure", "required": true, "description": "Open as OOXML and verify all eight named sheets."},
+    {"id": "xlsx-recalculate", "capability": "formula_recalculation", "required": true, "description": "Recalculate and tie source, reconciliation, entries, and checks."},
+    {"id": "xlsx-render", "capability": "render_all_sheets", "required": true, "description": "Render and visually inspect every sheet."},
+    {"id": "xlsx-leakage", "capability": "metadata_and_content_scan", "required": true, "description": "Reject identities, world facts, generator residue, hidden answers, and unresolved tokens in an instantiated artifact."}
+  ]
+}

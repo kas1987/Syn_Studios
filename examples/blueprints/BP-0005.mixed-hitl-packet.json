@@ -1,13 +1,32 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "blueprint_id": "BP-0005",
+  "archetype": "mixed_package",
   "name": "Mixed internal and external HITL review packet",
   "artifact_type": "mixed_package",
+  "foundation_lineage": [
+    {
+      "card_id": "FOUND-0001", "card_sha256": "83fe9741e13e1b6e441aab0bd2eb2b08af27c3b228d4ddbbf30b91ce6c7ce82e", "reviewed_source_sha256": "65c876aaafec4168af12446b258f5fe9978df4fc8eabde48a91630e2cda47e4e", "use_mode": "reviewed_pattern",
+      "patterns_used": ["Separate source populations by originating module and retain system-like field order.", "Vary row density by population instead of normalizing every sheet."], "prohibited_content_acknowledged": true,
+      "transformation_boundary": "Reuse only abstract source-population separation and density variation; rebuild all package bytes, facts, identifiers, values, and styles from the authorized new world."
+    },
+    {
+      "card_id": "FOUND-0005", "card_sha256": "a0c31cbfddef27406a3ff5159784af4710c85047de21496e75febde74a73bf44", "reviewed_source_sha256": "83dd23a84274355243d569506f72b759eaba6c23c7f92e6521994e5ca93bbc9f", "use_mode": "reviewed_pattern",
+      "patterns_used": ["Use restrained one-page structure for a board decision or approved handoff endpoint."], "prohibited_content_acknowledged": true,
+      "transformation_boundary": "Reuse only the restrained decision-endpoint pattern where the package lifecycle calls for it; create every decision record and fact from the authorized new world."
+    },
+    {
+      "card_id": "FOUND-0008", "card_sha256": "7d6e69556cb4ab76dd9da6ea8acd8797c393f5a57ba19a041d23b8afbb38c304", "reviewed_source_sha256": "9b662db862a533f30c0e789f6c4d6c160e6f19bbff5e067dd18096f86b52ac7e", "use_mode": "reviewed_pattern",
+      "patterns_used": ["Use a controlled two-page form with explicit lifecycle, approvals, implementation, distribution, optional attachments, and retention metadata."], "prohibited_content_acknowledged": true,
+      "transformation_boundary": "Reuse only lifecycle, approval, attachment, distribution, and retention concepts; do not reproduce reviewed form content, layout, identities, or evidence."
+    }
+  ],
   "producer": "Finance, operations, legal, HR, external counterparties, and source systems",
   "purpose": "Provide a realistic evidence package that a knowledgeable human reviewer must synthesize across independent sources.",
   "medium": "ZIP package containing native Office files, PDFs, EML, and system exports",
   "lifecycle": "Assembled review-room package",
-  "authority": "mixed",
+  "authority": {"primary_class": "mixed", "governing_scope": "Distributes governing facts across explicitly identified authoritative records and their supported decompositions.", "non_governing_scope": "Context, questions, superseded work, and incidental records cannot silently override authoritative evidence."},
+  "source_boundary": {"authorized_inputs": ["Approved fictional-world evidence manifest and authority map", "Independently produced internal, external, and source-system records"], "excluded_inputs": ["Private controls, answer keys, and build files", "Facts or identities copied from prior submissions"], "conflict_resolution": "The package authority map identifies the controlling source by scope; unresolved contradictions remain explicit review issues."},
   "footprint": {
     "target": "17-30 files with intentionally varied depth",
     "natural_depth": [
@@ -16,8 +35,10 @@
       "Internal analyses, notes, and correspondence",
       "Contextual policies and incidental administrative content",
       "No private controls, answer keys, or build files"
-    ]
+    ],
+    "source_owned_rationale": "File count and variation arise from independent producers, source systems, evidence roles, attachments, and lifecycle stages needed for the review workflow."
   },
+  "handling_history": {"mode": "present", "sequence": ["Independent producers create workflow-owned records", "Records reviewed or executed according to their own lifecycles", "Approved evidence assembled using the authority map", "Review-room package validated and retained"]},
   "complexity_layers": [
     {"layer": "core", "features": ["Complete evidence chain", "Resolvable authority conflicts", "Exact source identities"]},
     {"layer": "operational_depth", "features": ["Full populations", "Schedules", "Exhibits", "Attachments"]},
@@ -26,6 +47,14 @@
     {"layer": "handling_history", "features": ["Clean executed records beside selectively handled working copies"]}
   ],
   "prohibited": ["Uniform formatting across producers", "Every file equally messy", "False authority conflict", "Combined notes that reveal the answer", "Private generation or grading residue"],
-  "proof_gates": ["Open every file", "Render every paginated page and workbook sheet", "Recompute all material formulas", "Map every requirement to model-visible evidence", "Run package-wide variation and leakage review"]
+  "proof_gates": [
+    {"category": "core_integrity", "applicable": true, "procedure": "Open every file and reconcile the complete evidence chain and package manifest."},
+    {"category": "render", "applicable": true, "procedure": "Render every paginated page, workbook sheet, message body, and material attachment."},
+    {"category": "metadata", "applicable": true, "procedure": "Inspect properties, hidden content, links, comments, revisions, MIME fields, and container metadata."},
+    {"category": "computational", "applicable": true, "procedure": "Recompute all material formulas and reconcile cross-file amounts and identifiers."},
+    {"category": "provenance", "applicable": true, "procedure": "Trace every package member and governing fact to the approved world manifest."},
+    {"category": "leakage", "applicable": true, "procedure": "Run package-wide visible, hidden, metadata, filename, and extracted-text leakage review."},
+    {"category": "authority_separation", "applicable": true, "procedure": "Verify the authority map resolves governing, supporting, contextual, and superseded records."},
+    {"category": "anti_filler", "applicable": true, "procedure": "Map every file and material section to its producer, purpose, source, and lifecycle."}
+  ]
 }
-

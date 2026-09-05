@@ -1,5 +1,15 @@
 # Delivery phases
 
+## Current checkpoint — 2026-08-29
+
+- Phase 1 is complete.
+- Phase 2 contract coverage is complete: nine production blueprints each have one positive and one anti-pattern fixture. Native release breadth currently covers the workbook, memo, and email vertical slices.
+- Phase 3 has three hash-bound `1.0.0` releases: `REL-0001`, `REL-0002`, and `REL-0003`.
+- Phase 4 baseline is complete: release-specific Terra and Sol lanes, executable category results, consumer trajectories, and populated tabular conformance arms pass. Candidate-package acceptance remains outside the library.
+- Phase 5 has not been performed by this repository closeout. Sub-006 remains frozen.
+
+Repository release does not imply public publication or downstream installation. Before any release claim is handed off, the integrated commit must pass the canonical validator and full test suite from a fresh clean checkout so checkout-time transformations are included in the proof.
+
 ## Phase 1 — foundation inventory
 
 - Establish the design contract and repository boundaries.
@@ -31,4 +41,3 @@
 - Apply versioned design patterns to Sub-005 and Sub-007.
 - Keep Sub-006 frozen unless a submission-blocking defect requires a scoped repair.
 - Gate: the submission's own manifest, calibration, package, prompt, rubric, and iteration controls remain authoritative.
-

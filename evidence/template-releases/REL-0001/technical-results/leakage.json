@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0.0",
+  "result_type": "template_technical_validation_result",
+  "result_id": "TECHRES-REL-0001-LEAKAGE",
+  "release_id": "REL-0001",
+  "template_id": "TMPL-0001",
+  "version": "1.0.0",
+  "category": "leakage",
+  "result_artifact_category": "leakage",
+  "descriptor_sha256": "642d3c4d81d898667606140d4f50ca0c040f66c2bf602312bc57a40aea318c7c",
+  "native_asset_sha256s": [
+    "2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66"
+  ],
+  "applicable": true,
+  "verdict": "VALIDATION_PASS",
+  "procedure": "Scan visible and hidden content for prior-world, generator, and evaluation residue.",
+  "actor_id": "syn-validation-runner-2026-08-29",
+  "actor": "Syn Studios validation runner",
+  "machine_proof": null,
+  "checks": [
+    {
+      "id": "leakage:visible-hidden-scan",
+      "status": "PASS",
+      "detail": "Scanned extracted content from all 1 bound native assets for prohibited residue and verified all 4 template tokens against the descriptor slot allowlist."
+    }
+  ],
+  "rendered_outputs": [],
+  "observations": [
+    "Deterministic leakage checks inspected the frozen descriptor and all 1 bound native assets."
+  ],
+  "summary": "Category-specific leakage validation completed against the frozen release inputs."
+}

@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0.0",
+  "template_id": "TMPL-0002",
+  "version": "1.0.0",
+  "name": "Internal controller decision memorandum",
+  "release_status": "released",
+  "artifact_type": "docx",
+  "blueprint_id": "BP-0002",
+  "native_assets": [
+    {
+      "path": "library/templates/TMPL-0002/1.0.0/internal-controller-memo.docx",
+      "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "sha256": "1a922e87a29682bdea8a04734084f9f9fe1631bf785139b95b2b0f74c238818f"
+    }
+  ],
+  "producer": {"role": "controller or technical accounting manager", "department": "finance"},
+  "purpose": "Document a multi-issue recommendation, its evidence basis, alternatives, risks, and unresolved support before approval.",
+  "lifecycle": "reviewed internal working copy before approval",
+  "authority": "supporting",
+  "slots": [
+    "memo_title", "organization_name", "as_of_date", "preparer_role", "reviewer_role", "decision_requested", "executive_recommendation", "scope_and_information_boundary", "background_summary", "source_id_1", "authority_1", "source_locator_1", "source_scope_1", "prior_period_context", "known_limitations",
+    "issue_1_title", "issue_1_question", "issue_1_evidence", "issue_1_analysis", "issue_1_conclusion", "issue_2_title", "issue_2_question", "issue_2_evidence", "issue_2_analysis", "issue_2_conclusion", "issue_3_title", "issue_3_question", "issue_3_evidence", "issue_3_analysis", "issue_3_conclusion",
+    "option_1", "treatment_1", "evidence_1", "risk_1", "option_2", "treatment_2", "evidence_2", "risk_2", "option_3", "treatment_3", "evidence_3", "risk_3", "recommended_safeguards", "sensitivity_analysis",
+    "item_1", "action_1", "owner_1", "due_1", "status_1", "item_2", "action_2", "owner_2", "due_2", "status_2", "item_3", "action_3", "owner_3", "due_3", "status_3", "approval_record_locator_or_not_yet_obtained", "appendix_index"
+  ],
+  "slot_contract": {
+    "token_format": "{{slot_name}}",
+    "required": true,
+    "instantiated_artifact_policy": "reject_if_any_declared_or_double_brace_token_remains",
+    "value_source": "authorized evidence, world facts, or explicit role assignment only"
+  },
+  "render_contract": {
+    "required": true,
+    "evidence_manifest": "evidence/template-releases/REL-0002/render-manifest.json",
+    "expected_page_count": 5,
+    "expected_pdf_path": "evidence/template-releases/REL-0002/render/internal-controller-memo.pdf",
+    "expected_page_image_pattern": "evidence/template-releases/REL-0002/render/internal-controller-memo-page-{page}.png",
+    "expected_sheet_names": [],
+    "print_policy": "candidate scaffold must render as exactly five readable pages; populated instances require their own pagination evidence"
+  },
+  "knowledge_and_authority_constraints": [
+    "Citations must point to model-visible evidence that actually establishes the stated scope.",
+    "The memo remains supporting analysis and cannot manufacture approval, execution, or an external party position.",
+    "Open questions remain question-only until an authoritative source resolves them.",
+    "Approval fields record an existing approval locator or state that approval has not yet been obtained."
+  ],
+  "prohibited_content": ["prior submission bytes or facts", "real identities", "fabricated approvals or signatures", "uncited governing facts", "review notes that reveal an answer", "private grading or generator residue", "unresolved build tokens in instantiated artifacts"],
+  "supported_consumers": ["anna", "holodeck-file-generation", "human-artifact-realism"],
+  "capabilities": ["native_docx", "five_page_memo", "decision_summary", "source_matrix", "issue_analysis", "alternatives_matrix", "risk_and_sensitivity", "open_items", "appendix_index", "renderable"],
+  "generation_notes": [
+    "Use the decision_memo visual preset and preserve explicit table geometry.",
+    "Add or remove issue and option rows only when the approved task warrants it.",
+    "Keep review residue bounded and role-appropriate; do not make every field polished or complete.",
+    "DRAFT — NOT APPROVED and the template footer must remain until the lifecycle truthfully changes."
+  ],
+  "proof_expectations": [
+    {"id": "docx-structure", "capability": "native_structure", "required": true, "description": "Open as OOXML and verify page geometry, styles, tables, headers, and footers."},
+    {"id": "docx-citations", "capability": "citation_verification", "required": true, "description": "Verify every governing citation and authority classification."},
+    {"id": "docx-render", "capability": "render_all_pages", "required": true, "description": "Render and visually inspect every page for clipping, overlap, and layout drift."},
+    {"id": "docx-leakage", "capability": "metadata_and_content_scan", "required": true, "description": "Reject identities, world facts, fabricated approvals, generator residue, and unresolved tokens in an instantiated artifact."}
+  ]
+}

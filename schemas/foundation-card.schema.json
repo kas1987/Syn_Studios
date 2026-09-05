@@ -16,7 +16,7 @@
   "properties": {
     "schema_version": {"const": "1.0.0"},
     "card_id": {"type": "string", "pattern": "^FOUND-[0-9]{4}$"},
-    "status": {"enum": ["candidate", "reviewed", "rejected", "template_ready"]},
+    "status": {"enum": ["candidate", "reviewed", "rejected"]},
     "artifact_type": {"enum": ["docx", "xlsx", "pdf", "eml", "csv", "mixed_package"]},
     "source": {
       "type": "object",
@@ -51,4 +51,3 @@
     }
   }
 }
-

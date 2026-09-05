@@ -1,0 +1,5 @@
+release_id=REL-0003
+template_id=TMPL-0003
+category=core_integrity
+native_asset_sha256=8acaf754686fa23b1bbc59d229094d6444b54224ea9a0dae53c50086b8c5bf99
+observation=Frozen descriptor, native assets, and blueprint bindings were recomputed by the release assembler.

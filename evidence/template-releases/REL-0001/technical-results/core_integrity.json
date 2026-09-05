@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0.0",
+  "result_type": "template_technical_validation_result",
+  "result_id": "TECHRES-REL-0001-CORE-INTEGRITY",
+  "release_id": "REL-0001",
+  "template_id": "TMPL-0001",
+  "version": "1.0.0",
+  "category": "core_integrity",
+  "result_artifact_category": "core_integrity",
+  "descriptor_sha256": "642d3c4d81d898667606140d4f50ca0c040f66c2bf602312bc57a40aea318c7c",
+  "native_asset_sha256s": [
+    "2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66"
+  ],
+  "applicable": true,
+  "verdict": "VALIDATION_PASS",
+  "procedure": "Tie source populations, mapped totals, ledger balances, and proposed entries.",
+  "actor_id": "syn-validation-runner-2026-08-29",
+  "actor": "Syn Studios validation runner",
+  "machine_proof": null,
+  "checks": [
+    {
+      "id": "core_integrity:xlsx-structure",
+      "status": "PASS",
+      "detail": "Parsed 8 ordered worksheets, 1408 cells, and 6 native tables."
+    },
+    {
+      "id": "core_integrity:bound-native-assets",
+      "status": "PASS",
+      "detail": "Parsed and checked native structure for all 1 bound assets."
+    }
+  ],
+  "rendered_outputs": [],
+  "observations": [
+    "Deterministic core_integrity checks inspected the frozen descriptor and all 1 bound native assets."
+  ],
+  "summary": "Category-specific core_integrity validation completed against the frozen release inputs."
+}

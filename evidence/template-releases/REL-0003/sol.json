@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0.0",
+  "record_id": "EVID-REL-0003-SOL",
+  "record_type": "sol_review",
+  "release_id": "REL-0003",
+  "template_id": "TMPL-0003",
+  "version": "1.0.0",
+  "descriptor_sha256": "850e4665fc96a18aab826296243c6f86e0af3833f1dea60547a62049e2559dfe",
+  "native_asset_sha256s": [
+    "8acaf754686fa23b1bbc59d229094d6444b54224ea9a0dae53c50086b8c5bf99"
+  ],
+  "verdict": "INTEGRITY_PASS",
+  "actor_id": "sol-integrity-reviewer-2026-08-29",
+  "actor": "Sol integrity reviewer",
+  "observations": [
+    "The descriptor binds the exact EML hash, contextual authority, required header replacements, declared slot set, two attachments, six-message footprint, and native MIME proof expectations.",
+    "Python standard-library parsing reports no defects: the root is multipart/mixed with one nonempty plain-text body, one nonempty text/csv attachment, and one nonempty text/plain correction-note attachment.",
+    "Attachment filenames and payload tokens reconcile to the message body, while the instantiation contract requires replacement of Date, Message-ID, From, To, Cc, and Subject fields before use.",
+    "The quoted chain preserves role-specific knowledge: the analyst marks unvalidated scope, the counterparty confirms receipt and asks a question, and the final sender coordinates follow-up without approving treatment.",
+    "Decoded headers, body, and attachments contain no prior-submission facts, real addresses or identities, repository or generator residue, grading language, hidden answers, signature image, or fabricated approval.",
+    "The bounded open item, corrected and superseded attachment references, partial replies, and distribution changes create workflow-owned complexity rather than filler or false authority."
+  ],
+  "artifacts": [
+    {
+      "path": "evidence/template-releases/REL-0003/sol-proof.txt",
+      "sha256": "28dd1d39c1cdd647694369caf0e9c3f3fa0c8379cf9ff7bbaddc4e8adc1a7498",
+      "media_type": "text/plain",
+      "category": "core_integrity"
+    }
+  ],
+  "summary": "INTEGRITY_PASS for the exact TMPL-0003 descriptor and EML bytes: MIME shape, attachments, replacement boundaries, role knowledge, authority separation, leakage resistance, and anti-filler workflow residue were independently verified."
+}

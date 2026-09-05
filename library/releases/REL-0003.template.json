@@ -1,0 +1,83 @@
+{
+  "schema_version": "3.0.0",
+  "release_id": "REL-0003",
+  "template_id": "TMPL-0003",
+  "version": "1.0.0",
+  "status": "released",
+  "descriptor": {
+    "path": "library/templates/TMPL-0003/1.0.0/template.json",
+    "sha256": "850e4665fc96a18aab826296243c6f86e0af3833f1dea60547a62049e2559dfe"
+  },
+  "native_assets": [
+    {
+      "path": "library/templates/TMPL-0003/1.0.0/operational-correction-thread.eml",
+      "sha256": "8acaf754686fa23b1bbc59d229094d6444b54224ea9a0dae53c50086b8c5bf99"
+    }
+  ],
+  "blueprint": {
+    "blueprint_id": "BP-0003",
+    "path": "examples/blueprints/BP-0003.operational-email-chain.json",
+    "sha256": "38beab037f847b2ab78cc7426d5cc8f2b5453f11343be87b830dbb3c3895c999"
+  },
+  "build": {
+    "record_path": "evidence/template-releases/REL-0003/build.json",
+    "record_sha256": "9c38b1bcd55e22e926a0c16f769d33a6276d664fe71dabc3350fab81e51d0b1f"
+  },
+  "sanitization": {
+    "evidence": {
+      "record_path": "evidence/template-releases/REL-0003/sanitization.json",
+      "record_sha256": "2ccb2ae0d65f50b3a9f37d7e64da909ebf7ad702fc60581162e6c56c634b4287"
+    },
+    "foundation_card_ids": [
+      "FOUND-0008"
+    ]
+  },
+  "reviews": {
+    "terra": {
+      "record_path": "evidence/template-releases/REL-0003/terra.json",
+      "record_sha256": "a5d1f49e9a86ae3f649028aa1f10efb27e6f24fc6b1039b3a2206fb445dcfd1b"
+    },
+    "sol": {
+      "record_path": "evidence/template-releases/REL-0003/sol.json",
+      "record_sha256": "6a7556fb73d743ac85207166abd024fcb35749cfb4f78ef51fb2b256e1286dc6"
+    }
+  },
+  "conductor_approval": {
+    "record_path": "evidence/template-releases/REL-0003/conductor.json",
+    "record_sha256": "5a97ba055b3f438a9eda64120d1ee6923664b9d7a40cd618ab579058ba9783e3"
+  },
+  "evidence": {
+    "core_integrity": {
+      "record_path": "evidence/template-releases/REL-0003/technical-core_integrity.json",
+      "record_sha256": "869d8d5c7ff6edc3954675ffd71a5ec198d909b2b964e60edabbb742fe91b18c"
+    },
+    "render": {
+      "record_path": "evidence/template-releases/REL-0003/technical-render.json",
+      "record_sha256": "68cff80cd84261eebfa7eadecebb362e193261f94869cb1b0d04dcecdb0b1d3d"
+    },
+    "metadata": {
+      "record_path": "evidence/template-releases/REL-0003/technical-metadata.json",
+      "record_sha256": "a81630edd0cb1e821857c03f4a1263d5186e6d8683d8acc1e3ba3461e82b02ca"
+    },
+    "computational": {
+      "record_path": "evidence/template-releases/REL-0003/technical-computational.json",
+      "record_sha256": "ccd953a0afa0a6bf6eb1887e9fc919b822d8e63a152ede924d30034592bbc47e"
+    },
+    "provenance": {
+      "record_path": "evidence/template-releases/REL-0003/technical-provenance.json",
+      "record_sha256": "5e8b2bf0d5e0d1cb0a5a06c90277a999714a51bbc6228791703555b14b750e87"
+    },
+    "leakage": {
+      "record_path": "evidence/template-releases/REL-0003/technical-leakage.json",
+      "record_sha256": "024dc9208e2c536a5ad7d7bfba72eccbc8745519b58c4d6a3e697d1248c1df09"
+    },
+    "authority_separation": {
+      "record_path": "evidence/template-releases/REL-0003/technical-authority_separation.json",
+      "record_sha256": "0fcd757f708f5a4ecb1df31bd3cb262b7b5405248ed90d8a07d08ff54bd1a117"
+    },
+    "anti_filler": {
+      "record_path": "evidence/template-releases/REL-0003/technical-anti_filler.json",
+      "record_sha256": "73b4ffb8b1ec10f422830d8df44a7aee9ee3ca2953d57dca7e699c026871cb7c"
+    }
+  }
+}

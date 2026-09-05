@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0.0",
+  "record_id": "EVID-REL-0003-CONDUCTOR",
+  "record_type": "conductor_approval",
+  "release_id": "REL-0003",
+  "template_id": "TMPL-0003",
+  "version": "1.0.0",
+  "descriptor_sha256": "850e4665fc96a18aab826296243c6f86e0af3833f1dea60547a62049e2559dfe",
+  "native_asset_sha256s": [
+    "8acaf754686fa23b1bbc59d229094d6444b54224ea9a0dae53c50086b8c5bf99"
+  ],
+  "verdict": "APPROVED",
+  "actor_id": "syn-codex-conductor-2026-08-29",
+  "actor": "Syn Studios Codex conductor",
+  "observations": [
+    "Conductor approval was explicitly supplied after Terra, Sol, and technical evidence were bound."
+  ],
+  "artifacts": [
+    {
+      "path": "evidence/template-releases/REL-0003/proofs/conductor.txt",
+      "sha256": "58310d26db503bec9c30995f5be6cfa5520383594dbdf6a7901bb63309e40536",
+      "media_type": "text/plain",
+      "category": "provenance"
+    }
+  ],
+  "summary": "Explicit conductor approval for publication of this frozen template version."
+}

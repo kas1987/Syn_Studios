@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0.0",
+  "result_type": "template_technical_validation_result",
+  "result_id": "TECHRES-REL-0001-ANTI-FILLER",
+  "release_id": "REL-0001",
+  "template_id": "TMPL-0001",
+  "version": "1.0.0",
+  "category": "anti_filler",
+  "result_artifact_category": "anti_filler",
+  "descriptor_sha256": "642d3c4d81d898667606140d4f50ca0c040f66c2bf602312bc57a40aea318c7c",
+  "native_asset_sha256s": [
+    "2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66"
+  ],
+  "applicable": true,
+  "verdict": "VALIDATION_PASS",
+  "procedure": "Map every tab and material range to a producer-owned close workflow purpose.",
+  "actor_id": "syn-validation-runner-2026-08-29",
+  "actor": "Syn Studios validation runner",
+  "machine_proof": null,
+  "checks": [
+    {
+      "id": "anti_filler:footprint",
+      "status": "PASS",
+      "detail": "Native footprint of 8 tabs satisfies the blueprint's producer-owned 8-14 range."
+    }
+  ],
+  "rendered_outputs": [],
+  "observations": [
+    "Deterministic anti_filler checks inspected the frozen descriptor and all 1 bound native assets."
+  ],
+  "summary": "Category-specific anti_filler validation completed against the frozen release inputs."
+}

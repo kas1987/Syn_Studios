@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0.0",
+  "result_type": "template_technical_validation_result",
+  "result_id": "TECHRES-REL-0002-METADATA",
+  "release_id": "REL-0002",
+  "template_id": "TMPL-0002",
+  "version": "1.0.0",
+  "category": "metadata",
+  "result_artifact_category": "metadata",
+  "descriptor_sha256": "2d44a466e4c4a5da4bf0203b89ce6af3fcffe8a2e7e61ac6324f12bc7882472b",
+  "native_asset_sha256s": [
+    "1a922e87a29682bdea8a04734084f9f9fe1631bf785139b95b2b0f74c238818f"
+  ],
+  "applicable": true,
+  "verdict": "VALIDATION_PASS",
+  "procedure": "Inspect document properties, revisions, comments, custom XML, and embedded links.",
+  "actor_id": "syn-validation-runner-2026-08-29",
+  "actor": "Syn Studios validation runner",
+  "machine_proof": null,
+  "checks": [
+    {
+      "id": "metadata:docx-surfaces",
+      "status": "PASS",
+      "detail": "Inspected package relationships, hidden text, 0 revisions, 0 parsed comment parts, and 2 custom XML parts with no external targets."
+    },
+    {
+      "id": "metadata:bound-native-assets",
+      "status": "PASS",
+      "detail": "Parsed metadata and relationship surfaces across all 1 bound native assets."
+    }
+  ],
+  "rendered_outputs": [],
+  "observations": [
+    "Deterministic metadata checks inspected the frozen descriptor and all 1 bound native assets."
+  ],
+  "summary": "Category-specific metadata validation completed against the frozen release inputs."
+}

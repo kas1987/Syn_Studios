@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0.0",
+  "record_id": "EVID-REL-0003-TECH-RENDER",
+  "record_type": "technical_validation",
+  "release_id": "REL-0003",
+  "template_id": "TMPL-0003",
+  "version": "1.0.0",
+  "descriptor_sha256": "850e4665fc96a18aab826296243c6f86e0af3833f1dea60547a62049e2559dfe",
+  "native_asset_sha256s": [
+    "8acaf754686fa23b1bbc59d229094d6444b54224ea9a0dae53c50086b8c5bf99"
+  ],
+  "verdict": "VALIDATION_PASS",
+  "actor_id": "syn-validation-runner-2026-08-29",
+  "actor": "Syn Studios validation runner",
+  "observations": [
+    "Deterministic render checks inspected the frozen descriptor and all 1 bound native assets."
+  ],
+  "artifacts": [
+    {
+      "path": "evidence/template-releases/REL-0003/technical-results/render.json",
+      "sha256": "ba42c4c022bef0dd24558a297093892d9ef42cc0f061036575cc978d2b074077",
+      "media_type": "application/json",
+      "category": "render"
+    }
+  ],
+  "summary": "Category-specific render validation completed against the frozen release inputs.",
+  "categories": [
+    "render"
+  ],
+  "procedures": {
+    "render": "Render every message body and open and inspect every attachment."
+  },
+  "render_contract_sha256": "8f930a9b36dd46988f848de12738705e6e0bc78bad093b537d42a73a9ca82762"
+}

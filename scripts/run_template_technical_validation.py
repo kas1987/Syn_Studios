@@ -1,0 +1,1001 @@
+"""Run deterministic, hash-bound technical checks for template releases.
+
+The runner performs every check before writing anything.  By default it is a
+dry run; pass ``--write`` to create the 24 category result files or verify an
+identical published set.  Only Python's standard library is used so the
+release gate remains portable.
+"""
+
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+import hashlib
+import json
+import os
+import posixpath
+import re
+import struct
+import sys
+import zipfile
+from email import policy
+from email.message import EmailMessage
+from email.parser import BytesParser
+from html import unescape
+from html.parser import HTMLParser
+from pathlib import Path
+from typing import Any
+from xml.etree import ElementTree as ET
+
+try:
+    from .pdf_structure import PDF_HEADER, PDF_TRAILER, inspect_pdf
+except ImportError:  # Direct execution: python scripts/run_template_technical_validation.py
+    from pdf_structure import PDF_HEADER, PDF_TRAILER, inspect_pdf
+
+try:
+    from .workbook_recalculation import recalculation_proof_findings, workbook_formula_evidence
+except ImportError:  # Direct execution: python scripts/run_template_technical_validation.py
+    from workbook_recalculation import recalculation_proof_findings, workbook_formula_evidence
+
+try:
+    from .immutable_publication import (
+        PublicationSafetyError,
+        hard_link,
+        locked_directory,
+        open_staging_file,
+        read_stable_file,
+        remove_owned_file,
+        verify_parent,
+    )
+except ImportError:  # Direct execution: python scripts/run_template_technical_validation.py
+    from immutable_publication import (
+        PublicationSafetyError,
+        hard_link,
+        locked_directory,
+        open_staging_file,
+        read_stable_file,
+        remove_owned_file,
+        verify_parent,
+    )
+
+
+CATEGORIES = (
+    "core_integrity", "render", "metadata", "computational", "provenance",
+    "leakage", "authority_separation", "anti_filler",
+)
+MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+OFFICE_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+PACKAGE_REL = "http://schemas.openxmlformats.org/package/2006/relationships"
+WORD = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+FORBIDDEN_TEXT = (
+    "prior submission", "private grading", "answer key", "calibration target",
+    "generator residue", "rubric answer", "evaluator-facing",
+)
+DOUBLE_BRACE_TOKEN = re.compile(r"\{\{(.*?)\}\}", re.DOTALL)
+EMPTY_STRING_FORMULA_GUARD = re.compile(
+    r'^\s*IF\(\s*(\$?[A-Z]{1,3}\$?\d+)\s*=\s*""\s*,\s*""\s*,',
+    re.IGNORECASE,
+)
+UNSUPPORTED_ATTACHMENT_SUFFIXES = {
+    ".7z", ".bin", ".bz2", ".docx", ".exe", ".gz", ".gzip", ".pdf",
+    ".pptx", ".rar", ".tar", ".xlsx", ".xz", ".zip",
+}
+BINARY_ATTACHMENT_PREFIXES = (
+    b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08", b"\x1f\x8b",
+    b"\xfd7zXZ\x00", b"7z\xbc\xaf\x27\x1c", b"\xd0\xcf\x11\xe0",
+    b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff",
+)
+PDF_OBJECT = re.compile(
+    rb"(?:\A|(?<=[\x00\x09\x0a\x0c\x0d\x20()<>\[\]{}/%]))"
+    rb"\d+[\x00\x09\x0a\x0c\x0d\x20]+\d+[\x00\x09\x0a\x0c\x0d\x20]+"
+    rb"obj(?=[\x00\x09\x0a\x0c\x0d\x20()<>\[\]{}/%]|\Z)"
+)
+AUTHORITY_MARKERS = (
+    "approval", "governing", "supporting", "contextual", "question", "superseded",
+)
+QUOTED_MESSAGE_SEPARATOR = re.compile(
+    r"(?im)^[ \t]*(?:-{2,}[ \t]*(?:original|forwarded) message[ \t]*-{2,}|"
+    r"begin forwarded message:)[ \t]*\r?$"
+)
+
+
+class ValidationFailed(RuntimeError):
+    pass
+
+
+class _VisibleHTMLText(HTMLParser):
+    """Collect parser-decoded visible HTML text for leakage inspection."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.fragments: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        self.fragments.append(data)
+
+
+def rendered_html_text(content: str) -> str:
+    parser = _VisibleHTMLText()
+    parser.feed(content)
+    parser.close()
+    return "\n".join((unescape(content), "".join(parser.fragments), " ".join(parser.fragments)))
+
+
+def word_on_off_enabled(element: ET.Element) -> bool:
+    value = element.get(f"{{{WORD}}}val", element.get("val"))
+    return value is None or value.casefold() not in {"0", "false", "off", "no"}
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValidationFailed(f"{path}: expected a JSON object")
+    return value
+
+
+def repository_path(root: Path, relative: object, label: str) -> Path:
+    if not isinstance(relative, str) or not relative or "\\" in relative:
+        raise ValidationFailed(f"{label}: invalid repository-relative path")
+    candidate = (root / relative).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as error:
+        raise ValidationFailed(f"{label}: path escapes repository root") from error
+    if not candidate.is_file():
+        raise ValidationFailed(f"{label}: referenced file does not exist: {relative}")
+    return candidate
+
+
+def json_bytes(value: object) -> bytes:
+    return (json.dumps(value, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+
+
+def read_stable_technical_result(
+    root: Path, path: Path, directory_descriptor: int | None = None
+) -> bytes | None:
+    relative = path.relative_to(root).as_posix()
+    try:
+        return read_stable_file(root, path, directory_descriptor)
+    except PublicationSafetyError as error:
+        raise ValidationFailed(f"technical result target {relative} {error}") from error
+
+
+def verify_result_parent(root: Path, path: Path) -> None:
+    relative = path.relative_to(root).as_posix()
+    try:
+        verify_parent(root, path)
+    except PublicationSafetyError as error:
+        raise ValidationFailed(f"technical result directory for {relative} {error}") from error
+
+
+def check(check_id: str, detail: str, status: str = "PASS") -> dict[str, str]:
+    return {"id": check_id, "status": status, "detail": detail}
+
+
+def xml_surfaces(tree: ET.Element) -> list[str]:
+    surfaces: list[str] = []
+    for node in tree.iter():
+        if node.text:
+            surfaces.append(node.text)
+        if node.tail:
+            surfaces.append(node.tail)
+        surfaces.extend(value for value in node.attrib.values() if value)
+    return surfaces
+
+
+def has_valid_empty_string_cache(formula: ET.Element, cell_values: dict[str, str]) -> bool:
+    match = EMPTY_STRING_FORMULA_GUARD.match(formula.text or "")
+    if match is None:
+        return False
+    guard_cell = match.group(1).replace("$", "").upper()
+    return not cell_values.get(guard_cell, "").strip()
+
+
+def cached_cell_text(cell: ET.Element) -> str:
+    value = cell.find(f"{{{MAIN}}}v")
+    if value is not None:
+        return value.text or ""
+    return "".join(node.text or "" for node in cell.findall(f"{{{MAIN}}}is//{{{MAIN}}}t"))
+
+
+def structured_executable(payload: bytes) -> bool:
+    if not payload.startswith(b"MZ") or len(payload) < 64:
+        return False
+    header_offset = int.from_bytes(payload[60:64], "little")
+    if header_offset <= 0 or header_offset > len(payload) - 2:
+        return False
+    signature = payload[header_offset:header_offset + 4]
+    return signature == b"PE\x00\x00" or signature[:2] in {b"NE", b"LE", b"LX"}
+
+
+def structured_pdf(payload: bytes) -> bool:
+    header = PDF_HEADER.search(payload[:1024])
+    trailer = PDF_TRAILER.search(payload)
+    if header is None or trailer is None or PDF_OBJECT.search(payload[header.start():]) is None:
+        return False
+    xref_offset = int(trailer.group(1))
+    if xref_offset < header.start() or xref_offset >= len(payload):
+        return False
+    xref = payload[xref_offset:]
+    return xref.startswith(b"xref") or PDF_OBJECT.match(xref) is not None
+
+
+def unsupported_text_attachment(filename: str, payload: bytes, charset: str | None) -> bool:
+    suffix = Path(filename).suffix.casefold()
+    if suffix in UNSUPPORTED_ATTACHMENT_SUFFIXES:
+        return True
+    if structured_executable(payload) or structured_pdf(payload) or payload.startswith(BINARY_ATTACHMENT_PREFIXES):
+        return True
+    try:
+        decoded = payload.decode(charset or "utf-8")
+    except (LookupError, UnicodeError):
+        return True
+    return any(
+        (ord(character) < 32 or 127 <= ord(character) <= 159)
+        and character not in "\t\n\f\r"
+        for character in decoded
+    )
+
+
+def ooxml_member_names(package: zipfile.ZipFile, path: Path) -> set[str]:
+    names = package.namelist()
+    duplicates = sorted(name for name, count in Counter(names).items() if count > 1)
+    if duplicates:
+        raise ValidationFailed(
+            f"{path}: invalid OOXML package: duplicate member names: {', '.join(duplicates)}"
+        )
+    return set(names)
+
+
+def xlsx_inventory(path: Path) -> dict[str, Any]:
+    try:
+        with zipfile.ZipFile(path) as package:
+            names = ooxml_member_names(package, path)
+            workbook = ET.fromstring(package.read("xl/workbook.xml"))
+            relationships = ET.fromstring(package.read("xl/_rels/workbook.xml.rels"))
+            by_id = {item.get("Id"): item for item in relationships.findall(f"{{{PACKAGE_REL}}}Relationship")}
+            sheets: list[tuple[str, str, str | None]] = []
+            formula_count = cached_formula_count = error_count = cell_count = 0
+            formula_sheets: set[str] = set()
+            hidden_rows = hidden_columns = 0
+            check_values: dict[str, str] = {}
+            extracted: list[str] = []
+            for sheet in workbook.findall(f"{{{MAIN}}}sheets/{{{MAIN}}}sheet"):
+                name = sheet.get("name") or ""
+                relation = by_id.get(sheet.get(f"{{{OFFICE_REL}}}id"))
+                target = relation.get("Target") if relation is not None else None
+                if not target:
+                    raise ValidationFailed(f"{path}: worksheet {name!r} has no relationship target")
+                member = target.lstrip("/") if target.startswith("/") else posixpath.normpath(posixpath.join("xl", target))
+                if member not in names:
+                    raise ValidationFailed(f"{path}: worksheet member is missing: {member}")
+                sheets.append((name, member, sheet.get("state")))
+                worksheet = ET.fromstring(package.read(member))
+                hidden_rows += sum(row.get("hidden") in {"1", "true"} for row in worksheet.findall(f".//{{{MAIN}}}row"))
+                hidden_columns += sum(column.get("hidden") in {"1", "true"} for column in worksheet.findall(f".//{{{MAIN}}}col"))
+                cells = worksheet.findall(f".//{{{MAIN}}}c")
+                cell_values = {
+                    str(cell.get("r", "")).upper(): cached_cell_text(cell)
+                    for cell in cells
+                }
+                cell_count += len(cells)
+                for cell in cells:
+                    formula = cell.find(f"{{{MAIN}}}f")
+                    value = cell.find(f"{{{MAIN}}}v")
+                    if formula is not None:
+                        formula_count += 1
+                        formula_sheets.add(name)
+                        cached_formula_count += value is not None and (
+                            bool((value.text or "").strip())
+                            or (cell.get("t") == "str" and has_valid_empty_string_cache(formula, cell_values))
+                        )
+                        extracted.append(formula.text or "")
+                    text = cached_cell_text(cell)
+                    extracted.append(text)
+                    if cell.get("t") == "e" or text.startswith("#"):
+                        error_count += 1
+                    if name == "Checks" and cell.get("r") in {"B5", "B6", "B7", "B8", "B9", "B10", "B11", "B12", "B13", "B16"}:
+                        check_values[str(cell.get("r"))] = text
+            shared = "xl/sharedStrings.xml"
+            if shared in names:
+                tree = ET.fromstring(package.read(shared))
+                extracted.extend(item.text or "" for item in tree.findall(f".//{{{MAIN}}}t"))
+                extracted.extend(
+                    "".join(item.text or "" for item in shared_item.findall(f".//{{{MAIN}}}t"))
+                    for shared_item in tree.findall(f"{{{MAIN}}}si")
+                )
+            calc = workbook.find(f"{{{MAIN}}}calcPr")
+            external = {name for name in names if "externallink" in name.casefold()}
+            for member in sorted(name for name in names if name.endswith(".rels")):
+                relationship_tree = ET.fromstring(package.read(member))
+                external.update(
+                    f"{member}:{item.get('Target', '')}"
+                    for item in relationship_tree
+                    if item.get("TargetMode") == "External"
+                )
+            comments = sorted(name for name in names if "comment" in name.casefold() and name.endswith(".xml"))
+            for member in comments:
+                comment_tree = ET.fromstring(package.read(member))
+                extracted.extend(node.text or "" for node in comment_tree.findall(f".//{{{MAIN}}}t"))
+            for member in ("docProps/core.xml", "docProps/custom.xml"):
+                if member in names:
+                    extracted.extend(node.text or "" for node in ET.fromstring(package.read(member)).iter())
+            text_members = sorted(
+                name
+                for name in names
+                if name.casefold().endswith((".xml", ".rels", ".vml"))
+            )
+            for member in text_members:
+                extracted.extend(xml_surfaces(ET.fromstring(package.read(member))))
+            tables = [name for name in names if name.startswith("xl/tables/") and name.endswith(".xml")]
+            return {
+                "sheets": sheets, "cells": cell_count, "formulas": formula_count,
+                "cached_formulas": cached_formula_count, "errors": error_count,
+                "check_values": check_values, "external": sorted(external), "comments": comments,
+                "tables": len(tables), "text": "\n".join(extracted),
+                "hidden_rows": hidden_rows, "hidden_columns": hidden_columns,
+                "formula_sheets": sorted(formula_sheets),
+                "calc_mode": calc.get("calcMode") if calc is not None else None,
+                "full_calc": calc.get("fullCalcOnLoad") if calc is not None else None,
+            }
+    except (KeyError, OSError, zipfile.BadZipFile, ET.ParseError) as error:
+        raise ValidationFailed(f"{path}: invalid xlsx package: {error}") from error
+
+
+def docx_inventory(path: Path) -> dict[str, Any]:
+    try:
+        with zipfile.ZipFile(path) as package:
+            names = ooxml_member_names(package, path)
+            document = ET.fromstring(package.read("word/document.xml"))
+            surface_members = sorted(
+                name
+                for name in names
+                if name.casefold().endswith((".xml", ".rels", ".vml"))
+            )
+            extracted: list[str] = []
+            hidden = 0
+            for member in surface_members:
+                tree = document if member == "word/document.xml" else ET.fromstring(package.read(member))
+                extracted.extend(xml_surfaces(tree))
+                if member.startswith("word/"):
+                    extracted.extend(
+                        "".join(node.text or "" for node in paragraph.findall(f".//{{{WORD}}}t"))
+                        for paragraph in tree.findall(f".//{{{WORD}}}p")
+                    )
+                    hidden += sum(
+                        word_on_off_enabled(element)
+                        for element in tree.findall(f".//{{{WORD}}}vanish")
+                    )
+            paragraphs = len(document.findall(f".//{{{WORD}}}p"))
+            tables = len(document.findall(f".//{{{WORD}}}tbl"))
+            comments = [name for name in names if name == "word/comments.xml"]
+            external: list[str] = []
+            embedded_payloads = sorted(
+                name
+                for name in names
+                if name.casefold().startswith("word/embeddings/")
+            )
+            alt_chunks = [
+                element.get(f"{{{OFFICE_REL}}}id", "<unbound>")
+                for element in document.findall(f".//{{{WORD}}}altChunk")
+            ]
+            for name in names:
+                if name.endswith(".rels"):
+                    rels = ET.fromstring(package.read(name))
+                    for item in rels:
+                        relationship_type = (item.get("Type") or "").rsplit("/", 1)[-1].casefold()
+                        if item.get("TargetMode") == "External":
+                            external.append(item.get("Target", ""))
+                        if relationship_type == "afchunk":
+                            alt_chunks.append(item.get("Target", "<missing-target>"))
+                        if relationship_type in {"oleobject", "package"}:
+                            embedded_payloads.append(f"{name}:{item.get('Target', '<missing-target>')}")
+            revisions = len(document.findall(f".//{{{WORD}}}ins")) + len(document.findall(f".//{{{WORD}}}del"))
+            custom_xml = len([name for name in names if name.startswith("customXml/") and name.endswith(".xml")])
+            return {"text": "\n".join(extracted), "paragraphs": paragraphs, "tables": tables, "hidden": hidden, "comments": len(comments), "revisions": revisions, "custom_xml": custom_xml, "external": external, "alt_chunks": alt_chunks, "embedded_payloads": sorted(set(embedded_payloads))}
+    except (KeyError, OSError, zipfile.BadZipFile, ET.ParseError) as error:
+        raise ValidationFailed(f"{path}: invalid docx package: {error}") from error
+
+
+def quoted_message_blocks(body: str) -> list[str]:
+    blocks = QUOTED_MESSAGE_SEPARATOR.split(body)
+    quoted: list[str] = []
+    for block in blocks[1:]:
+        required_headers = (
+            r"(?im)^[ \t]*From:[ \t]*\S.*$",
+            r"(?im)^[ \t]*To:[ \t]*\S.*$",
+            r"(?im)^[ \t]*Subject:[ \t]*\S.*$",
+        )
+        if not all(re.search(pattern, block) for pattern in required_headers):
+            continue
+        if not re.search(r"(?im)^[ \t]*(?:Sent|Date):[ \t]*\S.*$", block):
+            continue
+        subject = re.search(r"(?im)^[ \t]*Subject:[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*", block)
+        if subject is None or not block[subject.end():].strip():
+            continue
+        quoted.append(block)
+    return quoted
+
+
+def eml_inventory(path: Path) -> dict[str, Any]:
+    try:
+        message = BytesParser(policy=policy.default).parsebytes(path.read_bytes())
+    except (OSError, ValueError) as error:
+        raise ValidationFailed(f"{path}: invalid RFC 5322 message: {error}") from error
+    if not isinstance(message, EmailMessage):
+        raise ValidationFailed(f"{path}: email parser did not return an EmailMessage")
+    parts = list(message.walk())
+    attachments = list(message.iter_attachments())
+    text_parts: list[str] = []
+    for part in parts:
+        text_parts.extend(f"{name}: {value}" for name, value in part.items())
+        if part.get_content_maintype() == "text":
+            try:
+                content = part.get_content()
+            except (LookupError, UnicodeError):
+                raise ValidationFailed(f"{path}: text MIME part cannot be decoded")
+            text_parts.append(content)
+            if part.get_content_type().casefold() == "text/html":
+                text_parts.append(rendered_html_text(content))
+    body_part = message.get_body(preferencelist=("plain", "html"))
+    try:
+        decoded_body = body_part.get_content() if body_part is not None else ""
+    except (LookupError, UnicodeError):
+        raise ValidationFailed(f"{path}: message body cannot be decoded")
+    if not isinstance(decoded_body, str):
+        decoded_body = ""
+    raw = path.read_bytes().decode("ascii", errors="replace")
+    quoted_blocks = quoted_message_blocks(decoded_body)
+    message_ids = [str(message["Message-ID"]).strip()] if message.get("Message-ID") else []
+    for block in quoted_blocks:
+        message_ids.extend(re.findall(r"(?im)^[ \t]*Message-ID:[ \t]*(\S+)", block))
+    message_count = (1 + len(quoted_blocks)) if decoded_body.strip() else 0
+    for attachment in attachments:
+        payload = attachment.get_payload(decode=True) or b""
+        filename = attachment.get_filename()
+        if not filename or not payload:
+            raise ValidationFailed(f"{path}: attachment lacks a filename or payload")
+        if unsupported_text_attachment(filename, payload, attachment.get_content_charset()):
+            raise ValidationFailed(f"{path}: attachment bytes or filename identify an unsupported binary or structured format: {filename}")
+        if attachment.get_content_type() == "text/csv":
+            try:
+                decoded = payload.decode(attachment.get_content_charset() or "utf-8")
+            except (LookupError, UnicodeError) as error:
+                raise ValidationFailed(f"{path}: text attachment cannot be decoded: {filename}") from error
+            if len([line for line in decoded.splitlines() if line.strip()]) < 2:
+                raise ValidationFailed(f"{path}: CSV attachment lacks header and data")
+            text_parts.append(decoded)
+        elif attachment.get_content_maintype() == "text":
+            try:
+                decoded = payload.decode(attachment.get_content_charset() or "utf-8")
+            except (LookupError, UnicodeError) as error:
+                raise ValidationFailed(f"{path}: text attachment cannot be decoded: {filename}") from error
+            text_parts.append(decoded)
+            if attachment.get_content_type().casefold() == "text/html":
+                text_parts.append(rendered_html_text(decoded))
+        else:
+            raise ValidationFailed(
+                f"{path}: unsupported binary attachment cannot be inspected safely: {attachment.get_filename()}"
+            )
+    return {
+        "message": message, "attachments": attachments, "parts": parts,
+        "text": raw + "\n" + "\n".join(text_parts), "message_ids": message_ids,
+        "message_count": message_count, "body": decoded_body,
+    }
+
+
+def native_asset_inventory(path: Path) -> tuple[str, dict[str, Any]]:
+    suffix = path.suffix.casefold()
+    if suffix == ".xlsx":
+        return "xlsx", xlsx_inventory(path)
+    if suffix == ".docx":
+        return "docx", docx_inventory(path)
+    if suffix == ".eml":
+        return "eml", eml_inventory(path)
+    raise ValidationFailed(f"{path}: unsupported bound native asset type {suffix or '<none>'}")
+
+
+def machine_recalculation_proof(
+    root: Path,
+    release: dict[str, Any],
+    descriptor_hash: str,
+    assets: list[tuple[Path, str]],
+) -> dict[str, str]:
+    release_id = str(release.get("release_id"))
+    if len(assets) != 1:
+        raise ValidationFailed(f"{release_id}: machine recalculation proof must bind exactly one workbook")
+    relative = f"evidence/template-releases/{release_id}/machine-proofs/workbook-recalculation.json"
+    proof_path = repository_path(root, relative, f"{release_id} machine recalculation proof")
+    proof_hash = sha256(proof_path)
+    proof = load_json(proof_path)
+    workbook, workbook_hash = assets[0]
+    try:
+        current_evidence = workbook_formula_evidence(workbook)
+    except ValueError as error:
+        raise ValidationFailed(f"{release_id}: cannot verify machine recalculation proof: {error}") from error
+    findings = recalculation_proof_findings(
+        proof,
+        release_id=release_id,
+        template_id=str(release.get("template_id")),
+        version=str(release.get("version")),
+        descriptor_sha256=descriptor_hash,
+        workbook_path=workbook.relative_to(root).as_posix(),
+        workbook_sha256=workbook_hash,
+        current_evidence=current_evidence,
+    )
+    if findings:
+        raise ValidationFailed(f"{release_id}: machine recalculation proof failed: {'; '.join(findings)}")
+    return {
+        "path": relative,
+        "sha256": proof_hash,
+        "media_type": "application/json",
+        "proof_type": "workbook_recalculation_result",
+    }
+
+
+def pdf_pages(path: Path) -> int:
+    payload = path.read_bytes()
+    try:
+        return int(inspect_pdf(payload)["page_count"])
+    except (OSError, ValueError) as error:
+        raise ValidationFailed(f"{path}: render is not a structurally valid PDF: {error}") from error
+
+
+def png_dimensions(path: Path) -> tuple[int, int]:
+    payload = path.read_bytes()
+    if len(payload) < 24 or payload[:8] != b"\x89PNG\r\n\x1a\n" or payload[12:16] != b"IHDR":
+        raise ValidationFailed(f"{path}: render is not a structurally valid PNG")
+    width, height = struct.unpack(">II", payload[16:24])
+    if width < 100 or height < 100:
+        raise ValidationFailed(f"{path}: rendered PNG dimensions are implausibly small")
+    return width, height
+
+
+def render_outputs(root: Path, descriptor: dict[str, Any], release_id: str, asset_hash: str) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    contract = descriptor.get("render_contract") or {}
+    if contract.get("required") is not True:
+        return [], []
+    page_count = contract.get("expected_page_count")
+    if not isinstance(page_count, int) or page_count < 1:
+        raise ValidationFailed(f"{release_id}: required render contract lacks a page count")
+    paths = [contract.get("expected_pdf_path")]
+    pattern = contract.get("expected_page_image_pattern")
+    if not isinstance(pattern, str):
+        raise ValidationFailed(f"{release_id}: required render contract lacks a page image pattern")
+    paths.extend(pattern.format(page=page) for page in range(1, page_count + 1))
+    outputs: list[dict[str, str]] = []
+    checks = []
+    for index, relative in enumerate(paths):
+        path = repository_path(root, relative, f"{release_id} render output")
+        if index == 0:
+            actual_pages = pdf_pages(path)
+            if actual_pages != page_count:
+                raise ValidationFailed(f"{release_id}: PDF page count {actual_pages} != {page_count}")
+            detail = f"PDF parsed successfully with the required {actual_pages} pages."
+            media = "application/pdf"
+        else:
+            width, height = png_dimensions(path)
+            detail = f"Page image {index} parsed successfully at {width}x{height} pixels."
+            media = "image/png"
+        outputs.append({"path": str(relative), "sha256": sha256(path), "media_type": media, "category": "render"})
+        checks.append(check(f"render:output-{index}", detail))
+    manifest = load_json(repository_path(root, contract.get("evidence_manifest"), f"{release_id} render manifest"))
+    record = (manifest.get("templates") or {}).get(descriptor.get("template_id")) or {}
+    if record.get("asset_sha256") != asset_hash or record.get("page_count") != page_count or record.get("rendered_outputs") != [{"path": item["path"], "sha256": item["sha256"]} for item in outputs]:
+        raise ValidationFailed(f"{release_id}: render manifest does not bind the frozen asset and ordered outputs")
+    checks.append(check("render:manifest-binding", "Render manifest binds the frozen native asset, page count, and ordered output hashes."))
+    return outputs, checks
+
+
+def target_range(blueprint: dict[str, Any], unit: str) -> tuple[int, int] | None:
+    target = str((blueprint.get("footprint") or {}).get("target", ""))
+    match = re.search(rf"(\d+)\s*-\s*(\d+)\s+{unit}", target, re.I)
+    return (int(match.group(1)), int(match.group(2))) if match else None
+
+
+def validate_release(root: Path, release_path: Path, actor_id: str, actor: str) -> list[tuple[Path, bytes]]:
+    release = load_json(release_path)
+    release_id = str(release.get("release_id"))
+    descriptor_ref = release.get("descriptor") or {}
+    descriptor_path = repository_path(root, descriptor_ref.get("path"), f"{release_id} descriptor")
+    descriptor_hash = sha256(descriptor_path)
+    if descriptor_ref.get("sha256") != descriptor_hash:
+        raise ValidationFailed(f"{release_id}: descriptor hash is stale")
+    descriptor = load_json(descriptor_path)
+    if descriptor.get("template_id") != release.get("template_id") or descriptor.get("version") != release.get("version"):
+        raise ValidationFailed(f"{release_id}: descriptor identity does not match release")
+    blueprint_ref = release.get("blueprint") or {}
+    blueprint_path = repository_path(root, blueprint_ref.get("path"), f"{release_id} blueprint")
+    if blueprint_ref.get("sha256") != sha256(blueprint_path):
+        raise ValidationFailed(f"{release_id}: blueprint hash is stale")
+    blueprint = load_json(blueprint_path)
+    gates = {item.get("category"): item for item in blueprint.get("proof_gates", []) if isinstance(item, dict)}
+    if set(gates) != set(CATEGORIES):
+        raise ValidationFailed(f"{release_id}: blueprint does not define the eight technical categories")
+    assets: list[tuple[Path, str]] = []
+    for index, binding in enumerate(descriptor.get("native_assets", [])):
+        path = repository_path(root, binding.get("path"), f"{release_id} native asset {index}")
+        digest = sha256(path)
+        if binding.get("sha256") != digest:
+            raise ValidationFailed(f"{release_id}: native asset {index} hash is stale")
+        assets.append((path, digest))
+    if not assets or {item[1] for item in assets} != {item.get("sha256") for item in release.get("native_assets", [])}:
+        raise ValidationFailed(f"{release_id}: release does not bind the descriptor native assets")
+
+    artifact_type = descriptor.get("artifact_type")
+    inventories = [
+        (path, *native_asset_inventory(path))
+        for path, _ in assets
+    ]
+    primary, primary_type, inventory = inventories[0]
+    if artifact_type not in {"xlsx", "docx", "eml"}:
+        raise ValidationFailed(f"{release_id}: unsupported technical runner artifact type {artifact_type}")
+    if primary_type != artifact_type:
+        raise ValidationFailed(f"{release_id}: primary native asset type does not match {artifact_type}")
+    if any(asset_type != artifact_type for _, asset_type, _ in inventories):
+        raise ValidationFailed(f"{release_id}: non-mixed descriptor contains heterogeneous native asset types")
+    if artifact_type in {"xlsx", "docx"} and len(inventories) != 1:
+        raise ValidationFailed(f"{release_id}: {artifact_type} descriptor must bind exactly one native asset")
+    outputs, output_checks = render_outputs(root, descriptor, release_id, assets[0][1])
+
+    category_checks: dict[str, list[dict[str, str]]] = {name: [] for name in CATEGORIES}
+    for asset_path, asset_type, asset_inventory in inventories:
+        if asset_type == "xlsx" and (not asset_inventory["sheets"] or asset_inventory["cells"] == 0):
+            raise ValidationFailed(f"{release_id}: workbook {asset_path.name} has insufficient native structure")
+        if asset_type == "docx" and (asset_inventory["paragraphs"] == 0 or not asset_inventory["text"].strip()):
+            raise ValidationFailed(f"{release_id}: document {asset_path.name} has insufficient native structure")
+        required_email_headers = ("From", "To", "Date", "Subject", "Message-ID")
+        if asset_type == "eml" and (
+            any(
+                not str(asset_inventory["message"].get(header, "")).strip()
+                for header in required_email_headers
+            )
+            or asset_inventory["message_count"] < 1
+            or not asset_inventory["body"].strip()
+        ):
+            raise ValidationFailed(f"{release_id}: email {asset_path.name} lacks required headers or message content")
+    if artifact_type == "xlsx":
+        sheet_names = [item[0] for item in inventory["sheets"]]
+        expected = (descriptor.get("render_contract") or {}).get("expected_sheet_names")
+        if sheet_names != expected or inventory["cells"] == 0:
+            raise ValidationFailed(f"{release_id}: workbook sheets or populated structure do not match the descriptor")
+        category_checks["core_integrity"].append(check("core_integrity:xlsx-structure", f"Parsed {len(sheet_names)} ordered worksheets, {inventory['cells']} cells, and {inventory['tables']} native tables."))
+    elif artifact_type == "docx":
+        if inventory["paragraphs"] < 20 or not inventory["text"].strip():
+            raise ValidationFailed(f"{release_id}: DOCX has insufficient native document structure")
+        category_checks["core_integrity"].append(check("core_integrity:docx-structure", f"Parsed {inventory['paragraphs']} paragraphs and {inventory['tables']} tables from native WordprocessingML."))
+    else:
+        email_inventories = [item for _, kind, item in inventories if kind == "eml"]
+        message_count = sum(item["message_count"] for item in email_inventories)
+        attachment_count = sum(len(item["attachments"]) for item in email_inventories)
+        if message_count < 2:
+            raise ValidationFailed(f"{release_id}: email thread lacks required headers or thread depth")
+        category_checks["core_integrity"].append(check("core_integrity:mime-structure", f"Parsed {sum(len(item['parts']) for item in email_inventories)} MIME parts, {message_count} messages, and {attachment_count} attachments across {len(email_inventories)} bound email assets."))
+    category_checks["core_integrity"].append(check("core_integrity:bound-native-assets", f"Parsed and checked native structure for all {len(inventories)} bound assets."))
+
+    if outputs:
+        category_checks["render"].extend(output_checks)
+    elif artifact_type == "eml":
+        attachments = sum(len(item["attachments"]) for _, kind, item in inventories if kind == "eml")
+        category_checks["render"].append(check("render:mime-parts", f"Opened and decoded all {attachments} native MIME attachment payloads across every bound email asset; pagination is not the descriptor render surface."))
+    else:
+        raise ValidationFailed(f"{release_id}: applicable render gate has no render outputs")
+
+    for asset_path, asset_type, asset_inventory in inventories:
+        if asset_type == "xlsx":
+            hidden = [name for name, _, state in asset_inventory["sheets"] if state in {"hidden", "veryHidden"}]
+            if asset_inventory["external"] or hidden or asset_inventory["hidden_rows"] or asset_inventory["hidden_columns"]:
+                raise ValidationFailed(f"{release_id}: workbook {asset_path.name} contains external links or hidden workbook surfaces")
+        elif asset_type == "docx":
+            if asset_inventory["external"] or asset_inventory["hidden"] or asset_inventory["alt_chunks"] or asset_inventory["embedded_payloads"]:
+                raise ValidationFailed(f"{release_id}: document {asset_path.name} contains external relationships, hidden text, unsupported altChunk content, or unsupported embedded content")
+        elif len(asset_inventory["message_ids"]) != len(set(asset_inventory["message_ids"])):
+            raise ValidationFailed(f"{release_id}: email {asset_path.name} contains duplicate Message-ID values")
+    all_message_ids = [
+        message_id
+        for _, asset_type, asset_inventory in inventories
+        if asset_type == "eml"
+        for message_id in asset_inventory["message_ids"]
+    ]
+    if len(all_message_ids) != len(set(all_message_ids)):
+        raise ValidationFailed(f"{release_id}: duplicate Message-ID values occur across bound email assets")
+
+    if artifact_type == "xlsx":
+        category_checks["metadata"].append(check("metadata:xlsx-surfaces", f"Inspected workbook relationships, {len(inventory['sheets'])} sheet states, row/column visibility, and {len(inventory['comments'])} parsed comment parts; found no external links or hidden surfaces."))
+    elif artifact_type == "docx":
+        category_checks["metadata"].append(check("metadata:docx-surfaces", f"Inspected package relationships, hidden text, {inventory['revisions']} revisions, {inventory['comments']} parsed comment parts, and {inventory['custom_xml']} custom XML parts with no external targets."))
+    else:
+        category_checks["metadata"].append(check("metadata:mime-headers", f"Inspected MIME encodings, attachment names, timestamps, and {len(all_message_ids)} globally unique message identifiers."))
+    category_checks["metadata"].append(check("metadata:bound-native-assets", f"Parsed metadata and relationship surfaces across all {len(inventories)} bound native assets."))
+
+    machine_proof: dict[str, str] | None = None
+    if gates["computational"].get("applicable") is True:
+        if artifact_type != "xlsx" or inventory["formulas"] < 1 or inventory["cached_formulas"] != inventory["formulas"] or inventory["errors"]:
+            raise ValidationFailed(f"{release_id}: live formula structure, cached results, or error states failed")
+        expected_checks = {"B5", "B6", "B7", "B8", "B9", "B10", "B11", "B12", "B13", "B16"}
+        allowed_states = {"PASS", "NOT READY", "NOT APPLICABLE"}
+        if inventory["calc_mode"] != "auto" or inventory["full_calc"] != "1" or set(inventory["check_values"]) != expected_checks or not set(inventory["check_values"].values()) <= allowed_states:
+            raise ValidationFailed(f"{release_id}: workbook calculation controls or live checks failed")
+        if len(inventory["formula_sheets"]) < 3:
+            raise ValidationFailed(f"{release_id}: formulas do not span the expected workbook calculation layers")
+        machine_proof = machine_recalculation_proof(root, release, descriptor_hash, assets)
+        category_checks["computational"].append(check("computational:recalculation-proof", f"Verified machine LibreOffice recalculation proof {machine_proof['path']} ({machine_proof['sha256']}) against the exact descriptor, workbook, formula, cache, and control hashes."))
+        category_checks["computational"].append(check("computational:formula-cache-state", f"Parsed {inventory['formulas']} formulas and their proof-bound cached results across {len(inventory['formula_sheets'])} sheets with no recorded formula errors."))
+        category_checks["computational"].append(check("computational:control-checks", f"Inspected {len(inventory['check_values'])} proof-bound control results from the machine recalculation evidence; none report FAIL."))
+
+    for lineage in blueprint.get("foundation_lineage", []):
+        card_id = lineage.get("card_id")
+        card_path = repository_path(root, f"library/foundations/{card_id}.json", f"{release_id} foundation")
+        card = load_json(card_path)
+        if sha256(card_path) != lineage.get("card_sha256") or (card.get("source") or {}).get("sha256") != lineage.get("reviewed_source_sha256") or card.get("status") != "reviewed" or (card.get("source") or {}).get("synthetic_authorized") is not True:
+            raise ValidationFailed(f"{release_id}: foundation provenance is stale or unauthorized")
+    category_checks["provenance"].append(check("provenance:lineage-hashes", f"Recomputed the blueprint and descriptor hashes and verified {len(blueprint.get('foundation_lineage', []))} reviewed, synthetic-authorized foundation bindings."))
+
+    text = "\n".join(str(item.get("text", "")) for _, _, item in inventories)
+    slots = set(descriptor.get("slots", []))
+    token_text = re.sub(r"=\r?\n", "", text)
+    observed_slots = set(DOUBLE_BRACE_TOKEN.findall(token_text))
+    unknown_slots = observed_slots - slots
+    forbidden = [token for token in FORBIDDEN_TEXT if token in text.casefold()]
+    if unknown_slots or forbidden:
+        raise ValidationFailed(f"{release_id}: leakage scan found unknown slots or prohibited residue")
+    category_checks["leakage"].append(check("leakage:visible-hidden-scan", f"Scanned extracted content from all {len(inventories)} bound native assets for prohibited residue and verified all {len(observed_slots)} template tokens against the descriptor slot allowlist."))
+
+    authority = blueprint.get("authority") or {}
+    if descriptor.get("authority") != authority.get("primary_class") or not authority.get("governing_scope") or not authority.get("non_governing_scope") or not descriptor.get("knowledge_and_authority_constraints"):
+        raise ValidationFailed(f"{release_id}: authority boundary declarations are incomplete or inconsistent")
+    marker_sets = [
+        {
+            marker
+            for marker in AUTHORITY_MARKERS
+            if marker in str(asset_inventory.get("text", "")).casefold()
+        }
+        for _, _, asset_inventory in inventories
+    ]
+    if any(not markers for markers in marker_sets):
+        raise ValidationFailed(f"{release_id}: a bound native asset does not express its authority state")
+    authority_markers = set().union(*marker_sets)
+    if len(authority_markers) < 2:
+        raise ValidationFailed(f"{release_id}: native content does not express a reviewable authority boundary")
+    category_checks["authority_separation"].append(check("authority_separation:declared-boundary", f"Descriptor authority {descriptor.get('authority')} matches the blueprint and retains explicit governing, non-governing, and knowledge boundaries."))
+    category_checks["authority_separation"].append(check("authority_separation:native-content", f"Extracted native content preserves {len(authority_markers)} distinct authority-state markers: {', '.join(sorted(authority_markers))}."))
+
+    if artifact_type == "xlsx":
+        actual = sum(len(item["sheets"]) for _, kind, item in inventories if kind == "xlsx")
+        unit = "tabs"
+    elif artifact_type == "docx":
+        if len(inventories) != 1:
+            raise ValidationFailed(f"{release_id}: document footprint contract does not account for multiple native assets")
+        actual, unit = int((descriptor.get("render_contract") or {}).get("expected_page_count") or 0), "pages"
+    else:
+        actual = sum(item["message_count"] for _, kind, item in inventories if kind == "eml")
+        unit = "messages"
+    bounds = target_range(blueprint, unit)
+    if bounds is None:
+        raise ValidationFailed(f"{release_id}: blueprint does not define a supported {unit} footprint")
+    if artifact_type == "eml" and not bounds[0] <= actual <= bounds[1]:
+        raise ValidationFailed(f"{release_id}: combined email footprint is outside blueprint bounds")
+    if artifact_type != "eml" and not bounds[0] <= actual <= bounds[1]:
+        raise ValidationFailed(f"{release_id}: {actual} {unit} do not satisfy blueprint footprint")
+    if artifact_type == "eml":
+        attachment_count = sum(len(item["attachments"]) for _, kind, item in inventories if kind == "eml")
+        if not 2 <= attachment_count <= 4:
+            raise ValidationFailed(f"{release_id}: combined email footprint has attachments outside blueprint bounds")
+    category_checks["anti_filler"].append(check("anti_filler:footprint", f"Native footprint of {actual} {unit} satisfies the blueprint's producer-owned {bounds[0]}-{bounds[1]} range."))
+
+    writes: list[tuple[Path, bytes]] = []
+    for category in CATEGORIES:
+        gate = gates[category]
+        applicable = gate.get("applicable") is True
+        checks = category_checks[category]
+        if not applicable:
+            checks = [check(f"{category}:blueprint-rationale", str(gate.get("not_applicable_rationale") or "Blueprint marks this category not applicable to this native artifact contract."), "NOT_APPLICABLE")]
+        elif not checks:
+            raise ValidationFailed(f"{release_id}: applicable {category} gate produced no machine checks")
+        result = {
+            "schema_version": "1.0.0", "result_type": "template_technical_validation_result",
+            "result_id": f"TECHRES-{release_id}-{category.replace('_', '-').upper()}",
+            "release_id": release_id, "template_id": descriptor["template_id"], "version": descriptor["version"],
+            "category": category, "result_artifact_category": "provenance" if category == "render" and outputs else category,
+            "descriptor_sha256": descriptor_hash, "native_asset_sha256s": [digest for _, digest in assets],
+            "applicable": applicable, "verdict": "VALIDATION_PASS" if applicable else "VALIDATION_NOT_APPLICABLE",
+            "procedure": gate.get("procedure"), "actor_id": actor_id, "actor": actor,
+            "machine_proof": machine_proof if category == "computational" and applicable else None,
+            "checks": checks, "rendered_outputs": outputs if category == "render" else [],
+            "observations": [f"Deterministic {category} checks inspected the frozen descriptor and all {len(inventories)} bound native assets."],
+            "summary": f"Category-specific {category} validation completed against the frozen release inputs.",
+        }
+        writes.append((root / f"evidence/template-releases/{release_id}/technical-results/{category}.json", json_bytes(result)))
+    return writes
+
+
+def publish_results_once(root: Path, writes: list[tuple[Path, bytes]]) -> None:
+    """Monotonically publish missing results without replacing any target path."""
+
+    destinations = [path for path, _ in writes]
+    if len(destinations) != len(set(destinations)):
+        raise ValidationFailed(
+            "technical result destinations must be unique before publication"
+        )
+    root_stat = root.stat(follow_symlinks=False)
+    for path, _ in writes:
+        verify_result_parent(root, path)
+
+    states: list[tuple[Path, str]] = []
+    for path, payload in writes:
+        existing = read_stable_technical_result(root, path)
+        if existing is None:
+            states.append((path, "missing"))
+        else:
+            states.append((path, "identical" if existing == payload else "different"))
+
+    conflicts = [
+        path.relative_to(root).as_posix()
+        for path, state in states
+        if state == "different"
+    ]
+    if conflicts:
+        raise ValidationFailed(
+            "published technical results are immutable; no files written; "
+            "different targets: " + ", ".join(conflicts)
+        )
+    missing = {
+        path
+        for path, state in states
+        if state == "missing"
+    }
+    pending = [(path, payload) for path, payload in writes if path in missing]
+    if not pending:
+        return
+
+    staged: list[tuple[Path, bytes, Path, os.stat_result, object]] = []
+    try:
+        for path, payload in pending:
+            if not path.parent.exists():
+                try:
+                    path.parent.mkdir()
+                except FileExistsError:
+                    pass
+            verify_result_parent(root, path)
+            stream = open_staging_file(
+                dir=root,
+                prefix=path.name + ".",
+                suffix=".tmp",
+                delete=False,
+            )
+            temporary = Path(stream.name)
+            temporary_stat = os.fstat(stream.fileno())
+            staged.append((path, payload, temporary, temporary_stat, stream))
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+            if not os.path.samestat(root_stat, root.stat(follow_symlinks=False)):
+                raise ValidationFailed(
+                    "repository root changed during technical-result staging"
+                )
+
+        for path, payload, temporary, _, stream in staged:
+            verify_result_parent(root, path)
+            with locked_directory(path.parent) as directory_descriptor:
+                try:
+                    hard_link(
+                        temporary,
+                        stream.fileno(),
+                        path,
+                        directory_descriptor,
+                    )
+                except FileExistsError:
+                    concurrent = read_stable_technical_result(
+                        root, path, directory_descriptor
+                    )
+                    if concurrent is None:
+                        raise ValidationFailed(
+                            "technical result target vanished during publication: "
+                            + path.relative_to(root).as_posix()
+                        )
+                    if concurrent != payload:
+                        raise ValidationFailed(
+                            "concurrent technical result differs; no target overwritten: "
+                            + path.relative_to(root).as_posix()
+                        )
+                except OSError as error:
+                    raise ValidationFailed(
+                        f"technical result publication failed at "
+                        f"{path.relative_to(root).as_posix()}: {error}"
+                    ) from error
+
+        for path, payload in writes:
+            verify_result_parent(root, path)
+            with locked_directory(path.parent) as directory_descriptor:
+                current = read_stable_technical_result(
+                    root, path, directory_descriptor
+                )
+                if current is None:
+                    raise ValidationFailed(
+                        f"technical result publication failed during final verification of "
+                        f"{path.relative_to(root).as_posix()}: target is missing"
+                    )
+                if current != payload:
+                    raise ValidationFailed(
+                        "concurrent technical result changed during publication: "
+                        + path.relative_to(root).as_posix()
+                    )
+
+    except BaseException as error:
+        if not isinstance(error, Exception):
+            raise
+        if isinstance(error, ValidationFailed):
+            raise
+        raise ValidationFailed(f"technical result publication failed: {error}") from error
+    finally:
+        cleanup_failures: list[str] = []
+        for _, _, temporary, temporary_stat, stream in staged:
+            stream.close()
+            try:
+                remove_owned_file(temporary, temporary_stat)
+            except OSError as cleanup_error:
+                cleanup_failures.append(f"{temporary.name}: {cleanup_error}")
+        if cleanup_failures:
+            active_error = sys.exc_info()[1]
+            detail = "technical result staging cleanup incomplete: " + "; ".join(
+                cleanup_failures
+            )
+            if active_error is not None:
+                active_error.add_note(detail)
+            else:
+                raise ValidationFailed(detail)
+
+
+def run(root: Path, actor_id: str, actor: str, write: bool = False) -> list[Path]:
+    root = root.resolve()
+    if not actor_id.strip() or not actor.strip():
+        raise ValidationFailed("technical actor ID and name must be non-empty")
+    release_paths = sorted((root / "library/releases").glob("REL-*.template.json"))
+    writes: list[tuple[Path, bytes]] = []
+    errors: list[str] = []
+    for release_path in release_paths:
+        try:
+            writes.extend(validate_release(root, release_path, actor_id, actor))
+        except ValidationFailed as error:
+            errors.append(str(error))
+    if errors:
+        raise ValidationFailed("technical validation failed; no files written:\n- " + "\n- ".join(errors))
+    if len(writes) != 24:
+        raise ValidationFailed(f"expected 24 category results, produced {len(writes)}; no files written")
+    destinations = [path for path, _ in writes]
+    if len(destinations) != len(set(destinations)):
+        raise ValidationFailed(
+            "expected 24 unique category result destinations; no files written"
+        )
+    if write:
+        publish_results_once(root, writes)
+    return [path for path, _ in writes]
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("--actor-id", required=True)
+    parser.add_argument("--actor-name", required=True)
+    parser.add_argument("--write", action="store_true", help="Create results after preflight, or verify an identical published set.")
+    arguments = parser.parse_args(argv)
+    try:
+        paths = run(arguments.root, arguments.actor_id, arguments.actor_name, arguments.write)
+    except ValidationFailed as error:
+        print(f"REFUSED: {error}", file=sys.stderr)
+        return 1
+    mode = "written" if arguments.write else "dry run"
+    print(f"PASS: {len(paths)} deterministic technical results ({mode})")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

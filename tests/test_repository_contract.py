@@ -9,13 +9,44 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class RepositoryContractTests(unittest.TestCase):
     def test_required_sources_exist(self):
-        for relative in ("SYNTHETIC_DESIGN.md", "skill/SKILL.md", "schemas/foundation-card.schema.json"):
+        for relative in ("SKILL.md", "SYNTHETIC_DESIGN.md", "skill/SKILL.md", "schemas/foundation-card.schema.json"):
             self.assertTrue((ROOT / relative).is_file(), relative)
+
+    def test_repository_root_is_the_self_contained_installable_skill(self):
+        entrypoint = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertTrue(entrypoint.startswith("---\nname: synthetic-studio\n"))
+        self.assertIn("skill/SKILL.md", entrypoint)
+        for relative in (
+            "docs/INTEGRATIONS.md",
+            "integrations/consumer-profile.v1.json",
+            "integrations/query_catalog.py",
+            "library/catalog.json",
+            "scripts/validate_library.py",
+        ):
+            self.assertTrue((ROOT / relative).is_file(), relative)
+
+        canonical = ROOT / "skill/SKILL.md"
+        for target in re.findall(r"\]\(([^)]+)\)", canonical.read_text(encoding="utf-8")):
+            if "://" in target or target.startswith("#"):
+                continue
+            resolved = (canonical.parent / target).resolve()
+            self.assertTrue(resolved.is_relative_to(ROOT), target)
+            self.assertTrue(resolved.exists(), target)
 
     def test_skill_has_required_frontmatter(self):
         text = (ROOT / "skill/SKILL.md").read_text(encoding="utf-8")
         self.assertTrue(text.startswith("---\nname: synthetic-studio\n"))
         self.assertIn("\ndescription:", text.split("---", 2)[1])
+
+    def test_skill_routes_tabular_design_to_diversity_contract(self):
+        text = (ROOT / "skill/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("references/spreadsheet-data-diversity.md", text)
+        self.assertTrue((ROOT / "skill/references/spreadsheet-data-diversity.md").is_file())
+
+    def test_hash_bound_text_evidence_has_stable_line_endings(self):
+        attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+        self.assertIn("*.txt text eol=lf", attributes.splitlines())
+        self.assertIn("*.eml text eol=crlf", attributes.splitlines())
 
     def test_foundation_schema_is_json(self):
         data = json.loads((ROOT / "schemas/foundation-card.schema.json").read_text(encoding="utf-8"))

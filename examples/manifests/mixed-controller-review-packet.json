@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "manifest_id": "MANIFEST-EXAMPLE-0001",
+  "name": "Mixed controller review packet starter composition",
+  "blueprint_id": "BP-0005",
+  "status": "composition_example",
+  "purpose": "Show how independent workbook, memorandum, and correspondence templates can be composed without placing world facts in reusable assets.",
+  "world_fact_policy": "All facts, identities, dates, amounts, and source locators are supplied at instantiation from one approved world; none are stored in this manifest.",
+  "components": [
+    {
+      "template_id": "TMPL-0001",
+      "version": "1.0.0",
+      "descriptor": "library/templates/TMPL-0001/1.0.0/template.json",
+      "package_role": "supporting internal reconciliation",
+      "authority": "supporting"
+    },
+    {
+      "template_id": "TMPL-0002",
+      "version": "1.0.0",
+      "descriptor": "library/templates/TMPL-0002/1.0.0/template.json",
+      "package_role": "supporting internal analysis",
+      "authority": "supporting"
+    },
+    {
+      "template_id": "TMPL-0003",
+      "version": "1.0.0",
+      "descriptor": "library/templates/TMPL-0003/1.0.0/template.json",
+      "package_role": "contextual operational correspondence",
+      "authority": "contextual"
+    }
+  ],
+  "required_additional_components": [
+    "At least one separately sourced authoritative record that owns the governing facts.",
+    "Any system exports or attachments referenced by instantiated artifacts.",
+    "A package-level provenance card and world-facts ledger outside the model-visible package."
+  ],
+  "composition_constraints": [
+    "Do not promote the memorandum, workbook, or email to authority they do not own.",
+    "Do not force one visual style, voice, timestamp convention, or residue pattern across producers.",
+    "Resolve shared identifiers from the approved world while preserving producer-specific vocabularies.",
+    "Reject the package if any template token, template.invalid address, false approval, generator residue, or contradictory authoritative fact remains."
+  ],
+  "package_proof_expectations": ["open every file and attachment", "render every paginated page and workbook sheet", "recalculate every material formula", "verify authority and knowledge boundaries", "run package-wide token, metadata, identity, and leakage scans"]
+}

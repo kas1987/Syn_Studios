@@ -12,6 +12,7 @@ Syn Studios is the source-first design system and pattern library for authorized
 - `schemas/` owns machine-readable card contracts.
 - `library/foundations/` owns reviewed foundation cards; it does not contain raw submission artifacts.
 - `scripts/` owns deterministic inspection and validation.
+- `docs/DOCUMENT_STACK.md` owns the local document-toolchain contract.
 - `tests/` proves repository invariants.
 
 Do not duplicate a rule across these surfaces. Link to the owning source.
@@ -33,5 +34,6 @@ Do not duplicate a rule across these surfaces. Link to the owning source.
 4. Sanitize into a template only in a separately reviewed change.
 5. Run `python -m unittest discover -s tests -v`.
 
-Prefer standard-library tooling. Keep scripts deterministic and make optional format parsers fail transparently.
+For document generation or rendered QA, activate and validate the optional local stack described in `docs/DOCUMENT_STACK.md` before touching artifact bytes.
 
+Prefer standard-library tooling. Keep scripts deterministic and make optional format parsers fail transparently.

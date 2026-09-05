@@ -1,0 +1,5 @@
+REL-0002 | TMPL-0002 | authority_separation
+Descriptor SHA-256: 2d44a466e4c4a5da4bf0203b89ce6af3fcffe8a2e7e61ac6324f12bc7882472b
+Native asset SHA-256: 1a922e87a29682bdea8a04734084f9f9fe1631bf785139b95b2b0f74c238818f
+
+Terra independently rendered the native DOCX and visually inspected all five release-owned pages. The decision request, source matrix, three issue sections, alternatives, safeguards, open items, approval locator, and appendix index are usable without clipping. Repeated DRAFT - NOT APPROVED labeling and supporting-analysis language prevent the memorandum from implying approval authority.

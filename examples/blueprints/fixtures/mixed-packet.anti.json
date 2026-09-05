@@ -1,0 +1,1 @@
+{"fixture_version":"1.0.0","archetype":"mixed_package","expected":"fail","base_blueprint":"examples/blueprints/BP-0005.mixed-hitl-packet.json","mutations":[{"op":"replace","path":"/complexity_layers/1/layer","value":"core"}]}

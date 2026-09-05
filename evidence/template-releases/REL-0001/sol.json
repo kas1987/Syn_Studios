@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0.0",
+  "record_id": "EVID-REL-0001-SOL",
+  "record_type": "sol_review",
+  "release_id": "REL-0001",
+  "template_id": "TMPL-0001",
+  "version": "1.0.0",
+  "descriptor_sha256": "642d3c4d81d898667606140d4f50ca0c040f66c2bf602312bc57a40aea318c7c",
+  "native_asset_sha256s": [
+    "2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66"
+  ],
+  "verdict": "INTEGRITY_PASS",
+  "actor_id": "sol-integrity-reviewer-2026-08-29",
+  "actor": "Sol integrity reviewer",
+  "observations": [
+    "The descriptor binds the exact XLSX hash, eight declared sheets, six native table ranges, supporting authority, release-owned render contract, and an explicit rebuild-only capacity policy.",
+    "OOXML structure and live LibreOffice recalculation reject empty, shallow, malformed, unmatched-account, unrelated-reconciliation, unbalanced-entry, open-exception, and out-of-capacity cases while a complete minimal population passes.",
+    "The exact-header UTF-8 CSV expansion path rebuilt SourceDataTable from 25 to 30 rows, propagated dependent formulas and print boundaries, rendered all eight sheets, and rejected an incomplete typed row.",
+    "All eight release-owned page images were visually inspected and are readable without clipping or overflow; their ordered hashes and the eight-page PDF hash match the release-owned render manifest.",
+    "Visible OOXML, package metadata, formulas, and rendered pages contain no prior-submission facts, real identities, repository or generator residue, grading language, hidden answers, signatures, or approval claims.",
+    "The workbook separates source data, mappings, reconciliation, entries, prior-period context, exceptions, and checks; internal PASS states are explicitly distinguished from approval or release authority."
+  ],
+  "artifacts": [
+    {
+      "path": "evidence/template-releases/REL-0001/render/internal-close-reconciliation.pdf",
+      "sha256": "5a959e1795b560a9d9908f0c374aebcfe000c675b6b1f3df710fd49d0f225346",
+      "media_type": "application/pdf",
+      "category": "render"
+    }
+  ],
+  "summary": "INTEGRITY_PASS for the exact TMPL-0001 descriptor and XLSX bytes: structure, formulas, authority boundaries, release-owned render evidence, metadata hygiene, anti-filler design, and scalable CSV reconstruction were independently challenged and held."
+}

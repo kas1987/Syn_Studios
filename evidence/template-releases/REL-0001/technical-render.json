@@ -1,0 +1,88 @@
+{
+  "schema_version": "1.0.0",
+  "record_id": "EVID-REL-0001-TECH-RENDER",
+  "record_type": "technical_validation",
+  "release_id": "REL-0001",
+  "template_id": "TMPL-0001",
+  "version": "1.0.0",
+  "descriptor_sha256": "642d3c4d81d898667606140d4f50ca0c040f66c2bf602312bc57a40aea318c7c",
+  "native_asset_sha256s": [
+    "2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66"
+  ],
+  "verdict": "VALIDATION_PASS",
+  "actor_id": "syn-validation-runner-2026-08-29",
+  "actor": "Syn Studios validation runner",
+  "observations": [
+    "Deterministic render checks inspected the frozen descriptor and all 1 bound native assets."
+  ],
+  "artifacts": [
+    {
+      "path": "evidence/template-releases/REL-0001/technical-results/render.json",
+      "sha256": "aaf308ef197626070f4edebb711ad342b7fc15a4ea451ff4be340fe8a50cbeee",
+      "media_type": "application/json",
+      "category": "provenance"
+    },
+    {
+      "path": "evidence/template-releases/REL-0001/render/internal-close-reconciliation.pdf",
+      "sha256": "5a959e1795b560a9d9908f0c374aebcfe000c675b6b1f3df710fd49d0f225346",
+      "media_type": "application/pdf",
+      "category": "render"
+    },
+    {
+      "path": "evidence/template-releases/REL-0001/render/internal-close-reconciliation-page-1.png",
+      "sha256": "2129146d6cfb6ed1f60234e3d0be472a7486fdbca8b99f13ea642ce511f2c9ff",
+      "media_type": "image/png",
+      "category": "render"
+    },
+    {
+      "path": "evidence/template-releases/REL-0001/render/internal-close-reconciliation-page-2.png",
+      "sha256": "805caa3005821cfde8629dc82ec1696b261691d84da44486c6c7cc502891f291",
+      "media_type": "image/png",
+      "category": "render"
+    },
+    {
+      "path": "evidence/template-releases/REL-0001/render/internal-close-reconciliation-page-3.png",
+      "sha256": "71762ab8b230bfb520466e15fa1854fc71cbe2bae23942a83c5eb18a9b75f25f",
+      "media_type": "image/png",
+      "category": "render"
+    },
+    {
+      "path": "evidence/template-releases/REL-0001/render/internal-close-reconciliation-page-4.png",
+      "sha256": "34a64b4072dd6a5fa13d12c34d7081e93b2c94db1ecfacb525d22cfbf76765af",
+      "media_type": "image/png",
+      "category": "render"
+    },
+    {
+      "path": "evidence/template-releases/REL-0001/render/internal-close-reconciliation-page-5.png",
+      "sha256": "b23ecbd39367acc1301af91f1ce0ec0338325ecd88a974bcbcae2e988e7447bd",
+      "media_type": "image/png",
+      "category": "render"
+    },
+    {
+      "path": "evidence/template-releases/REL-0001/render/internal-close-reconciliation-page-6.png",
+      "sha256": "aa83cf35f24020007a6ac31f3b5d7f865f2f1760a0637ce2543d93bf2b7857b0",
+      "media_type": "image/png",
+      "category": "render"
+    },
+    {
+      "path": "evidence/template-releases/REL-0001/render/internal-close-reconciliation-page-7.png",
+      "sha256": "c7832fbed836ccdf78653aac521a19f93849d48b342dc560a19d5df31d5a18cb",
+      "media_type": "image/png",
+      "category": "render"
+    },
+    {
+      "path": "evidence/template-releases/REL-0001/render/internal-close-reconciliation-page-8.png",
+      "sha256": "1ba588c5d116492f50c4105dc3ce99ec386234702497c2d4c66bcadd3e47c44b",
+      "media_type": "image/png",
+      "category": "render"
+    }
+  ],
+  "summary": "Category-specific render validation completed against the frozen release inputs.",
+  "categories": [
+    "render"
+  ],
+  "procedures": {
+    "render": "Render and inspect every populated sheet and print area."
+  },
+  "render_contract_sha256": "9e4cdfa83894ad633b94dbe7fd5a0e5e881848558bc41d3934a66fb2a2567c48"
+}

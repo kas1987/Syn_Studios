@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0.0",
+  "record_id": "EVID-REL-0001-TECH-AUTHORITY-SEPARATION",
+  "record_type": "technical_validation",
+  "release_id": "REL-0001",
+  "template_id": "TMPL-0001",
+  "version": "1.0.0",
+  "descriptor_sha256": "642d3c4d81d898667606140d4f50ca0c040f66c2bf602312bc57a40aea318c7c",
+  "native_asset_sha256s": [
+    "2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66"
+  ],
+  "verdict": "VALIDATION_PASS",
+  "actor_id": "syn-validation-runner-2026-08-29",
+  "actor": "Syn Studios validation runner",
+  "observations": [
+    "Deterministic authority_separation checks inspected the frozen descriptor and all 1 bound native assets."
+  ],
+  "artifacts": [
+    {
+      "path": "evidence/template-releases/REL-0001/technical-results/authority_separation.json",
+      "sha256": "82041341e1e3fa9b94c6f6deeb2a27be762db2190b475bc014a30cced0faa631",
+      "media_type": "application/json",
+      "category": "authority_separation"
+    }
+  ],
+  "summary": "Category-specific authority_separation validation completed against the frozen release inputs.",
+  "categories": [
+    "authority_separation"
+  ],
+  "procedures": {
+    "authority_separation": "Confirm supporting work is distinct from governing ledger and approvals."
+  }
+}
