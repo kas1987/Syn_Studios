@@ -80,6 +80,25 @@ class DocumentStackContractTests(unittest.TestCase):
         self.assertIn(completed.returncode, (1, 2))
         payload = json.loads(completed.stdout)
         self.assertNotEqual(payload["status"], "PASS")
+        self.assertTrue(all("accepted" in item for item in payload["executables"].values()))
+
+    def test_artifact_probe_failure_preserves_diagnostic_contract(self):
+        environment = dict(os.environ)
+        environment["SYN_STUDIOS_NODE"] = sys.executable
+        completed = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/check_document_stack.py"), "--profile", "generation", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+            env=environment,
+        )
+        payload = json.loads(completed.stdout)
+        artifact_tool = payload["executables"]["artifact_tool"]
+        self.assertEqual(artifact_tool["status"], "INCOMPATIBLE")
+        self.assertEqual(artifact_tool["path"], sys.executable)
+        self.assertEqual(artifact_tool["accepted"], "2.8.52")
+        self.assertTrue(artifact_tool["output"])
 
     def test_poppler_resolution_accepts_native_and_windows_names(self):
         with tempfile.TemporaryDirectory() as temp_name:
@@ -122,15 +141,19 @@ class DocumentStackContractTests(unittest.TestCase):
 
     def test_repository_does_not_vendor_toolchain_binaries(self):
         forbidden_suffixes = {".exe", ".dll", ".msi", ".node", ".wasm", ".whl", ".so", ".dylib"}
-        found = [
-            str(path.relative_to(ROOT))
-            for path in ROOT.rglob("*")
-            if path.is_file()
-            and ".git" not in path.parts
-            and ".venv" not in path.parts
-            and ".tooling" not in path.parts
-            and (path.suffix.lower() in forbidden_suffixes or "node_modules" in path.parts)
-        ]
+        ignored_directories = {".git", ".venv", ".tooling", "__pycache__"}
+        found = []
+        for directory, children, files in os.walk(ROOT):
+            current = Path(directory)
+            for child in list(children):
+                if child == "node_modules":
+                    found.append(str((current / child).relative_to(ROOT)))
+            children[:] = [child for child in children if child not in ignored_directories | {"node_modules"}]
+            found.extend(
+                str((current / filename).relative_to(ROOT))
+                for filename in files
+                if Path(filename).suffix.lower() in forbidden_suffixes
+            )
         self.assertEqual(found, [])
 
     def test_dirty_render_output_is_rejected_before_tool_use(self):

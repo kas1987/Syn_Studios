@@ -40,13 +40,13 @@ def package_status(distribution: str, accepted: str) -> dict[str, Any]:
 
 def executable_status(path: str, *args: str, accepted: str) -> dict[str, Any]:
     if not path or not Path(path).is_file():
-        return {"status": "CANNOT_CHECK", "path": path or None}
+        return {"status": "CANNOT_CHECK", "path": path or None, "accepted": accepted}
     try:
         completed = subprocess.run(
             [path, *args], capture_output=True, text=True, timeout=30, check=False
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return {"status": "INCOMPATIBLE", "path": path, "error": str(exc)}
+        return {"status": "INCOMPATIBLE", "path": path, "accepted": accepted, "error": str(exc)}
     output = (completed.stdout or completed.stderr).strip().splitlines()
     version = output[0] if output else ""
     return {
@@ -60,16 +60,27 @@ def executable_status(path: str, *args: str, accepted: str) -> dict[str, Any]:
 
 def artifact_tool_status(node_path: str, accepted: str) -> dict[str, Any]:
     if not node_path or not Path(node_path).is_file():
-        return {"status": "CANNOT_CHECK", "path": node_path or None}
+        return {"status": "CANNOT_CHECK", "path": node_path or None, "accepted": accepted}
     probe = Path(__file__).with_name("check_artifact_tool.mjs")
     try:
         completed = subprocess.run(
             [node_path, str(probe)], capture_output=True, text=True, timeout=30, check=False
         )
-        payload = json.loads((completed.stdout or completed.stderr).strip())
-    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
-        return {"status": "INCOMPATIBLE", "error": str(exc)}
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"status": "INCOMPATIBLE", "path": node_path, "accepted": accepted, "error": str(exc)}
+    raw_output = (completed.stdout or completed.stderr).strip()
+    try:
+        payload = json.loads(raw_output)
+    except json.JSONDecodeError as exc:
+        return {
+            "status": "INCOMPATIBLE",
+            "path": node_path,
+            "accepted": accepted,
+            "error": str(exc),
+            "output": raw_output,
+        }
     payload["accepted"] = accepted
+    payload["path"] = node_path
     payload["status"] = "PASS" if completed.returncode == 0 and payload.get("spreadsheetFile") and payload.get("version") == accepted else "INCOMPATIBLE"
     return payload
 
