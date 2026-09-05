@@ -2,7 +2,7 @@
 
 Optional operator surfaces that sit **beside** synthetic packages. They are not a complexity layer in `SYNTHETIC_DESIGN.md`, not a delivery phase, and not part of a submission ZIP.
 
-Craft here costs extra time. It may never ship with Sub-* work. Phase 5 remains controlling: the submission’s own manifest, calibration, package, prompt, rubric, and iteration rules stay authoritative. Frozen packets are not restyled to match this note.
+Craft here costs extra time. It may never ship with `Sub-*` work. Phase 5 remains controlling: the submission’s own manifest, calibration, package, prompt, rubric, and iteration rules stay authoritative. Frozen packets are not restyled to match this note.
 
 ## Three objects
 
@@ -18,30 +18,15 @@ Path names are local convention, not a required layout:
 - operator UI stays out of the package;
 - operator schematics stay out of the package.
 
-If the same path would be touched by two lanes, serialize. Do not merge craft floors onto one HTML or one PDF.
-
 ## Why the floors conflict
 
 `SYNTHETIC_DESIGN.md` fails thin polished workbooks, evaluator answer-sheet memos, and theatrical mess. Impeccable optimizes product UI (contrast, depth, type, live iteration). Diagram Design optimizes editorial figures (orthogonal connectors, density budget, no shadows). Those rules improve operator tools. They damage in-world realism if they leak into the packet.
 
-An in-world flowchart belongs in Word or Visio with ordinary awkwardness. A Diagram Design redraw of the same information is an operator study copy, labeled as such.
+For example, an in-world flowchart may be a native document created in the medium the producer and workflow call for. A Diagram Design redraw of the same information is an operator study copy, labeled as such.
 
-## Parallel agent contract
+## Routing
 
-Write this down before splitting work:
-
-1. Blueprint id (producer, medium, footprint, prohibited, proof gates).
-2. Authority class per file.
-3. Which tree is in-world vs operator UI vs operator schematic.
-4. One line: do not restyle a frozen submission to adopt a newer library look.
-
-Then:
-
-- **Lane S:** `skill/SKILL.md` design / audit / extract only. Inventory and render gates. Emit native bytes.
-- **Lane H:** frontend craft on the dock only (`npx impeccable detect` on the app, not on the PDF).
-- **Lane D:** figures about the packet for operators only.
-
-Shared tokens (palette, type) may pass from a shipped operator UI into a schematic profile. They must not restyle authoritative records.
+`skill/SKILL.md` owns agent routing, operating behavior, sequencing, and gates. This note only identifies the optional operator surfaces that must remain outside a synthetic package. Artifact-medium and realism requirements remain in `SYNTHETIC_DESIGN.md`.
 
 ## Relation to existing gates
 
