@@ -22,3 +22,4 @@ Place governing facts in the source that owns them. Use supporting files to deco
 
 Fail the package when unrelated producers share conspicuous quirks, all files have the same density, internal files are suspiciously thin, external files are implausibly informal, or combined marginal notes reveal the solution.
 
+Before binding a released template, use the submission-aware recommendation operation described in [`docs/INTEGRATIONS.md`](../../docs/INTEGRATIONS.md) with package-local recent usage. Treat repeated lineage or fingerprint results as a composition warning; do not disguise exact reuse with cosmetic changes.

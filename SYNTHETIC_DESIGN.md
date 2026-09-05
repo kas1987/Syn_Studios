@@ -123,6 +123,18 @@ Extract patterns before templates. A foundation card must state:
 
 A template is released only after facts, names, dates, amounts, hidden metadata, formulas, links, comments, and execution residue are independently reviewed.
 
+### Submission-aware reuse
+
+A submission profile is a public-safe metadata registry, never a submission copy. It may bind reviewed Foundation Cards to their Blueprints and exact Released Template versions, release records, native hashes, and evidence hashes. It must not contain source bytes, source locators, world facts, prompts, rubrics, manifests, provenance cards, solutions, or runtime usage history. JSON is canonical; generated indexes or YAML views are projections only.
+
+Organization form, reporting basis, authority family, business function, artifact family, producer role, lifecycle, authority class, and medium are independent facets. Their controlled vocabulary is owned by [`schemas/submission-profile.schema.json`](schemas/submission-profile.schema.json); a new value requires reviewed schema change. Authority family does not imply authority class, and organization form does not imply reporting basis. Broad applicability describes a reusable structure, not a claim about its source, and must carry explicit confidence limits and transformation obligations. Producer-role and lifecycle applicability outside the schema's reviewed direct binding must be explicitly transformation-qualified in the profile, and recommendation requires a matching target-bound material-transformation plan before returning that candidate.
+
+A diversity fingerprint is derived from six stable dimensions—structure, visual language, producer workflow, population shape, medium, and handling history—plus the unique reviewed semantic IDs of its resolved Pattern Invariants. [`schemas/submission-profile.schema.json`](schemas/submission-profile.schema.json) owns both the closed semantic vocabulary and each ID's reviewed Foundation Card, JSON-pointer, and statement-hash bindings. Semantic IDs remain independent of Foundation Card wording and lineage in the fingerprint, while a new meaning, paraphrase, or allowed source binding requires reviewed schema change. The fingerprint excludes submission, Foundation Card, and template identities so materially similar releases can be recognized across lineages.
+
+Recommendation uses only reviewed submission profiles and caller-supplied, package-local recent usage. It returns each profile's confidence limits rather than converting review status into a claim of universal fitness. Consecutive exact reuse is always blocked by recommendation. Exact reuse elsewhere in the recent window requires a target-bound material-transformation plan; cosmetic-only changes never qualify. Recommendation returns that plan as `planned_not_validated`, and the consumer must bind it to the package-local Template Binding and validate the resulting candidate artifact before claiming the transformation occurred. Repeated submission lineage and diversity fingerprints rank behind fresh alternatives. Recommendation is action-free and never changes exact selection, instantiation, validation, or package authority.
+
+The consumer workflow owns the completeness and oldest-to-newest ordering of recent usage. Recommendation reports how many supplied identities it considered but cannot infer omitted, reordered, or external package history and never claims a global usage ledger.
+
 ## 9. Anti-patterns
 
 - thin files decorated with handwriting, stains, or old fonts;
@@ -147,4 +159,3 @@ An artifact passes only when:
 6. rendered pages and sheets are readable and usable;
 7. metadata and visible content reveal no generator or evaluation process;
 8. package-level variation is explainable rather than randomized.
-

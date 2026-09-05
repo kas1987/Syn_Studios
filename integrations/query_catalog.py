@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Discover or select exact released or deprecated Syn Studios versions."""
+"""Discover, recommend, or resolve exact released Syn Studios versions."""
 
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ import tempfile
 from pathlib import Path
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any, Iterable
+
+from jsonschema import Draft202012Validator
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,6 +55,10 @@ RELEASED_REQUIRED_FIELDS = {
     "release_status",
     "release_record",
 }
+SUBMISSION_PROFILE_SCHEMA = Path("schemas/submission-profile.schema.json")
+SUBMISSION_PROFILE_ROOT = Path("library/submissions")
+
+
 class CatalogQueryError(ValueError):
     """A deterministic catalog input or query failure."""
 
@@ -219,6 +225,11 @@ def _is_within(parent: Path, child: Path) -> bool:
         return False
 
 
+def _is_path_indirection(path: Path) -> bool:
+    is_junction = getattr(path, "is_junction", None)
+    return path.is_symlink() or (callable(is_junction) and is_junction())
+
+
 def _atomic_rename_no_replace(
     source: Path,
     target: Path,
@@ -299,6 +310,13 @@ def _load_object(path: Path, label: str) -> dict[str, Any]:
     return value
 
 
+def _load_json_value(path: Path, label: str) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise CatalogQueryError(f"cannot read {label}: {exc}") from exc
+
+
 def _entry_context(root: Path, entry: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     descriptor = _load_object(resolve_repo_path(root, entry["descriptor"]), "template descriptor")
     blueprint_matches = sorted((root / "examples" / "blueprints").glob(f"{entry['blueprint_id']}.*.json"))
@@ -367,6 +385,379 @@ def _validate_selectable_entry(entry: dict[str, Any]) -> None:
 def _contains_all(entry: dict[str, Any], field: str, requested: Iterable[str]) -> bool:
     actual = entry.get(field, [])
     return isinstance(actual, list) and set(requested).issubset(actual)
+
+
+def _schema_validate(root: Path, value: Any, definition: str, label: str) -> None:
+    schema = _load_object(root / SUBMISSION_PROFILE_SCHEMA, "submission profile schema")
+    definitions = schema.get("$defs")
+    if not isinstance(definitions, dict) or definition not in definitions:
+        raise CatalogQueryError(f"submission profile schema does not define {definition}")
+    validation_schema = {
+        "$schema": schema.get("$schema", "https://json-schema.org/draft/2020-12/schema"),
+        "$ref": f"#/$defs/{definition}",
+        "$defs": definitions,
+    }
+    errors = sorted(
+        Draft202012Validator(validation_schema).iter_errors(value),
+        key=lambda error: [str(part) for part in error.path],
+    )
+    if errors:
+        error = errors[0]
+        location = ".".join(str(part) for part in error.path) or "<root>"
+        raise CatalogQueryError(f"{label}.{location}: {error.message}")
+
+
+def _fingerprint_payload(root: Path, profiled_template: dict[str, Any]) -> dict[str, Any]:
+    invariants = _pattern_invariants(root, profiled_template)
+    return {
+        "diversity_dimensions": {
+            key: value
+            for key, value in sorted(profiled_template.get("diversity_dimensions", {}).items())
+        },
+        "semantic_pattern_ids": sorted({item["semantic_pattern_id"] for item in invariants}),
+    }
+
+
+def diversity_fingerprint(
+    profiled_template: dict[str, Any],
+    repository_root: Path = ROOT,
+) -> str:
+    """Derive the structural diversity identity without template or submission identity."""
+    payload = json.dumps(
+        _fingerprint_payload(repository_root.resolve(), profiled_template),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _load_submission_profiles(root: Path) -> list[dict[str, Any]]:
+    profiles: list[dict[str, Any]] = []
+    profile_root = root / SUBMISSION_PROFILE_ROOT
+    if not profile_root.is_dir():
+        return profiles
+    if _is_path_indirection(profile_root):
+        raise CatalogQueryError("submission profile root cannot be a symbolic link or junction")
+    profile_root_resolved = profile_root.resolve(strict=True)
+    for path in sorted(profile_root.glob("SUB-*/profile.json"), key=lambda item: item.as_posix()):
+        if _is_path_indirection(path.parent) or _is_path_indirection(path):
+            raise CatalogQueryError("submission profile path cannot contain a symbolic link or junction")
+        resolved = path.resolve(strict=True)
+        if not _is_within(profile_root_resolved, resolved):
+            raise CatalogQueryError("resolved submission profile path escapes the profile root")
+        profile = _load_object(resolved, "submission profile")
+        profiles.append(profile)
+    return profiles
+
+
+def _profiled_templates(root: Path) -> dict[tuple[str, str], dict[str, Any]]:
+    indexed: dict[tuple[str, str], dict[str, Any]] = {}
+    for profile in _load_submission_profiles(root):
+        if profile.get("status") != "reviewed":
+            continue
+        for template in profile.get("templates", []):
+            if not isinstance(template, dict):
+                continue
+            key = (template.get("template_id"), template.get("version"))
+            if not all(isinstance(value, str) for value in key) or key in indexed:
+                raise CatalogQueryError("submission profiles must declare unique exact template identities")
+            if template.get("diversity_fingerprint") != diversity_fingerprint(template, root):
+                raise CatalogQueryError("submission profile diversity_fingerprint is not derived from its stable dimensions and Pattern Invariants")
+            indexed[key] = {
+                "submission_profile_id": profile.get("submission_profile_id"),
+                "submission_id": profile.get("submission_id"),
+                "profile_status": profile.get("status"),
+                "reuse_policy": profile.get("reuse_policy"),
+                "template": template,
+            }
+    return indexed
+
+
+def _pattern_invariants(root: Path, template: dict[str, Any]) -> list[dict[str, str]]:
+    card_bindings = {
+        item["card_id"]: item
+        for item in template["foundation_cards"]
+        if isinstance(item, dict) and isinstance(item.get("card_id"), str)
+    }
+    resolved: list[dict[str, str]] = []
+    for reference in template["pattern_invariants"]:
+        card_id = reference["foundation_card_id"]
+        binding = card_bindings.get(card_id)
+        if binding is None:
+            raise CatalogQueryError("Pattern Invariant references an unbound foundation card")
+        card = _load_object(resolve_repo_path(root, binding["path"]), "foundation card")
+        index = int(reference["json_pointer"].rsplit("/", 1)[1])
+        patterns = card.get("reuse", {}).get("patterns", [])
+        if index >= len(patterns) or not isinstance(patterns[index], str):
+            raise CatalogQueryError("Pattern Invariant JSON pointer does not resolve to a foundation pattern")
+        resolved.append({**reference, "statement": patterns[index]})
+    return resolved
+
+
+def _profile_matches(
+    root: Path,
+    key: tuple[str, str],
+    entry: dict[str, Any],
+    profiled: dict[str, Any],
+    compatibility: dict[str, Any],
+    requested_facets: dict[str, Any],
+    plan_key: tuple[str, str] | None,
+    plan_material_kinds: set[str],
+) -> bool:
+    scalar_filters = {
+        "artifact_type": compatibility.get("artifact_type"),
+        "blueprint_id": compatibility.get("blueprint_id"),
+        "authority": compatibility.get("authority"),
+        "lifecycle": compatibility.get("catalog_lifecycle"),
+    }
+    if any(value is not None and entry.get(field) != value for field, value in scalar_filters.items()):
+        return False
+    if not _contains_all(entry, "capabilities", compatibility.get("capabilities", [])):
+        return False
+    contextual_filters = any(
+        compatibility.get(field)
+        for field in (
+            "descriptor_producer_role",
+            "blueprint_medium",
+            "required_allowed_knowledge",
+            "prohibited_knowledge",
+        )
+    )
+    if contextual_filters:
+        descriptor, blueprint = _entry_context(root, entry)
+        if not _compatible_context(
+            descriptor,
+            blueprint,
+            producer_role=compatibility.get("descriptor_producer_role"),
+            medium=compatibility.get("blueprint_medium"),
+            required_allowed_knowledge=compatibility.get("required_allowed_knowledge", []),
+            prohibited_knowledge=compatibility.get("prohibited_knowledge", []),
+        ):
+            return False
+    candidate_facets = profiled["template"]["facets"]
+    if not all(value in candidate_facets.get(name, []) for name, value in requested_facets.items()):
+        return False
+    qualifications = profiled["template"]["transformation_qualified_facets"]
+    for name in ("producer_role", "lifecycle"):
+        requested = requested_facets.get(name)
+        if requested is None:
+            continue
+        qualification = next(
+            (item for item in qualifications[name] if item["value"] == requested),
+            None,
+        )
+        if qualification is not None and (
+            plan_key != key or qualification["change_kind"] not in plan_material_kinds
+        ):
+            return False
+    return True
+
+
+def _facet_transformation_kinds(
+    profiled_template: dict[str, Any],
+    requested_facets: dict[str, Any],
+) -> set[str]:
+    qualifications = profiled_template["transformation_qualified_facets"]
+    return {
+        item["change_kind"]
+        for name in ("producer_role", "lifecycle")
+        for item in qualifications[name]
+        if requested_facets.get(name) == item["value"]
+    }
+
+
+def _target_key(value: dict[str, Any] | None) -> tuple[str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    target = value.get("target")
+    if not isinstance(target, dict):
+        return None
+    return target.get("template_id"), target.get("version")
+
+
+def recommend(
+    requirements: dict[str, Any],
+    recent_usage: list[dict[str, str]],
+    *,
+    repository_root: Path = ROOT,
+) -> dict[str, Any]:
+    """Rank exact profiled releases using package-local reuse evidence only."""
+    root = repository_root.resolve()
+    _canonical_validate_repository(root)
+    _schema_validate(root, requirements, "recommendation_request", "requirements")
+    _schema_validate(root, recent_usage, "recent_usage", "recent_usage")
+    consumer_id = requirements["consumer_id"]
+    _require_consumer_id(root, consumer_id, "recommend")
+
+    compatibility = requirements["compatibility"]
+    requested_facets = requirements["facets"]
+    if (
+        compatibility.get("authority") is not None
+        and requested_facets.get("authority_class") is not None
+        and compatibility["authority"] != requested_facets["authority_class"]
+    ):
+        raise CatalogQueryError("compatibility.authority conflicts with facets.authority_class")
+    if (
+        compatibility.get("artifact_type") is not None
+        and requested_facets.get("medium") is not None
+        and compatibility["artifact_type"] != requested_facets["medium"]
+    ):
+        raise CatalogQueryError("compatibility.artifact_type conflicts with facets.medium")
+
+    catalog = load_catalog(root / "library/catalog.json")
+    _validate_catalog_consumer_ids(root, catalog)
+    catalog_by_key = {
+        (entry["template_id"], entry["version"]): entry
+        for entry in catalog["templates"]
+        if isinstance(entry, dict) and _selectable(entry)
+    }
+    profiles = _profiled_templates(root)
+    for index, identity in enumerate(recent_usage):
+        key = (identity["template_id"], identity["version"])
+        if key not in catalog_by_key:
+            raise CatalogQueryError(f"recent_usage.{index}: unknown selectable template identity")
+
+    plan = requirements.get("material_transformation_plan")
+    plan_key = _target_key(plan)
+    if plan_key is not None and plan_key not in profiles:
+        raise CatalogQueryError("material_transformation_plan target is not recommendation-profiled")
+    plan_material_kinds: set[str] = set()
+    if isinstance(plan, dict):
+        policy = profiles[plan_key]["reuse_policy"]
+        plan_material_kinds = set(plan["change_kinds"]).intersection(policy["material_change_kinds"])
+
+    compatible: list[tuple[tuple[str, str], dict[str, Any], dict[str, Any], set[str]]] = []
+    for key, profiled in profiles.items():
+        entry = catalog_by_key.get(key)
+        if entry is None or not _contains_all(entry, "supported_consumers", (consumer_id,)):
+            continue
+        if _profile_matches(
+            root,
+            key,
+            entry,
+            profiled,
+            compatibility,
+            requested_facets,
+            plan_key,
+            plan_material_kinds,
+        ):
+            compatible.append(
+                (
+                    key,
+                    profiled,
+                    entry,
+                    _facet_transformation_kinds(profiled["template"], requested_facets),
+                )
+            )
+
+    window = recent_usage[-requirements["recent_window"] :]
+    window_keys = [(item["template_id"], item["version"]) for item in window]
+    unprofiled_history_count = sum(key not in profiles for key in window_keys)
+    last_key = window_keys[-1] if window_keys else None
+    recommendations: list[dict[str, Any]] = []
+    for key, profiled, entry, facet_transformation_kinds in compatible:
+        template = profiled["template"]
+        exact_count = window_keys.count(key)
+        fingerprint = template["diversity_fingerprint"]
+        fingerprint_count = sum(
+            history_key in profiles
+            and profiles[history_key]["template"]["diversity_fingerprint"] == fingerprint
+            for history_key in window_keys
+        )
+        lineage_count = sum(
+            history_key in profiles
+            and profiles[history_key]["submission_profile_id"] == profiled["submission_profile_id"]
+            for history_key in window_keys
+        )
+        if exact_count and (plan_key != key or not plan_material_kinds):
+            continue
+        consecutive = key == last_key
+        if consecutive:
+            continue
+
+        reason_codes = ["reviewed_profile", "profile_compatible"]
+        if exact_count:
+            reason_codes.append("exact_reuse_material_transformation_planned")
+        else:
+            reason_codes.append("exact_not_recent")
+        if facet_transformation_kinds:
+            reason_codes.append("facet_applicability_material_transformation_planned")
+        if lineage_count:
+            reason_codes.append("submission_lineage_repeated")
+        if fingerprint_count:
+            reason_codes.append("diversity_fingerprint_repeated")
+        recommendation = {
+            "template_id": key[0],
+            "version": key[1],
+            "release_status": entry["release_status"],
+            "submission_profile_id": profiled["submission_profile_id"],
+            "submission_id": profiled["submission_id"],
+            "profile_status": profiled["profile_status"],
+            "foundation_card_ids": [item["card_id"] for item in template["foundation_cards"]],
+            "blueprint_id": template["blueprint"]["blueprint_id"],
+            "release_id": template["release"]["release_id"],
+            "diversity_fingerprint": fingerprint,
+            "diversity_dimensions": template["diversity_dimensions"],
+            "exact_reuse_count": exact_count,
+            "lineage_reuse_count": lineage_count,
+            "fingerprint_reuse_count": fingerprint_count,
+            "reason_codes": reason_codes,
+            "confidence_limits": template["confidence_limits"],
+            "pattern_invariants": _pattern_invariants(root, template),
+            "transformation_obligations": template["transformation_obligations"],
+            "next_operation": "select",
+        }
+        if exact_count or facet_transformation_kinds:
+            recommendation["material_transformation"] = {
+                "status": "planned_not_validated",
+                "plan": {
+                    "target": dict(plan["target"]),
+                    "change_kinds": sorted(plan_material_kinds),
+                },
+                "must_bind_to": "package_local_template_binding",
+                "completion_owner": "consumer_candidate_artifact_validation",
+            }
+        recommendations.append(recommendation)
+
+    recommendations.sort(
+        key=lambda item: (
+            item["release_status"] == "deprecated",
+            item["exact_reuse_count"] > 0,
+            item["lineage_reuse_count"],
+            item["fingerprint_reuse_count"],
+            item["submission_profile_id"],
+            item["template_id"],
+            item["version"],
+        )
+    )
+    for rank, item in enumerate(recommendations, start=1):
+        item["rank"] = rank
+    if recommendations:
+        return {
+            "status": "ok",
+            "operation": "recommend",
+            "request_schema_version": requirements["schema_version"],
+            "recent_window": requirements["recent_window"],
+            "history_count_considered": len(window),
+            "unprofiled_history_count_considered": unprofiled_history_count,
+            "count": len(recommendations),
+            "recommendations": recommendations,
+        }
+    return {
+        "status": "no_match",
+        "operation": "recommend",
+        "request_schema_version": requirements["schema_version"],
+        "recent_window": requirements["recent_window"],
+        "history_count_considered": len(window),
+        "unprofiled_history_count_considered": unprofiled_history_count,
+        "reason_codes": [
+            "reuse_policy_blocked_all_candidates" if compatible else "no_compatible_profiled_template"
+        ],
+        "count": 0,
+        "recommendations": [],
+        "next_operation": None,
+    }
 
 
 def discover(
@@ -683,6 +1074,10 @@ def _parser() -> argparse.ArgumentParser:
     validate_parser.add_argument("--consumer-id", required=True)
     validate_parser.add_argument("--template-id", required=True)
     validate_parser.add_argument("--version", required=True)
+
+    recommend_parser = subparsers.add_parser("recommend", help="rank profiled exact versions using package-local history")
+    recommend_parser.add_argument("--requirements", type=Path, required=True)
+    recommend_parser.add_argument("--recent-usage", type=Path, required=True)
     return parser
 
 
@@ -695,7 +1090,11 @@ def main(argv: list[str] | None = None) -> int:
         if catalog_path != canonical_catalog:
             raise CatalogQueryError("catalog override must identify the canonical repository catalog")
         catalog = load_catalog(catalog_path)
-        if args.operation == "discover":
+        if args.operation == "recommend":
+            requirements = _load_json_value(args.requirements, "recommendation requirements")
+            recent_usage = _load_json_value(args.recent_usage, "recent usage")
+            result = recommend(requirements, recent_usage, repository_root=root)
+        elif args.operation == "discover":
             matches = discover(
                 catalog,
                 consumer_id=args.consumer_id,

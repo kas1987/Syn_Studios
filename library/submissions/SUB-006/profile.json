@@ -1,0 +1,121 @@
+{
+  "schema_version": "1.0.0",
+  "submission_profile_id": "SUBPROF-006",
+  "submission_id": "SUB-006",
+  "status": "reviewed",
+  "scope": "public_safe_metadata_only",
+  "reuse_policy": {
+    "history_scope": "package_local",
+    "block_consecutive_exact": true,
+    "exact_reuse_requires_material_transformation": true,
+    "penalize_submission_lineage": true,
+    "penalize_diversity_fingerprint": true,
+    "material_change_kinds": [
+      "producer_workflow",
+      "source_system_structure",
+      "substantive_footprint",
+      "calculation_model",
+      "authority_or_lifecycle",
+      "document_composition"
+    ],
+    "cosmetic_change_kinds": [
+      "rename",
+      "recolor",
+      "typography",
+      "filename",
+      "token_substitution",
+      "layout_polish"
+    ]
+  },
+  "templates": [
+    {
+      "template_id": "TMPL-0002",
+      "version": "1.0.0",
+      "foundation_cards": [
+        {
+          "card_id": "FOUND-0005",
+          "path": "library/foundations/FOUND-0005.json",
+          "sha256": "a0c31cbfddef27406a3ff5159784af4710c85047de21496e75febde74a73bf44"
+        }
+      ],
+      "blueprint": {
+        "blueprint_id": "BP-0002",
+        "path": "examples/blueprints/BP-0002.internal-controller-memo.json",
+        "sha256": "ec30980909cc04f55b7fb1e564f0eae438c63729c1497a0a56e928a27af78e21"
+      },
+      "release": {
+        "release_id": "REL-0002",
+        "path": "library/releases/REL-0002.template.json",
+        "sha256": "ee76be3c8e8cb6deac4907f14e7083ca9c6e3bc777c87debed7cde7196b5b3a1"
+      },
+      "descriptor": {
+        "path": "library/templates/TMPL-0002/1.0.0/template.json",
+        "sha256": "2d44a466e4c4a5da4bf0203b89ce6af3fcffe8a2e7e61ac6324f12bc7882472b"
+      },
+      "native_assets": [
+        {
+          "path": "library/templates/TMPL-0002/1.0.0/internal-controller-memo.docx",
+          "sha256": "1a922e87a29682bdea8a04734084f9f9fe1631bf785139b95b2b0f74c238818f"
+        }
+      ],
+      "evidence": {
+        "core_integrity": {"path": "evidence/template-releases/REL-0002/technical-core_integrity.json", "sha256": "792129a509dc8aeb8ecbcb097887135ddbc8351b1fbe5700f425b6a9559d2fc1"},
+        "render": {"path": "evidence/template-releases/REL-0002/technical-render.json", "sha256": "040cc9c3c78aa8894c7db33eb3b9602594f2ef5493e59c7c935cf7d519a45139"},
+        "metadata": {"path": "evidence/template-releases/REL-0002/technical-metadata.json", "sha256": "cbbc88231302053f69ff59f772be6a595aa3786ecadefd5421f4b53bf2ce1e42"},
+        "computational": {"path": "evidence/template-releases/REL-0002/technical-computational.json", "sha256": "b7c4503a3c479c7a1e0286345effa6ce048aa60cd6e9a3d58ff9509482b377c9"},
+        "provenance": {"path": "evidence/template-releases/REL-0002/technical-provenance.json", "sha256": "d10e13fff213ad43110697215f91586b4a900d11b4f7f304a6d1b68bd2c584dd"},
+        "leakage": {"path": "evidence/template-releases/REL-0002/technical-leakage.json", "sha256": "165205bdb0ccc4c686bbdc869f3b25e6b69972919b7b1e8514ccb7151b321cfe"},
+        "authority_separation": {"path": "evidence/template-releases/REL-0002/technical-authority_separation.json", "sha256": "f7e6eea2f02eeab76a625e2d90527f135f596d6971e5feb8b9b7de6504c704c9"},
+        "anti_filler": {"path": "evidence/template-releases/REL-0002/technical-anti_filler.json", "sha256": "3cd3e1c3b3d2b87294cc0e930e7205e03f5d6ca2e6e15191cb5cbfc583748d21"}
+      },
+      "facets": {
+        "organization_form": ["private_company", "public_company", "nonprofit", "government"],
+        "reporting_basis": ["us_gaap", "tax_basis", "regulatory_basis", "contractual_basis", "statutory", "other_approved"],
+        "authority_family": ["fasb_asc", "gasb", "irs", "sec", "governmental_regulation", "contractual", "internal_policy"],
+        "business_function": ["financial_reporting", "record_to_report", "tax", "governance"],
+        "artifact_family": ["internal_decision_memo"],
+        "producer_role": ["controller", "technical_accounting", "finance_lead", "tax_professional"],
+        "lifecycle": ["internal_working", "reviewed_internal"],
+        "authority_class": ["supporting"],
+        "medium": ["docx"]
+      },
+      "transformation_qualified_facets": {
+        "producer_role": [
+          {
+            "value": "finance_lead",
+            "change_kind": "producer_workflow",
+            "obligation": "Change and validate the producer workflow before using this structure for a transformation-qualified producer role."
+          },
+          {
+            "value": "tax_professional",
+            "change_kind": "producer_workflow",
+            "obligation": "Change and validate the producer workflow before using this structure for a transformation-qualified producer role."
+          }
+        ],
+        "lifecycle": []
+      },
+      "pattern_invariants": [
+        {"semantic_pattern_id": "restrained_decision_or_handoff_endpoint", "foundation_card_id": "FOUND-0005", "json_pointer": "/reuse/patterns/0"}
+      ],
+      "diversity_dimensions": {
+        "structure": "sectioned_decision_memo",
+        "visual_language": "restrained_internal_memo",
+        "producer_workflow": "manager_controller_review",
+        "population_shape": "issue_and_appendix_set",
+        "medium": "docx_native",
+        "handling_history": "draft_to_reviewed"
+      },
+      "diversity_fingerprint": "4820ef4449feced6188d9730cc39d638ead92f73d362244769711a9a9ca3becb",
+      "confidence_limits": [
+        "Applicability is structural only; the release is not evidence of compliance with any listed reporting or authority family.",
+        "The foundation supports a restrained decision endpoint and does not by itself support every analytical section in the released memorandum."
+      ],
+      "transformation_obligations": [
+        "Create every issue, conclusion, citation, appendix, review item, and role assignment from authorized package evidence.",
+        "Reconcile the selected reporting basis and authority family to package-owned governing evidence before generation.",
+        "Change the decision workflow or document composition when this exact template appeared inside the package recent-use window.",
+        "Change and validate the producer workflow before using this structure for a transformation-qualified producer role."
+      ]
+    }
+  ]
+}

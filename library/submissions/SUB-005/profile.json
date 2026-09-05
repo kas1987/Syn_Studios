@@ -1,0 +1,195 @@
+{
+  "schema_version": "1.0.0",
+  "submission_profile_id": "SUBPROF-005",
+  "submission_id": "SUB-005",
+  "status": "reviewed",
+  "scope": "public_safe_metadata_only",
+  "reuse_policy": {
+    "history_scope": "package_local",
+    "block_consecutive_exact": true,
+    "exact_reuse_requires_material_transformation": true,
+    "penalize_submission_lineage": true,
+    "penalize_diversity_fingerprint": true,
+    "material_change_kinds": [
+      "producer_workflow",
+      "source_system_structure",
+      "substantive_footprint",
+      "calculation_model",
+      "authority_or_lifecycle",
+      "document_composition"
+    ],
+    "cosmetic_change_kinds": [
+      "rename",
+      "recolor",
+      "typography",
+      "filename",
+      "token_substitution",
+      "layout_polish"
+    ]
+  },
+  "templates": [
+    {
+      "template_id": "TMPL-0001",
+      "version": "1.0.0",
+      "foundation_cards": [
+        {
+          "card_id": "FOUND-0001",
+          "path": "library/foundations/FOUND-0001.json",
+          "sha256": "83fe9741e13e1b6e441aab0bd2eb2b08af27c3b228d4ddbbf30b91ce6c7ce82e"
+        }
+      ],
+      "blueprint": {
+        "blueprint_id": "BP-0001",
+        "path": "examples/blueprints/BP-0001.internal-close-workbook.json",
+        "sha256": "8e87680eec14423bd1496919ed69c2b0de6fcd7c40a7a97662caac4a5ca24912"
+      },
+      "release": {
+        "release_id": "REL-0001",
+        "path": "library/releases/REL-0001.template.json",
+        "sha256": "fb50388dc6de689cc687a86cfea087312a5a2462312f51b0380b8675de2f1a0b"
+      },
+      "descriptor": {
+        "path": "library/templates/TMPL-0001/1.0.0/template.json",
+        "sha256": "642d3c4d81d898667606140d4f50ca0c040f66c2bf602312bc57a40aea318c7c"
+      },
+      "native_assets": [
+        {
+          "path": "library/templates/TMPL-0001/1.0.0/internal-close-reconciliation.xlsx",
+          "sha256": "2b439f61fce015d4d3b3c78368e8deb66b8ca811d799339c848c83c47edbdf66"
+        }
+      ],
+      "evidence": {
+        "core_integrity": {"path": "evidence/template-releases/REL-0001/technical-core_integrity.json", "sha256": "e428c344d10b0b9c60608fe2a042b2e3638ee9f952a275835c651c4aa963332f"},
+        "render": {"path": "evidence/template-releases/REL-0001/technical-render.json", "sha256": "0aee150e33f437caae3e2b39fb2c5ee99c6bbcf6900ef3f02bc5a138eb38dfdf"},
+        "metadata": {"path": "evidence/template-releases/REL-0001/technical-metadata.json", "sha256": "e843bdb8b54f56333b32eca45811a0138c25211e52e22fb06916cbb3e9f10e00"},
+        "computational": {"path": "evidence/template-releases/REL-0001/technical-computational.json", "sha256": "0060c399291898d356811214c7010c49e6083672913cacf4d6a4b524f47e27b6"},
+        "provenance": {"path": "evidence/template-releases/REL-0001/technical-provenance.json", "sha256": "8c20eefb319e83419c6d9a168e2fe29200f9e1472cd0a939907a9fc9a678fde2"},
+        "leakage": {"path": "evidence/template-releases/REL-0001/technical-leakage.json", "sha256": "20a57cc0a2d1672879299e9b95cd445d735b2dc819be75e23f776289569bae54"},
+        "authority_separation": {"path": "evidence/template-releases/REL-0001/technical-authority_separation.json", "sha256": "85a2609d129d44da78541a82680fcebd40ee80303e872e1157d54d6776e40d78"},
+        "anti_filler": {"path": "evidence/template-releases/REL-0001/technical-anti_filler.json", "sha256": "a8813d07d06fb3fca02fbfb7af8b3c06d9245772b9a7886e9b16a55a8c6ee55f"}
+      },
+      "facets": {
+        "organization_form": ["private_company", "public_company", "nonprofit", "government"],
+        "reporting_basis": ["us_gaap", "tax_basis", "cash_basis", "regulatory_basis", "contractual_basis", "statutory", "other_approved"],
+        "authority_family": ["fasb_asc", "gasb", "irs", "sec", "governmental_regulation", "contractual", "internal_policy"],
+        "business_function": ["record_to_report", "financial_reporting", "tax", "treasury"],
+        "artifact_family": ["close_workbook"],
+        "producer_role": ["accountant", "controller", "finance_lead"],
+        "lifecycle": ["internal_working", "reviewed_internal"],
+        "authority_class": ["supporting"],
+        "medium": ["xlsx"]
+      },
+      "transformation_qualified_facets": {
+        "producer_role": [
+          {
+            "value": "finance_lead",
+            "change_kind": "producer_workflow",
+            "obligation": "Change and validate the producer workflow before using this structure for a transformation-qualified producer role."
+          }
+        ],
+        "lifecycle": []
+      },
+      "pattern_invariants": [
+        {"semantic_pattern_id": "source_populations_separated_by_originating_module", "foundation_card_id": "FOUND-0001", "json_pointer": "/reuse/patterns/0"},
+        {"semantic_pattern_id": "close_control_layer_beside_raw_exports", "foundation_card_id": "FOUND-0001", "json_pointer": "/reuse/patterns/1"},
+        {"semantic_pattern_id": "population_density_varies_by_source_population", "foundation_card_id": "FOUND-0001", "json_pointer": "/reuse/patterns/2"}
+      ],
+      "diversity_dimensions": {
+        "structure": "layered_workbook",
+        "visual_language": "mixed_operational_workbook",
+        "producer_workflow": "preparer_reviewer_close",
+        "population_shape": "variable_tabular_population",
+        "medium": "xlsx_native",
+        "handling_history": "working_to_reviewed"
+      },
+      "diversity_fingerprint": "1fd0f327d2fc864a06c7628b0907c2da4b7b6f3570f108c0e19bb6083f853a20",
+      "confidence_limits": [
+        "Applicability is structural only; the release is not evidence of compliance with any listed reporting or authority family.",
+        "The reviewed foundation supports source-population organization but does not establish a complete analyst workpaper for every organization form."
+      ],
+      "transformation_obligations": [
+        "Rebuild every population, identifier, value, formula, mapping, citation, and style from the authorized package world.",
+        "Reconcile the selected reporting basis and authority family to package-owned governing evidence before generation.",
+        "Change the producer workflow or substantive footprint when this exact template appeared inside the package recent-use window.",
+        "Change and validate the producer workflow before using this structure for a transformation-qualified producer role."
+      ]
+    },
+    {
+      "template_id": "TMPL-0003",
+      "version": "1.0.0",
+      "foundation_cards": [
+        {
+          "card_id": "FOUND-0008",
+          "path": "library/foundations/FOUND-0008.json",
+          "sha256": "7d6e69556cb4ab76dd9da6ea8acd8797c393f5a57ba19a041d23b8afbb38c304"
+        }
+      ],
+      "blueprint": {
+        "blueprint_id": "BP-0003",
+        "path": "examples/blueprints/BP-0003.operational-email-chain.json",
+        "sha256": "38beab037f847b2ab78cc7426d5cc8f2b5453f11343be87b830dbb3c3895c999"
+      },
+      "release": {
+        "release_id": "REL-0003",
+        "path": "library/releases/REL-0003.template.json",
+        "sha256": "0ff139c21fcbb0425ac7b4953eba3b5f8de859fef71a1d5a5287f19d570ab15f"
+      },
+      "descriptor": {
+        "path": "library/templates/TMPL-0003/1.0.0/template.json",
+        "sha256": "850e4665fc96a18aab826296243c6f86e0af3833f1dea60547a62049e2559dfe"
+      },
+      "native_assets": [
+        {
+          "path": "library/templates/TMPL-0003/1.0.0/operational-correction-thread.eml",
+          "sha256": "8acaf754686fa23b1bbc59d229094d6444b54224ea9a0dae53c50086b8c5bf99"
+        }
+      ],
+      "evidence": {
+        "core_integrity": {"path": "evidence/template-releases/REL-0003/technical-core_integrity.json", "sha256": "869d8d5c7ff6edc3954675ffd71a5ec198d909b2b964e60edabbb742fe91b18c"},
+        "render": {"path": "evidence/template-releases/REL-0003/technical-render.json", "sha256": "68cff80cd84261eebfa7eadecebb362e193261f94869cb1b0d04dcecdb0b1d3d"},
+        "metadata": {"path": "evidence/template-releases/REL-0003/technical-metadata.json", "sha256": "a81630edd0cb1e821857c03f4a1263d5186e6d8683d8acc1e3ba3461e82b02ca"},
+        "computational": {"path": "evidence/template-releases/REL-0003/technical-computational.json", "sha256": "ccd953a0afa0a6bf6eb1887e9fc919b822d8e63a152ede924d30034592bbc47e"},
+        "provenance": {"path": "evidence/template-releases/REL-0003/technical-provenance.json", "sha256": "5e8b2bf0d5e0d1cb0a5a06c90277a999714a51bbc6228791703555b14b750e87"},
+        "leakage": {"path": "evidence/template-releases/REL-0003/technical-leakage.json", "sha256": "024dc9208e2c536a5ad7d7bfba72eccbc8745519b58c4d6a3e697d1248c1df09"},
+        "authority_separation": {"path": "evidence/template-releases/REL-0003/technical-authority_separation.json", "sha256": "0fcd757f708f5a4ecb1df31bd3cb262b7b5405248ed90d8a07d08ff54bd1a117"},
+        "anti_filler": {"path": "evidence/template-releases/REL-0003/technical-anti_filler.json", "sha256": "73b4ffb8b1ec10f422830d8df44a7aee9ee3ca2953d57dca7e699c026871cb7c"}
+      },
+      "facets": {
+        "organization_form": ["private_company", "public_company", "nonprofit", "government", "partnership", "individual"],
+        "reporting_basis": ["none"],
+        "authority_family": ["internal_policy", "none"],
+        "business_function": ["operations", "order_to_cash", "procure_to_pay"],
+        "artifact_family": ["email_chain"],
+        "producer_role": ["operations_manager", "analyst", "external_counterparty"],
+        "lifecycle": ["transmitted", "retained_correspondence"],
+        "authority_class": ["contextual"],
+        "medium": ["eml"]
+      },
+      "transformation_qualified_facets": {
+        "producer_role": [],
+        "lifecycle": []
+      },
+      "pattern_invariants": [
+        {"semantic_pattern_id": "controlled_record_lifecycle_distribution_and_retention", "foundation_card_id": "FOUND-0008", "json_pointer": "/reuse/patterns/0"}
+      ],
+      "diversity_dimensions": {
+        "structure": "quoted_message_thread",
+        "visual_language": "native_email_client",
+        "producer_workflow": "multi_party_correction",
+        "population_shape": "message_attachment_sequence",
+        "medium": "eml_native",
+        "handling_history": "transmitted_and_retained"
+      },
+      "diversity_fingerprint": "3299da1721eb85c4c53611c965f10eb5d03767cd2febb3c41ba4a80f62486e40",
+      "confidence_limits": [
+        "The foundation contributes only lifecycle, distribution, attachment, and retention control concepts; it is not evidence about correspondence wording or a specific organization.",
+        "The release is contextual correspondence and cannot establish approval or governing authority."
+      ],
+      "transformation_obligations": [
+        "Create participants, chronology, attachments, message identifiers, and role knowledge from the authorized package world.",
+        "Preserve correspondence as contextual and keep any governing evidence in separately manifested sources.",
+        "Change the communication sequence or document composition when this exact template appeared inside the package recent-use window."
+      ]
+    }
+  ]
+}

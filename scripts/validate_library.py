@@ -92,6 +92,7 @@ SCHEMA_NAMES = (
     "template-release",
     "artifact-catalog",
     "workbook-recalculation-proof",
+    "submission-profile",
 )
 LAYER_ORDER = {name: index for index, name in enumerate(("core", "operational_depth", "adjacent_context", "working_residue", "handling_history"))}
 PROOF_CATEGORIES = {"core_integrity", "render", "metadata", "computational", "provenance", "leakage", "authority_separation", "anti_filler"}
@@ -126,6 +127,11 @@ def as_dict(value: object) -> dict[str, Any]:
 
 def as_list(value: object) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def is_path_indirection(path: Path) -> bool:
+    is_junction = getattr(path, "is_junction", None)
+    return path.is_symlink() or (callable(is_junction) and is_junction())
 
 
 def sha256_file(path: Path) -> str:
@@ -1214,6 +1220,446 @@ def load_typed_evidence(
     return path, record
 
 
+def _profile_fingerprint(
+    template: dict[str, Any],
+    cards: dict[str, tuple[Path, dict[str, Any]]],
+) -> str:
+    semantic_pattern_ids: set[str] = set()
+    for reference in as_list(template.get("pattern_invariants")):
+        item = as_dict(reference)
+        card_entry = cards.get(item.get("foundation_card_id"))
+        pointer_match = re.fullmatch(r"/reuse/patterns/([0-9]+)", str(item.get("json_pointer")))
+        if card_entry is None or pointer_match is None:
+            continue
+        patterns = as_list(as_dict(card_entry[1].get("reuse")).get("patterns"))
+        index = int(pointer_match.group(1))
+        if index < len(patterns) and isinstance(patterns[index], str):
+            semantic_pattern_id = item.get("semantic_pattern_id")
+            if isinstance(semantic_pattern_id, str):
+                semantic_pattern_ids.add(semantic_pattern_id)
+    payload = {
+        "diversity_dimensions": {
+            key: value
+            for key, value in sorted(as_dict(template.get("diversity_dimensions")).items())
+        },
+        "semantic_pattern_ids": sorted(semantic_pattern_ids),
+    }
+    return canonical_json_sha256(payload)
+
+
+def validate_submission_profiles(
+    root: Path,
+    schema: dict[str, Any],
+    cards: dict[str, tuple[Path, dict[str, Any]]],
+    blueprints: dict[str, tuple[Path, dict[str, Any]]],
+    releases: dict[str, tuple[Path, dict[str, Any]]],
+    catalog: dict[str, Any],
+    findings: list[str],
+) -> int:
+    """Validate the public-safe submission metadata topology and its exact joins."""
+    profile_root = root / "library/submissions"
+    if is_path_indirection(profile_root):
+        findings.append("library/submissions: submission profile root cannot be a symbolic link or junction")
+        return 0
+    if not profile_root.exists():
+        return 0
+    if not profile_root.is_dir():
+        findings.append("library/submissions: submission profile root must be a directory")
+        return 0
+    try:
+        profile_root_resolved = profile_root.resolve(strict=True)
+    except OSError as error:
+        findings.append(f"library/submissions: cannot resolve submission profile root: {error}")
+        return 0
+    profile_paths: list[Path] = []
+    submission_directories: set[Path] = set()
+    for path in sorted(profile_root.rglob("*"), key=str):
+        label = display_path(path, root)
+        if is_path_indirection(path):
+            findings.append(f"{label}: submission profile topology cannot contain symbolic links or junctions")
+            continue
+        try:
+            path.resolve(strict=True).relative_to(profile_root_resolved)
+        except (OSError, ValueError):
+            findings.append(f"{label}: resolved submission profile path escapes the profile root")
+            continue
+        if path.is_dir():
+            if path.parent != profile_root or re.fullmatch(r"SUB-[0-9]{3}", path.name) is None:
+                findings.append(f"{label}: unexpected submission profile directory")
+            else:
+                submission_directories.add(path)
+            continue
+        if path.parent.parent != profile_root or re.fullmatch(r"SUB-[0-9]{3}", path.parent.name) is None or path.name != "profile.json":
+            findings.append(f"{label}: only one profile.json metadata record is allowed per submission directory; raw artifact bytes are forbidden")
+            continue
+        profile_paths.append(path)
+    for directory in sorted(submission_directories - {path.parent for path in profile_paths}, key=str):
+        findings.append(f"{display_path(directory, root)}: submission profile directory must contain profile.json")
+
+    catalog_by_key = {
+        (entry.get("template_id"), entry.get("version")): entry
+        for entry in as_list(catalog.get("templates"))
+        if isinstance(entry, dict)
+    }
+    seen_profile_ids: set[str] = set()
+    seen_submission_ids: set[str] = set()
+    seen_template_keys: set[tuple[str, str]] = set()
+    count = 0
+    forbidden_keys = {
+        "source_locator",
+        "world_facts",
+        "task_prompt",
+        "prompt",
+        "rubric",
+        "manifest",
+        "provenance_card",
+        "solution",
+        "answer_key",
+        "private_source_path",
+    }
+    definitions = as_dict(schema.get("$defs"))
+    semantic_registry = as_dict(
+        as_dict(definitions.get("semantic_pattern_binding_registry")).get("const")
+    )
+    direct_facet_registry = as_dict(
+        as_dict(definitions.get("direct_facet_applicability_registry")).get("const")
+    )
+    semantic_ids = {
+        value
+        for value in as_list(as_dict(definitions.get("semantic_pattern_id")).get("enum"))
+        if isinstance(value, str)
+    }
+    if not semantic_registry or set(semantic_registry) != semantic_ids:
+        findings.append(
+            "schemas/submission-profile.schema.json: semantic Pattern Invariant vocabulary and binding registry must match exactly"
+        )
+    if not direct_facet_registry:
+        findings.append(
+            "schemas/submission-profile.schema.json: direct facet applicability registry must be nonempty"
+        )
+
+    def inspect_keys(value: object, label: str) -> None:
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                if str(key).casefold() in forbidden_keys:
+                    findings.append(f"{label}:{key}: package-owned or submission-specific content is forbidden")
+                inspect_keys(nested, label)
+        elif isinstance(value, list):
+            for nested in value:
+                inspect_keys(nested, label)
+        elif isinstance(value, str) and (
+            re.search(r"[A-Za-z]:[\\/]", value)
+            or "ANNA::" in value
+            or re.search(r"(?:^|[/\\])Sub[_-]?[0-9]{3}[/\\]", value, re.IGNORECASE)
+        ):
+            findings.append(f"{label}: private or absolute source locators are forbidden")
+
+    for path in profile_paths:
+        data = load_json(path, root, findings)
+        if data is None:
+            continue
+        count += 1
+        label = display_path(path, root)
+        findings.extend(schema_findings(data, schema, label))
+        inspect_keys(data, label)
+        submission_id = data.get("submission_id")
+        profile_id = data.get("submission_profile_id")
+        if submission_id != path.parent.name:
+            findings.append(f"{label}:submission_id: must match the parent directory")
+        expected_profile_id = f"SUBPROF-{str(submission_id).removeprefix('SUB-')}" if isinstance(submission_id, str) else None
+        if profile_id != expected_profile_id:
+            findings.append(f"{label}:submission_profile_id: must correspond to submission_id")
+        if isinstance(profile_id, str):
+            if profile_id in seen_profile_ids:
+                findings.append(f"{label}:submission_profile_id: duplicate {profile_id}")
+            seen_profile_ids.add(profile_id)
+        if isinstance(submission_id, str):
+            if submission_id in seen_submission_ids:
+                findings.append(f"{label}:submission_id: duplicate {submission_id}")
+            seen_submission_ids.add(submission_id)
+
+        for index, template in enumerate(as_list(data.get("templates"))):
+            if not isinstance(template, dict):
+                continue
+            prefix = f"{label}:templates.{index}"
+            template_id, version = template.get("template_id"), template.get("version")
+            key = (template_id, version)
+            if not all(isinstance(value, str) for value in key):
+                continue
+            if key in seen_template_keys:
+                findings.append(f"{prefix}: duplicate recommendation profile for exact template identity")
+            seen_template_keys.add(key)
+            catalog_entry = catalog_by_key.get(key)
+            if catalog_entry is None:
+                findings.append(f"{prefix}: exact template identity is absent from the catalog")
+                continue
+            if catalog_entry.get("release_status") not in {"released", "deprecated"}:
+                findings.append(f"{prefix}: recommendation profiles may bind only released or deprecated exact versions")
+
+            foundation_ids: list[str] = []
+            for foundation_index, binding in enumerate(as_list(template.get("foundation_cards"))):
+                if not isinstance(binding, dict):
+                    continue
+                binding_label = f"{prefix}.foundation_cards.{foundation_index}"
+                card_id = binding.get("card_id")
+                foundation_ids.append(str(card_id))
+                bound_path = check_bound_file(root, binding, "path", "sha256", binding_label, findings, Path("library/foundations"))
+                card_entry = cards.get(card_id) if isinstance(card_id, str) else None
+                if card_entry is None:
+                    findings.append(f"{binding_label}.card_id: unknown foundation card")
+                    continue
+                if bound_path is not None and bound_path != card_entry[0].resolve():
+                    findings.append(f"{binding_label}.path: does not identify card_id")
+                locator = as_dict(card_entry[1].get("source")).get("locator")
+                match = re.search(r"(?:^|[/\\])Sub_([0-9]{3})(?:[/\\]|$)", str(locator))
+                if match is None or submission_id != f"SUB-{match.group(1)}":
+                    findings.append(f"{binding_label}.card_id: foundation source lineage does not match submission_id")
+
+            blueprint_binding = as_dict(template.get("blueprint"))
+            blueprint_id = blueprint_binding.get("blueprint_id")
+            blueprint_path = check_bound_file(root, blueprint_binding, "path", "sha256", f"{prefix}.blueprint", findings, Path("examples/blueprints"))
+            blueprint_entry = blueprints.get(blueprint_id) if isinstance(blueprint_id, str) else None
+            if blueprint_entry is None:
+                findings.append(f"{prefix}.blueprint.blueprint_id: unknown blueprint")
+                continue
+            if blueprint_path is not None and blueprint_path != blueprint_entry[0].resolve():
+                findings.append(f"{prefix}.blueprint.path: does not identify blueprint_id")
+            blueprint = blueprint_entry[1]
+            blueprint_foundations = [
+                item.get("card_id")
+                for item in as_list(blueprint.get("foundation_lineage"))
+                if isinstance(item, dict)
+            ]
+            if foundation_ids != blueprint_foundations:
+                findings.append(f"{prefix}.foundation_cards: must exactly preserve blueprint foundation lineage order")
+
+            release_binding = as_dict(template.get("release"))
+            release_id = release_binding.get("release_id")
+            release_path = check_bound_file(root, release_binding, "path", "sha256", f"{prefix}.release", findings, Path("library/releases"))
+            release_entry = releases.get(release_id) if isinstance(release_id, str) else None
+            if release_entry is None:
+                findings.append(f"{prefix}.release.release_id: unknown release")
+                continue
+            if release_path is not None and release_path != release_entry[0].resolve():
+                findings.append(f"{prefix}.release.path: does not identify release_id")
+            release = release_entry[1]
+            expected_release = {
+                "template_id": release.get("template_id"),
+                "version": release.get("version"),
+                "blueprint_id": as_dict(release.get("blueprint")).get("blueprint_id"),
+            }
+            actual_release = {"template_id": template_id, "version": version, "blueprint_id": blueprint_id}
+            if actual_release != expected_release:
+                findings.append(f"{prefix}: profile, blueprint, and release exact identities do not join")
+            catalog_release = as_dict(catalog_entry.get("release_record"))
+            if catalog_release != {"path": release_binding.get("path"), "sha256": release_binding.get("sha256")}:
+                findings.append(f"{prefix}.release: does not exactly match the catalog release_record")
+
+            descriptor = as_dict(template.get("descriptor"))
+            descriptor_path = check_bound_file(root, descriptor, "path", "sha256", f"{prefix}.descriptor", findings, Path("library/templates"))
+            if descriptor != as_dict(release.get("descriptor")):
+                findings.append(f"{prefix}.descriptor: does not exactly match the release descriptor")
+            if descriptor_path is not None and catalog_entry.get("descriptor") != descriptor.get("path"):
+                findings.append(f"{prefix}.descriptor.path: does not match the catalog")
+            native_assets = as_list(template.get("native_assets"))
+            if native_assets != as_list(release.get("native_assets")):
+                findings.append(f"{prefix}.native_assets: do not exactly match the release")
+            if [as_dict(item).get("path") for item in native_assets] != as_list(catalog_entry.get("native_assets")):
+                findings.append(f"{prefix}.native_assets: do not exactly match the catalog")
+            for asset_index, binding in enumerate(native_assets):
+                check_bound_file(root, as_dict(binding), "path", "sha256", f"{prefix}.native_assets.{asset_index}", findings, Path("library/templates"))
+
+            profile_evidence = as_dict(template.get("evidence"))
+            release_evidence = as_dict(release.get("evidence"))
+            expected_evidence = {
+                category: {
+                    "path": as_dict(reference).get("record_path"),
+                    "sha256": as_dict(reference).get("record_sha256"),
+                }
+                for category, reference in release_evidence.items()
+            }
+            if profile_evidence != expected_evidence:
+                findings.append(f"{prefix}.evidence: does not exactly match release technical evidence")
+            for category, binding in profile_evidence.items():
+                check_bound_file(root, as_dict(binding), "path", "sha256", f"{prefix}.evidence.{category}", findings, EVIDENCE_ROOT)
+
+            facets = as_dict(template.get("facets"))
+            if as_list(facets.get("artifact_family")) != [blueprint.get("archetype")]:
+                findings.append(f"{prefix}.facets.artifact_family: must exactly match blueprint archetype")
+            if as_list(facets.get("authority_class")) != [as_dict(blueprint.get("authority")).get("primary_class")]:
+                findings.append(f"{prefix}.facets.authority_class: must exactly match blueprint authority class")
+            if as_list(facets.get("medium")) != [catalog_entry.get("artifact_type")]:
+                findings.append(f"{prefix}.facets.medium: must exactly match catalog artifact_type")
+            direct_facets = as_dict(direct_facet_registry.get(blueprint_id))
+            if not direct_facets:
+                findings.append(
+                    f"{prefix}.transformation_qualified_facets: blueprint has no reviewed direct facet applicability"
+                )
+            elif direct_facets.get("artifact_family") != blueprint.get("archetype"):
+                findings.append(
+                    f"{prefix}.transformation_qualified_facets: direct facet applicability conflicts with blueprint archetype"
+                )
+            qualifications = as_dict(template.get("transformation_qualified_facets"))
+            obligations = as_list(template.get("transformation_obligations"))
+            required_change_kind = {
+                "producer_role": "producer_workflow",
+                "lifecycle": "authority_or_lifecycle",
+            }
+            for facet_name in ("producer_role", "lifecycle"):
+                direct_values = as_list(direct_facets.get(facet_name))
+                qualified_items = [
+                    as_dict(item)
+                    for item in as_list(qualifications.get(facet_name))
+                ]
+                qualified_values = [
+                    item.get("value")
+                    for item in qualified_items
+                    if isinstance(item.get("value"), str)
+                ]
+                if (
+                    len(qualified_values) != len(qualified_items)
+                    or len(qualified_values) != len(set(qualified_values))
+                ):
+                    findings.append(
+                        f"{prefix}.transformation_qualified_facets.{facet_name}: values must be unique"
+                    )
+                if set(direct_values).intersection(qualified_values):
+                    findings.append(
+                        f"{prefix}.transformation_qualified_facets.{facet_name}: direct values cannot require transformation"
+                    )
+                declared_values = [
+                    value
+                    for value in as_list(facets.get(facet_name))
+                    if isinstance(value, str)
+                ]
+                if (
+                    len(declared_values) != len(as_list(facets.get(facet_name)))
+                    or len(declared_values) != len(direct_values) + len(qualified_values)
+                    or set(declared_values) != set(direct_values + qualified_values)
+                ):
+                    findings.append(
+                        f"{prefix}.facets.{facet_name}: must equal reviewed direct values plus explicit transformation-qualified values"
+                    )
+                for qualification_index, qualification in enumerate(qualified_items):
+                    qualification_label = (
+                        f"{prefix}.transformation_qualified_facets.{facet_name}.{qualification_index}"
+                    )
+                    if qualification.get("change_kind") != required_change_kind[facet_name]:
+                        findings.append(
+                            f"{qualification_label}.change_kind: does not qualify the facet transformation"
+                        )
+                    if qualification.get("obligation") not in obligations:
+                        findings.append(
+                            f"{qualification_label}.obligation: must be present in transformation_obligations"
+                        )
+            dimensions = as_dict(template.get("diversity_dimensions"))
+            medium_dimensions = {
+                "xlsx": "xlsx_native",
+                "docx": "docx_native",
+                "eml": "eml_native",
+                "pdf": "pdf_native_or_assembled",
+                "csv": "csv_utf8",
+                "mixed_package": "mixed_native_package",
+            }
+            facet_medium = as_list(facets.get("medium"))
+            expected_medium_dimension = medium_dimensions.get(facet_medium[0]) if len(facet_medium) == 1 else None
+            if dimensions.get("medium") != expected_medium_dimension:
+                findings.append(f"{prefix}.diversity_dimensions.medium: must agree with the controlled medium facet")
+            family = as_list(facets.get("artifact_family"))
+            family_name = family[0] if len(family) == 1 else None
+            dimension_by_family = {
+                "close_workbook": {
+                    "structure": "layered_workbook",
+                    "visual_language": "mixed_operational_workbook",
+                    "producer_workflow": "preparer_reviewer_close",
+                    "population_shape": "variable_tabular_population",
+                },
+                "internal_decision_memo": {
+                    "structure": "sectioned_decision_memo",
+                    "visual_language": "restrained_internal_memo",
+                    "producer_workflow": "manager_controller_review",
+                    "population_shape": "issue_and_appendix_set",
+                },
+                "email_chain": {
+                    "structure": "quoted_message_thread",
+                    "visual_language": "native_email_client",
+                    "producer_workflow": "multi_party_correction",
+                    "population_shape": "message_attachment_sequence",
+                },
+            }
+            for name, expected in dimension_by_family.get(str(family_name), {}).items():
+                if dimensions.get(name) != expected:
+                    findings.append(f"{prefix}.diversity_dimensions.{name}: conflicts with the controlled artifact family")
+            handling_lifecycles = {
+                "working_to_reviewed": {"internal_working", "reviewed_internal"},
+                "draft_to_reviewed": {"draft", "internal_working", "reviewed_internal"},
+                "transmitted_and_retained": {"transmitted", "retained_correspondence", "archived"},
+                "approved_and_issued": {"approved", "issued"},
+                "executed_and_archived": {"executed", "archived"},
+                "extracted_and_retained": {"transmitted", "archived"},
+                "assembled_for_review": {"internal_working", "reviewed_internal", "mixed"},
+            }
+            if not set(as_list(facets.get("lifecycle"))).intersection(
+                handling_lifecycles.get(str(dimensions.get("handling_history")), set())
+            ):
+                findings.append(f"{prefix}.diversity_dimensions.handling_history: conflicts with the controlled lifecycle facet")
+
+            lineage_by_card = {
+                item.get("card_id"): item
+                for item in as_list(blueprint.get("foundation_lineage"))
+                if isinstance(item, dict)
+            }
+            seen_semantic_pattern_ids: set[str] = set()
+            for invariant_index, invariant in enumerate(as_list(template.get("pattern_invariants"))):
+                if not isinstance(invariant, dict):
+                    continue
+                invariant_label = f"{prefix}.pattern_invariants.{invariant_index}"
+                semantic_pattern_id = invariant.get("semantic_pattern_id")
+                if isinstance(semantic_pattern_id, str):
+                    if semantic_pattern_id in seen_semantic_pattern_ids:
+                        findings.append(f"{invariant_label}.semantic_pattern_id: must be unique within one profiled template")
+                    seen_semantic_pattern_ids.add(semantic_pattern_id)
+                card_id = invariant.get("foundation_card_id")
+                if card_id not in foundation_ids:
+                    findings.append(f"{invariant_label}.foundation_card_id: must identify a bound foundation card")
+                    continue
+                card_entry = cards.get(str(card_id))
+                if card_entry is None:
+                    continue
+                pointer = invariant.get("json_pointer")
+                pointer_match = re.fullmatch(r"/reuse/patterns/([0-9]+)", str(pointer))
+                card = card_entry[1]
+                patterns = as_list(as_dict(card.get("reuse")).get("patterns"))
+                pattern_index = int(pointer_match.group(1)) if pointer_match else -1
+                if pattern_index < 0 or pattern_index >= len(patterns):
+                    findings.append(f"{invariant_label}.json_pointer: does not resolve to a foundation pattern")
+                    continue
+                statement = patterns[pattern_index]
+                if not isinstance(statement, str):
+                    findings.append(f"{invariant_label}.json_pointer: foundation pattern must be text")
+                    continue
+                if statement not in as_list(as_dict(lineage_by_card.get(card_id)).get("patterns_used")):
+                    findings.append(f"{invariant_label}.json_pointer: pattern is not used by the bound blueprint")
+                statement_hash = hashlib.sha256(statement.encode("utf-8")).hexdigest()
+                reviewed_binding = {
+                    "foundation_card_id": card_id,
+                    "json_pointer": pointer,
+                    "statement_sha256": statement_hash,
+                }
+                allowed_bindings = (
+                    as_list(as_dict(semantic_registry.get(semantic_pattern_id)).get("allowed_bindings"))
+                    if isinstance(semantic_pattern_id, str)
+                    else []
+                )
+                if reviewed_binding not in allowed_bindings:
+                    findings.append(
+                        f"{invariant_label}.semantic_pattern_id: does not match its reviewed semantic binding"
+                    )
+            if template.get("diversity_fingerprint") != _profile_fingerprint(template, cards):
+                findings.append(f"{prefix}.diversity_fingerprint: must be derived from the full stable diversity dimensions and Pattern Invariants")
+    return count
+
+
 def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
     root = root.resolve()
     findings: list[str] = []
@@ -1532,10 +1978,12 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
     catalog_path = root / "library/catalog.json"
     catalog_version_files: dict[Path, set[Path]] = {}
     release_catalog_counts: dict[Path, int] = {path.resolve(): 0 for path, _ in releases.values()}
+    catalog: dict[str, Any] = {}
     if catalog_path.is_file():
         count += 1
-        catalog = load_json(catalog_path, root, findings)
-        if catalog is not None:
+        loaded_catalog = load_json(catalog_path, root, findings)
+        if loaded_catalog is not None:
+            catalog = loaded_catalog
             label = display_path(catalog_path, root)
             findings.extend(schema_findings(catalog, schemas["artifact-catalog"], label))
             seen_keys: set[tuple[str, str]] = set()
@@ -1629,6 +2077,16 @@ def validate_repository(root: Path = ROOT) -> tuple[list[str], int]:
                             findings.append(f"{prefix}.descriptor: does not match release")
                         if catalog_asset_paths != {path_value for path_value, _ in bound_pairs(release.get("native_assets"))}:
                             findings.append(f"{prefix}.native_assets: do not match release")
+
+    count += validate_submission_profiles(
+        root,
+        schemas["submission-profile"],
+        cards,
+        blueprints,
+        releases,
+        catalog,
+        findings,
+    )
 
     for release_path, release in releases.values():
         uses = release_catalog_counts.get(release_path.resolve(), 0)

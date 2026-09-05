@@ -17,7 +17,7 @@ A sanitized, independently validated artifact package approved for reuse under a
 _Avoid_: Example file, prior submission
 
 **Consumer Profile**:
-The machine-readable description of how an external workflow discovers, selects, instantiates, and validates Syn Studios resources while preserving authority boundaries.
+The machine-readable description of how an external workflow discovers, recommends, selects, instantiates, and validates Syn Studios resources while preserving authority boundaries.
 _Avoid_: Workflow owner, approval record
 
 **Template Binding**:
@@ -31,3 +31,27 @@ _Avoid_: Template facts, library facts
 **Evidence Record**:
 A machine-readable result from a named validation check against identified artifact bytes.
 _Avoid_: Approval, assurance
+
+**Submission Profile**:
+A public-safe metadata registry that groups reviewed release lineages by the authorized synthetic submission that informed them. It binds Foundation Cards, Blueprints, Released Templates, and evidence; it does not retain submission artifacts or package facts.
+_Avoid_: Submission copy, source archive, template folder
+
+**Pattern Invariant**:
+A reviewed structural meaning identified by a controlled semantic ID and bound to an exact Foundation Card pattern. It lets structurally equivalent patterns retain one identity without trusting arbitrary relabeling.
+_Avoid_: Tag, paraphrase, pattern wording
+
+**Diversity Fingerprint**:
+A stable structural identity derived from an artifact's structure, visual language, producer workflow, population shape, medium, handling history, and unique reviewed semantic Pattern Invariant IDs. It identifies material similarity without depending on prose wording or encoding submission, Foundation Card, or template identity.
+_Avoid_: File hash, style hash
+
+**Recent Usage**:
+The package-local, oldest-to-newest sequence of exact Released Template identities used to avoid repetitive template selection. It is not a global usage ledger.
+_Avoid_: Popularity score, repository history
+
+**Material Transformation**:
+A target-bound change to producer workflow, source-system structure, substantive footprint, calculation model, authority or lifecycle, or document composition. Renaming, recoloring, typography, filenames, token substitution, and layout polish alone are cosmetic.
+_Avoid_: Restyle, variation token
+
+**Transformation-qualified Facet**:
+A producer-role or lifecycle applicability value outside a blueprint's reviewed direct binding. Recommendation may use it only when the submission profile declares its material-change obligation and the caller supplies a matching target-bound Material Transformation plan.
+_Avoid_: Broad tag, implied compatibility

@@ -33,6 +33,7 @@ Use when prior work may become a reusable pattern. Create a foundation card unde
 Use when ANNA, Holodeck, world exploration, or a realism workflow needs a reusable resource. Read [the consumer integration contract](../docs/INTEGRATIONS.md) and its [machine-readable profile](../integrations/consumer-profile.v1.json), then perform only the requested operation:
 
 - `discover`: query the catalog using package requirements through `python integrations/query_catalog.py discover`;
+- `recommend`: pass closed requirements and package-local exact recent usage to `python integrations/query_catalog.py recommend`; use its ranked exact versions or explicit no-match result only as input to `select`;
 - `select`: use `python integrations/query_catalog.py select` with an exact version to return a compatible released template or an explicit no-match result;
 - `instantiate`: after the consumer's manifest, authorization, release-evidence, output-containment, and toolchain gates pass, return a package-local binding plan; materialize an unchanged copy only when explicitly requested;
 - `validate`: use `python integrations/query_catalog.py validate` to check catalog, descriptor, native bytes, blueprint, and release-evidence consistency without claiming downstream acceptance.
@@ -46,7 +47,7 @@ Foundation cards and blueprints are design inputs, not releasable template bytes
 - Do not use hidden answers, false governing evidence, corruption, illegibility, or broken formulas as complexity.
 - Do not change a frozen submission merely to adopt a newer library pattern.
 - Treat executed and external records as restrained; concentrate working residue where real internal workflows support it.
-- Do not treat discovery, selection, ANNA routing, or validation as write authorization or acceptance.
+- Do not treat discovery, recommendation, selection, ANNA routing, or validation as write authorization or acceptance.
 
 ## Completion
 

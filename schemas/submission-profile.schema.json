@@ -1,0 +1,582 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://syn-studios.local/schemas/submission-profile.schema.json",
+  "title": "Syn Studios submission profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "submission_profile_id",
+    "submission_id",
+    "status",
+    "scope",
+    "reuse_policy",
+    "templates"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "submission_profile_id": {"type": "string", "pattern": "^SUBPROF-[0-9]{3}$"},
+    "submission_id": {"type": "string", "pattern": "^SUB-[0-9]{3}$"},
+    "status": {"enum": ["reviewed", "deprecated"]},
+    "scope": {"const": "public_safe_metadata_only"},
+    "reuse_policy": {"$ref": "#/$defs/reuse_policy"},
+    "templates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/profiled_template"}
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "safe_path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:)(?![/\\\\])(?!.*(?:^|[/\\\\])\\.\\.(?:[/\\\\]|$))[^:]+$"
+    },
+    "bound_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"$ref": "#/$defs/safe_path"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "foundation_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["card_id", "path", "sha256"],
+      "properties": {
+        "card_id": {"type": "string", "pattern": "^FOUND-[0-9]{4}$"},
+        "path": {"$ref": "#/$defs/safe_path"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "blueprint_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blueprint_id", "path", "sha256"],
+      "properties": {
+        "blueprint_id": {"type": "string", "pattern": "^BP-[0-9]{4}$"},
+        "path": {"$ref": "#/$defs/safe_path"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "release_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["release_id", "path", "sha256"],
+      "properties": {
+        "release_id": {"type": "string", "pattern": "^REL-[0-9]{4}$"},
+        "path": {"$ref": "#/$defs/safe_path"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "evidence_bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "core_integrity",
+        "render",
+        "metadata",
+        "computational",
+        "provenance",
+        "leakage",
+        "authority_separation",
+        "anti_filler"
+      ],
+      "properties": {
+        "core_integrity": {"$ref": "#/$defs/bound_reference"},
+        "render": {"$ref": "#/$defs/bound_reference"},
+        "metadata": {"$ref": "#/$defs/bound_reference"},
+        "computational": {"$ref": "#/$defs/bound_reference"},
+        "provenance": {"$ref": "#/$defs/bound_reference"},
+        "leakage": {"$ref": "#/$defs/bound_reference"},
+        "authority_separation": {"$ref": "#/$defs/bound_reference"},
+        "anti_filler": {"$ref": "#/$defs/bound_reference"}
+      }
+    },
+    "organization_form": {
+      "enum": [
+        "private_company",
+        "public_company",
+        "nonprofit",
+        "government",
+        "partnership",
+        "individual",
+        "trust_or_estate",
+        "cross_sector"
+      ]
+    },
+    "reporting_basis": {
+      "enum": [
+        "us_gaap",
+        "gasb",
+        "tax_basis",
+        "cash_basis",
+        "modified_cash",
+        "regulatory_basis",
+        "contractual_basis",
+        "statutory",
+        "other_approved",
+        "none"
+      ]
+    },
+    "authority_family": {
+      "enum": [
+        "fasb_asc",
+        "gasb",
+        "irs",
+        "sec",
+        "governmental_regulation",
+        "contractual",
+        "internal_policy",
+        "none"
+      ]
+    },
+    "business_function": {
+      "enum": [
+        "record_to_report",
+        "financial_reporting",
+        "tax",
+        "treasury",
+        "audit_and_assurance",
+        "payroll",
+        "procure_to_pay",
+        "order_to_cash",
+        "operations",
+        "governance",
+        "legal_and_compliance",
+        "human_resources"
+      ]
+    },
+    "artifact_family": {
+      "enum": [
+        "close_workbook",
+        "internal_decision_memo",
+        "email_chain",
+        "executed_agreement",
+        "mixed_package",
+        "policy_procedure",
+        "system_export",
+        "operational_note",
+        "external_notice_approval"
+      ]
+    },
+    "producer_role": {
+      "enum": [
+        "accountant",
+        "controller",
+        "technical_accounting",
+        "operations_manager",
+        "analyst",
+        "external_counterparty",
+        "legal",
+        "tax_professional",
+        "auditor",
+        "finance_lead",
+        "human_resources",
+        "system_generated",
+        "mixed"
+      ]
+    },
+    "lifecycle": {
+      "enum": [
+        "draft",
+        "internal_working",
+        "reviewed_internal",
+        "approved",
+        "executed",
+        "issued",
+        "transmitted",
+        "retained_correspondence",
+        "archived",
+        "mixed"
+      ]
+    },
+    "authority_class": {
+      "enum": [
+        "authoritative",
+        "supporting",
+        "contextual",
+        "superseded",
+        "question-only",
+        "incidental",
+        "mixed"
+      ]
+    },
+    "medium": {"enum": ["xlsx", "docx", "pdf", "eml", "csv", "mixed_package"]},
+    "facets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "organization_form",
+        "reporting_basis",
+        "authority_family",
+        "business_function",
+        "artifact_family",
+        "producer_role",
+        "lifecycle",
+        "authority_class",
+        "medium"
+      ],
+      "properties": {
+        "organization_form": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/organization_form"}},
+        "reporting_basis": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/reporting_basis"}},
+        "authority_family": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/authority_family"}},
+        "business_function": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/business_function"}},
+        "artifact_family": {"type": "array", "minItems": 1, "maxItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/artifact_family"}},
+        "producer_role": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/producer_role"}},
+        "lifecycle": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/lifecycle"}},
+        "authority_class": {"type": "array", "minItems": 1, "maxItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/authority_class"}},
+        "medium": {"type": "array", "minItems": 1, "maxItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/medium"}}
+      }
+    },
+    "pattern_invariant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["semantic_pattern_id", "foundation_card_id", "json_pointer"],
+      "properties": {
+        "semantic_pattern_id": {"$ref": "#/$defs/semantic_pattern_id"},
+        "foundation_card_id": {"type": "string", "pattern": "^FOUND-[0-9]{4}$"},
+        "json_pointer": {"type": "string", "pattern": "^/reuse/patterns/[0-9]+$"}
+      }
+    },
+    "semantic_pattern_id": {
+      "enum": [
+        "source_populations_separated_by_originating_module",
+        "close_control_layer_beside_raw_exports",
+        "population_density_varies_by_source_population",
+        "controlled_record_lifecycle_distribution_and_retention",
+        "restrained_decision_or_handoff_endpoint"
+      ]
+    },
+    "semantic_pattern_binding_registry": {
+      "const": {
+        "source_populations_separated_by_originating_module": {
+          "meaning": "Source populations retain their originating-module separation and system-like field order.",
+          "allowed_bindings": [
+            {
+              "foundation_card_id": "FOUND-0001",
+              "json_pointer": "/reuse/patterns/0",
+              "statement_sha256": "2d9c8898d1f450e3f1e4720e999d36c0f5abe3ef4ffb306de293836c5a67e40b"
+            }
+          ]
+        },
+        "close_control_layer_beside_raw_exports": {
+          "meaning": "A small preparation and control layer remains separate from raw source exports.",
+          "allowed_bindings": [
+            {
+              "foundation_card_id": "FOUND-0001",
+              "json_pointer": "/reuse/patterns/1",
+              "statement_sha256": "680b0b05112d7e977daacebc1da34cca5fac2601da065161edee2bebad02b0b6"
+            }
+          ]
+        },
+        "population_density_varies_by_source_population": {
+          "meaning": "Population density varies with the underlying source population rather than converging across sheets.",
+          "allowed_bindings": [
+            {
+              "foundation_card_id": "FOUND-0001",
+              "json_pointer": "/reuse/patterns/2",
+              "statement_sha256": "5e2acc0785b95b06a72eaced945628a4b33c8631d8e3457efd84b08814aed0ec"
+            }
+          ]
+        },
+        "controlled_record_lifecycle_distribution_and_retention": {
+          "meaning": "A controlled record expresses lifecycle, approval, implementation, distribution, attachment, and retention structure.",
+          "allowed_bindings": [
+            {
+              "foundation_card_id": "FOUND-0008",
+              "json_pointer": "/reuse/patterns/0",
+              "statement_sha256": "d69e9007535b0bbf97e5cf6bd25516375f46f7e87aa5920dde387fa00c5cde2b"
+            }
+          ]
+        },
+        "restrained_decision_or_handoff_endpoint": {
+          "meaning": "A restrained decision or approved handoff endpoint remains compact and distinct from supporting analysis.",
+          "allowed_bindings": [
+            {
+              "foundation_card_id": "FOUND-0005",
+              "json_pointer": "/reuse/patterns/0",
+              "statement_sha256": "bf602c281e4e5ad32d3c36c08a3fb175a4b5780699e77abcdd4a36362d91a606"
+            }
+          ]
+        }
+      }
+    },
+    "direct_facet_applicability_registry": {
+      "const": {
+        "BP-0001": {
+          "artifact_family": "close_workbook",
+          "producer_role": ["accountant", "controller"],
+          "lifecycle": ["internal_working", "reviewed_internal"]
+        },
+        "BP-0002": {
+          "artifact_family": "internal_decision_memo",
+          "producer_role": ["controller", "technical_accounting"],
+          "lifecycle": ["internal_working", "reviewed_internal"]
+        },
+        "BP-0003": {
+          "artifact_family": "email_chain",
+          "producer_role": ["operations_manager", "analyst", "external_counterparty"],
+          "lifecycle": ["transmitted", "retained_correspondence"]
+        }
+      }
+    },
+    "diversity_dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "structure",
+        "visual_language",
+        "producer_workflow",
+        "population_shape",
+        "medium",
+        "handling_history"
+      ],
+      "properties": {
+        "structure": {"enum": ["layered_workbook", "sectioned_decision_memo", "quoted_message_thread", "controlled_form", "mixed_packet", "structured_register"]},
+        "visual_language": {"enum": ["mixed_operational_workbook", "restrained_internal_memo", "native_email_client", "formal_external_record", "source_system_export", "mixed_native_sources"]},
+        "producer_workflow": {"enum": ["preparer_reviewer_close", "manager_controller_review", "multi_party_correction", "author_approver_publication", "system_extract_review", "mixed_producer_assembly"]},
+        "population_shape": {"enum": ["variable_tabular_population", "issue_and_appendix_set", "message_attachment_sequence", "form_and_schedule_set", "flat_record_population", "mixed_artifact_population"]},
+        "medium": {"enum": ["xlsx_native", "docx_native", "eml_native", "pdf_native_or_assembled", "csv_utf8", "mixed_native_package"]},
+        "handling_history": {"enum": ["working_to_reviewed", "draft_to_reviewed", "transmitted_and_retained", "approved_and_issued", "executed_and_archived", "extracted_and_retained", "assembled_for_review"]}
+      }
+    },
+    "confidence_limit": {
+      "enum": [
+        "Applicability is structural only; the release is not evidence of compliance with any listed reporting or authority family.",
+        "The reviewed foundation supports source-population organization but does not establish a complete analyst workpaper for every organization form.",
+        "The foundation contributes only lifecycle, distribution, attachment, and retention control concepts; it is not evidence about correspondence wording or a specific organization.",
+        "The release is contextual correspondence and cannot establish approval or governing authority.",
+        "The foundation supports a restrained decision endpoint and does not by itself support every analytical section in the released memorandum."
+      ]
+    },
+    "transformation_obligation": {
+      "enum": [
+        "Rebuild every population, identifier, value, formula, mapping, citation, and style from the authorized package world.",
+        "Reconcile the selected reporting basis and authority family to package-owned governing evidence before generation.",
+        "Change the producer workflow or substantive footprint when this exact template appeared inside the package recent-use window.",
+        "Create participants, chronology, attachments, message identifiers, and role knowledge from the authorized package world.",
+        "Preserve correspondence as contextual and keep any governing evidence in separately manifested sources.",
+        "Change the communication sequence or document composition when this exact template appeared inside the package recent-use window.",
+        "Create every issue, conclusion, citation, appendix, review item, and role assignment from authorized package evidence.",
+        "Change the decision workflow or document composition when this exact template appeared inside the package recent-use window.",
+        "Change and validate the producer workflow before using this structure for a transformation-qualified producer role.",
+        "Change and validate lifecycle and authority evidence before using this structure for a transformation-qualified lifecycle."
+      ]
+    },
+    "transformation_qualified_facets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["producer_role", "lifecycle"],
+      "properties": {
+        "producer_role": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["value", "change_kind", "obligation"],
+            "properties": {
+              "value": {"$ref": "#/$defs/producer_role"},
+              "change_kind": {"const": "producer_workflow"},
+              "obligation": {"const": "Change and validate the producer workflow before using this structure for a transformation-qualified producer role."}
+            }
+          }
+        },
+        "lifecycle": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["value", "change_kind", "obligation"],
+            "properties": {
+              "value": {"$ref": "#/$defs/lifecycle"},
+              "change_kind": {"const": "authority_or_lifecycle"},
+              "obligation": {"const": "Change and validate lifecycle and authority evidence before using this structure for a transformation-qualified lifecycle."}
+            }
+          }
+        }
+      }
+    },
+    "profiled_template": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "template_id",
+        "version",
+        "foundation_cards",
+        "blueprint",
+        "release",
+        "descriptor",
+        "native_assets",
+        "evidence",
+        "facets",
+        "transformation_qualified_facets",
+        "pattern_invariants",
+        "diversity_dimensions",
+        "diversity_fingerprint",
+        "confidence_limits",
+        "transformation_obligations"
+      ],
+      "properties": {
+        "template_id": {"type": "string", "pattern": "^TMPL-[0-9]{4}$"},
+        "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+        "foundation_cards": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/foundation_binding"}
+        },
+        "blueprint": {"$ref": "#/$defs/blueprint_binding"},
+        "release": {"$ref": "#/$defs/release_binding"},
+        "descriptor": {"$ref": "#/$defs/bound_reference"},
+        "native_assets": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/bound_reference"}
+        },
+        "evidence": {"$ref": "#/$defs/evidence_bindings"},
+        "facets": {"$ref": "#/$defs/facets"},
+        "transformation_qualified_facets": {"$ref": "#/$defs/transformation_qualified_facets"},
+        "pattern_invariants": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/pattern_invariant"}
+        },
+        "diversity_dimensions": {"$ref": "#/$defs/diversity_dimensions"},
+        "diversity_fingerprint": {"$ref": "#/$defs/sha256"},
+        "confidence_limits": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/confidence_limit"}},
+        "transformation_obligations": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/transformation_obligation"}}
+      }
+    },
+    "reuse_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "history_scope",
+        "block_consecutive_exact",
+        "exact_reuse_requires_material_transformation",
+        "penalize_submission_lineage",
+        "penalize_diversity_fingerprint",
+        "material_change_kinds",
+        "cosmetic_change_kinds"
+      ],
+      "properties": {
+        "history_scope": {"const": "package_local"},
+        "block_consecutive_exact": {"const": true},
+        "exact_reuse_requires_material_transformation": {"const": true},
+        "penalize_submission_lineage": {"const": true},
+        "penalize_diversity_fingerprint": {"const": true},
+        "material_change_kinds": {
+          "const": [
+            "producer_workflow",
+            "source_system_structure",
+            "substantive_footprint",
+            "calculation_model",
+            "authority_or_lifecycle",
+            "document_composition"
+          ]
+        },
+        "cosmetic_change_kinds": {
+          "const": [
+            "rename",
+            "recolor",
+            "typography",
+            "filename",
+            "token_substitution",
+            "layout_polish"
+          ]
+        }
+      }
+    },
+    "recommendation_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "consumer_id", "compatibility", "facets", "recent_window"],
+      "properties": {
+        "schema_version": {"const": "1.0.0"},
+        "consumer_id": {"type": "string", "minLength": 1},
+        "compatibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "artifact_type": {"enum": ["docx", "xlsx", "pdf", "eml", "csv", "mixed_package"]},
+            "blueprint_id": {"type": "string", "pattern": "^BP-[0-9]{4}$"},
+            "authority": {"$ref": "#/$defs/authority_class"},
+            "catalog_lifecycle": {"type": "string", "minLength": 1},
+            "descriptor_producer_role": {"type": "string", "minLength": 1},
+            "blueprint_medium": {"type": "string", "minLength": 1},
+            "capabilities": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+            "required_allowed_knowledge": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+            "prohibited_knowledge": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+          }
+        },
+        "facets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "organization_form": {"$ref": "#/$defs/organization_form"},
+            "reporting_basis": {"$ref": "#/$defs/reporting_basis"},
+            "authority_family": {"$ref": "#/$defs/authority_family"},
+            "business_function": {"$ref": "#/$defs/business_function"},
+            "artifact_family": {"$ref": "#/$defs/artifact_family"},
+            "producer_role": {"$ref": "#/$defs/producer_role"},
+            "lifecycle": {"$ref": "#/$defs/lifecycle"},
+            "authority_class": {"$ref": "#/$defs/authority_class"},
+            "medium": {"$ref": "#/$defs/medium"}
+          }
+        },
+        "recent_window": {"type": "integer", "minimum": 1, "maximum": 50},
+        "material_transformation_plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["target", "change_kinds"],
+          "properties": {
+            "target": {"$ref": "#/$defs/template_identity"},
+            "change_kinds": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "producer_workflow",
+                  "source_system_structure",
+                  "substantive_footprint",
+                  "calculation_model",
+                  "authority_or_lifecycle",
+                  "document_composition",
+                  "rename",
+                  "recolor",
+                  "typography",
+                  "filename",
+                  "token_substitution",
+                  "layout_polish"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "template_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["template_id", "version"],
+      "properties": {
+        "template_id": {"type": "string", "pattern": "^TMPL-[0-9]{4}$"},
+        "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"}
+      }
+    },
+    "recent_usage": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {"$ref": "#/$defs/template_identity"}
+    }
+  }
+}

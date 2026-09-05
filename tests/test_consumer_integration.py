@@ -38,12 +38,12 @@ class ConsumerIntegrationTests(unittest.TestCase):
         self.assertEqual(self.profile["status"], "stable")
         self.assertEqual(
             self.profile["interface"]["operations"],
-            ["discover", "select", "instantiate", "validate"],
+            ["discover", "recommend", "select", "instantiate", "validate"],
         )
         self.assertEqual(self.profile["interface"]["resolver"], "integrations/query_catalog.py")
         self.assertEqual(
             self.profile["interface"]["resolver_modes"],
-            ["discover", "select", "instantiate", "validate"],
+            ["discover", "recommend", "select", "instantiate", "validate"],
         )
         self.assertTrue((ROOT / self.profile["interface"]["resolver"]).is_file())
 
@@ -57,7 +57,17 @@ class ConsumerIntegrationTests(unittest.TestCase):
 
     def test_operations_define_a_release_safe_handoff(self):
         operations = self.profile["operations"]
-        self.assertEqual(set(operations), {"discover", "select", "instantiate", "validate"})
+        self.assertEqual(set(operations), {"discover", "recommend", "select", "instantiate", "validate"})
+        self.assertFalse(operations["recommend"]["side_effects"])
+        self.assertEqual(operations["recommend"]["next_operation"], "select")
+        self.assertIn(
+            "known_selectable_catalog_recent_usage_identities",
+            operations["recommend"]["requires"],
+        )
+        self.assertNotIn(
+            "known_profiled_recent_usage_identities",
+            operations["recommend"]["requires"],
+        )
         self.assertIn("release_status_is_selectable", operations["select"]["requires"])
         self.assertEqual(operations["select"]["no_match_behavior"], "return_constraints_and_stop")
         self.assertIn("consumer_write_authorization", operations["instantiate"]["requires"])
@@ -80,12 +90,12 @@ class ConsumerIntegrationTests(unittest.TestCase):
         self.assertEqual(set(consumers), expected)
         self.assertEqual(
             consumers["anna"]["modes"],
-            ["discover", "select", "instantiate", "validate"],
+            ["discover", "recommend", "select", "instantiate", "validate"],
         )
         self.assertIn("artifact_map", consumers["holodeck-file-generation"]["modes"])
         self.assertEqual(
             consumers["human-artifact-realism"]["modes"],
-            ["discover", "select", "validate", "plan", "create", "audit"],
+            ["discover", "recommend", "select", "validate", "plan", "create", "audit"],
         )
 
     def test_holodeck_mapping_preserves_package_ownership(self):
@@ -126,7 +136,7 @@ class ConsumerIntegrationTests(unittest.TestCase):
     def test_skill_routes_consumer_operations_to_owning_contract(self):
         text = (ROOT / "skill" / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("### Consume", text)
-        for operation in ("discover", "select", "instantiate", "validate"):
+        for operation in ("discover", "recommend", "select", "instantiate", "validate"):
             self.assertIn(f"`{operation}`", text)
         self.assertIn("../docs/INTEGRATIONS.md", text)
         self.assertIn("../integrations/consumer-profile.v1.json", text)
